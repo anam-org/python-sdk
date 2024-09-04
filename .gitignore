@@ -1,0 +1,9 @@
+# Python
+.conda*
+poetry.lock
+
+# Apple
+.DS_Store
+
+# Environment
+.env

@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "python-sdk"
+version = "0.1.0"
+description = "An official package to interact with Anam's Avatar engine."
+authors = ["Quinten Rosseel <quinten@anam.ai>"]
+readme = "README.md"
+license = "MIT"
+homepage = "https://www.anam.ai"
+repository = "https://github.com/anam-org/python-sdk"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+aiortc = "1.9.0"
+opencv-python = "^4.10.0.84"
+aiohttp = "^3.10.5"
+requests = "^2.32.3"
+python-dotenv = "^1.0.1"
+websockets = "^13.0.1"
+
+[tool.poetry.dev-dependencies]
+pytest = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
