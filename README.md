@@ -6,8 +6,7 @@ This client uses [Poetry](https://python-poetry.org/) for Python package & depen
     - Establishing a P2P Websocket to the Anam engine
     - Configuring the API with a Pythonic interface
 - Character Dev
-    - Create 3 to 4 personas    
-        - 
+    - Create 3 to 4 personas
 - Brains 
     - Creating a RAG tool call & establishing a `talk()` command
     - Langchain integration
@@ -46,7 +45,7 @@ This client uses [Poetry](https://python-poetry.org/) for Python package & depen
         filter_phrases=DEFAULT_FILTER_PHRASES_EN
     )
 
-    
+
 ```
 
 ## Installation (Local)
