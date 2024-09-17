@@ -49,6 +49,7 @@ def main():
         kaipersona]
     
     for p in personas:
+        print(f"Updating {p.name}")
         client.update_persona(p)
 
     # Print personas
