@@ -9,7 +9,6 @@ __pycache__
 # Environment
 .env
 
-
 # Code in non-ready-state
 python_sdk/scratch/*
 python_sdk/scratch
