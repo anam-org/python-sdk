@@ -1,9 +1,15 @@
 # Python
 .conda*
 poetry.lock
+__pycache__
 
 # Apple
 .DS_Store
 
 # Environment
 .env
+
+
+# Code in non-ready-state
+python_sdk/scratch/*
+python_sdk/scratch

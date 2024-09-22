@@ -5,6 +5,9 @@ This client uses [Poetry](https://python-poetry.org/) for Python package & depen
 - Core API 
     - Establishing a P2P Websocket to the Anam engine
     - Configuring the API with a Pythonic interface
+    - Plug and play with 
+        - Gradio, Streamlit or FastHTML
+        - Fast API
 - Character Dev
     - Create 3 to 4 personas
 - Brains 
@@ -44,6 +47,8 @@ This client uses [Poetry](https://python-poetry.org/) for Python package & depen
         """, 
         filter_phrases=DEFAULT_FILTER_PHRASES_EN
     )
+
+
 
 
 ```
