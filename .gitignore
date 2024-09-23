@@ -12,3 +12,6 @@ __pycache__
 # Code in non-ready-state
 anam_python_sdk/scratch/*
 anam_python_sdk/scratch
+
+# Builds
+/dist*
