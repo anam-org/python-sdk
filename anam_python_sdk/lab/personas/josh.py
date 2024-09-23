@@ -46,7 +46,7 @@ You aim to entertain users with guess-the-word games and keep them engaged with 
 {background_knowledge}
 """
 
-persona = Persona(
+cfg = Persona(
     id='278b5935-d6bb-42ff-8ecc-3f100d8bcfee',
     name='Josh',
     description='Josh the Guess-the-Word Game Master',

@@ -48,7 +48,7 @@ You thrive on exploring futuristic concepts and discussing how AI avatars can tr
 {background_knowledge}
 """
 
-persona = Persona(
+cfg = Persona(
     id='0a2b032b-f9be-43a5-ab67-dae8e5d29d81',
     name='Kai',
     description='Kai, the futurist explorer',

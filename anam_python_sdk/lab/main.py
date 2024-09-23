@@ -4,11 +4,11 @@ from typing import Dict, Optional
 
 from dotenv import dotenv_values
 from anam_python_sdk.lab.client import AnamLabClient
-from anam_python_sdk.lab.personas.max import persona as maxpersona
-from anam_python_sdk.lab.personas.christian import persona as christianpersona
-from anam_python_sdk.lab.personas.justice import persona as justicepersona
-from anam_python_sdk.lab.personas.kai import persona as kaipersona
-from anam_python_sdk.lab.personas.josh import persona as joshpersona
+from anam_python_sdk.lab.personas.max import cfg as maxcfg
+from anam_python_sdk.lab.personas.christian import cfg as christiancfg
+from anam_python_sdk.lab.personas.justice import cfg as justicecfg
+from anam_python_sdk.lab.personas.kai import cfg as kaicfg
+from anam_python_sdk.lab.personas.josh import cfg as joshcfg
 
 
 def print_persona_presets(client: AnamLabClient):
@@ -33,11 +33,11 @@ def main():
     client = AnamLabClient(cfg=api_cfg)
 
 
-    print(joshpersona)
+    print(joshcfg)
 
     # josh = client.create_persona(joshpersona)
 
-    client.update_persona(joshpersona)
+    client.update_persona(joshcfg)
 
     # Get Presets
     # print_persona_presets(client)
@@ -51,10 +51,12 @@ def main():
     #    print_persona_details(client, name)
 
     # personas = [
-    #     maxpersona,
-    #     christianpersona,
-    #     justicepersona,
-    #     kaipersona]
+    #     maxcfg,
+    #     christiancfg,
+    #     justicecfg,
+    #     kaicfg,
+    #     joshcfg
+    # ]
     
     # for p in personas:
     #     print(f"Updating {p.name}")
