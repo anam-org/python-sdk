@@ -1,14 +1,50 @@
-"""Interact with the Anam Lab API using Python."""
+# lab/client.py
+"""Interact with the Anam Lab API using Python.
+
+This module allows you to create, read, update and delete personas in the Anam Lab API.
+
+Examples:
+    >>> from from anam_python_sdk.lab.client import AnamLabClient
+    >>> api_cfg: Dict[str, Optional[str]] = dotenv_values(".env")
+    >>> client = AnamLabClient(cfg=api_cfg)
+    >>> client.get_personas()
+    [Persona(...), Persona(...)]
+  
+    >>> client.get_persona_by_id("123")
+    Persona(...)
+
+    >>> client.get_persona_by_name("Christian")
+    [Persona(...), Persona(...)]
+
+    >>> client.create_persona(persona_data={...})
+    Persona(...)
+
+    >>> client.update_persona(persona=Persona(...))
+    Persona(...)
+"""
 from typing import Dict, List, Optional
 
 import requests
-from python_sdk.lab.entities import Persona, Brain
+from anam_python_sdk.lab.entities import Persona, Brain
 
 class AnamLabClient:
     """
     Client for the Anam Lab API.
+
+    This class provides methods to interact with the Anam Lab API, allowing users to manage personas and persona presets.
+
+    Attributes:
+        _base_url (str): The base URL for the Anam Lab API.
+        _api_timeout (int): The timeout duration for API requests in seconds.
+        _bearer_token (str): The authentication token for API requests.
     """
     def __init__(self, cfg: Dict[str, Optional[str]]):
+        """
+        Initialize the AnamLabClient.
+
+        Args:
+            cfg (Dict[str, Optional[str]]): A dictionary containing configuration parameters, including the API key.
+        """
         self._base_url = "https://api.anam.ai/v1"
         self._api_timeout = 10
         self._bearer_token = cfg.get("ANAM_API_KEY") if cfg else None
@@ -16,14 +52,33 @@ class AnamLabClient:
         self._validate_setup()
 
     def _validate_setup(self):
+        """
+        Validate that the API key is set.
+
+        Raises:
+            AssertionError: If the ANAM_API_KEY is not set in the configuration.
+        """
         assert self._bearer_token is not None, "ANAM_API_KEY is not set"
 
     def _get_headers(self):
-        """Get headers with authentication."""
+        """
+        Get headers with authentication for API requests.
+
+        Returns:
+            Dict[str, str]: A dictionary containing the Authorization header with the bearer token.
+        """
         return {"Authorization": f"Bearer {self._bearer_token}"}
 
     def get_persona_presets(self) -> Optional[Dict]:
-        """Retrieve all persona presets."""
+        """
+        Retrieve all persona presets.
+
+        Returns:
+            Optional[Dict]: A dictionary containing all persona presets if successful, None otherwise.
+
+        Raises:
+            requests.exceptions.RequestException: If there's an error during the API request.
+        """
         endpoint = f"{self._base_url}/personas/presets"
         try:
             response = requests.get(
@@ -38,7 +93,18 @@ class AnamLabClient:
             return None
 
     def get_persona_preset_by_name(self, preset_name: str) -> Optional[Dict]:
-        """Retrieve a persona preset by preset name."""
+        """
+        Retrieve a persona preset by preset name.
+
+        Args:
+            preset_name (str): The name of the persona preset to retrieve.
+
+        Returns:
+            Optional[Dict]: A dictionary containing the persona preset if found, None otherwise.
+
+        Raises:
+            requests.exceptions.RequestException: If there's an error during the API request.
+        """
         endpoint = f"{self._base_url}/personas/presets/{preset_name}"
         try:
             response = requests.get(
@@ -53,7 +119,15 @@ class AnamLabClient:
             return None
 
     def get_personas(self) -> List[Persona]:
-        """Retrieve all personas."""
+        """
+        Retrieve all personas.
+
+        Returns:
+            List[Persona]: A list of Persona objects representing all personas in the system.
+
+        Raises:
+            requests.exceptions.RequestException: If there's an error during the API request.
+        """
         endpoint = f"{self._base_url}/personas"
         try:
             response = requests.get(
@@ -76,7 +150,18 @@ class AnamLabClient:
             return []
 
     def create_persona(self, persona_data: Dict) -> Optional[Persona]:
-        """TODO: endpoint to create a new persona."""
+        """
+        Create a new persona.
+
+        Args:
+            persona_data (Dict): A dictionary containing the data for the new persona.
+
+        Returns:
+            Optional[Persona]: A Persona object representing the newly created persona if successful, None otherwise.
+
+        Raises:
+            requests.exceptions.RequestException: If there's an error during the API request.
+        """
         endpoint = f"{self._base_url}/personas"
         try:
             response = requests.post(
@@ -99,7 +184,18 @@ class AnamLabClient:
             return None
 
     def get_persona_by_id(self, persona_id: str) -> Optional[Persona]:
-        """Retrieve detailed information fora specific persona by ID."""
+        """
+        Retrieve detailed information for a specific persona by ID.
+
+        Args:
+            persona_id (str): The ID of the persona to retrieve.
+
+        Returns:
+            Optional[Persona]: A Persona object containing detailed information if found, None otherwise.
+
+        Raises:
+            requests.exceptions.RequestException: If there's an error during the API request.
+        """
         endpoint = f"{self._base_url}/personas/{persona_id}"
         try:
             response = requests.get(
@@ -125,7 +221,18 @@ class AnamLabClient:
             return None
 
     def update_persona(self, persona: Persona) -> Optional[Persona]:
-        """Update an existing persona."""
+        """
+        Update an existing persona.
+
+        Args:
+            persona (Persona): A Persona object containing the updated information.
+
+        Returns:
+            Optional[Persona]: A Persona object representing the updated persona if successful, None otherwise.
+
+        Raises:
+            requests.exceptions.RequestException: If there's an error during the API request.
+        """
         endpoint = f"{self._base_url}/personas/{persona.id}"
         try:
             updated_data = {
@@ -153,7 +260,18 @@ class AnamLabClient:
             return None
 
     def delete_persona(self, persona_id: str) -> Optional[Dict]:
-        """Delete a specific persona by ID."""
+        """
+        Delete a specific persona by ID.
+
+        Args:
+            persona_id (str): The ID of the persona to delete.
+
+        Returns:
+            Optional[Dict]: A dictionary containing a success message if the deletion was successful, None otherwise.
+
+        Raises:
+            requests.exceptions.RequestException: If there's an error during the API request.
+        """
         endpoint = f"{self._base_url}/personas/{persona_id}"
         try:
             response = requests.delete(
@@ -168,7 +286,18 @@ class AnamLabClient:
             return None
 
     def get_persona_by_name(self, persona_name: str) -> List[Persona]:
-        """Retrieve a list of personas matching the given name."""
+        """
+        Retrieve a list of personas matching the given name.
+
+        Args:
+            persona_name (str): The name of the persona(s) to retrieve.
+
+        Returns:
+            List[Persona]: A list of Persona objects matching the given name.
+
+        Raises:
+            requests.exceptions.RequestException: If there's an error during the API request.
+        """
         endpoint = f"{self._base_url}/personas"
         matches = []
         try:

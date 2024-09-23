@@ -1,8 +1,8 @@
 
 """Module defining the Max persona for Anam AI interactions."""
 
-from python_sdk.lab.entities import Persona, Brain
-from python_sdk.lab.prompts.defaults import (
+from anam_python_sdk.lab.entities import Persona, Brain
+from anam_python_sdk.lab.prompts.defaults import (
     DEFAULT_FILLER_PHRASES,
     ANAM_BACKGROUND_KNOWLEDGE,
     DEFAULT_STYLE_GUIDE

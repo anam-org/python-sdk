@@ -3,11 +3,11 @@
 from typing import Dict, Optional
 
 from dotenv import dotenv_values
-from python_sdk.lab.client import AnamLabClient
-from python_sdk.lab.personas.max import persona as maxpersona
-from python_sdk.lab.personas.christian import persona as christianpersona
-from python_sdk.lab.personas.justice import persona as justicepersona
-from python_sdk.lab.personas.kai import persona as kaipersona
+from anam_python_sdk.lab.client import AnamLabClient
+from anam_python_sdk.lab.personas.max import persona as maxpersona
+from anam_python_sdk.lab.personas.christian import persona as christianpersona
+from anam_python_sdk.lab.personas.justice import persona as justicepersona
+from anam_python_sdk.lab.personas.kai import persona as kaipersona
 
 
 def print_persona_presets(client: AnamLabClient):

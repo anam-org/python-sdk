@@ -1,4 +1,15 @@
-"""This module defines the Persona and Brain classes for creating virtual personas."""
+# lab/entities.py
+"""
+This module defines the Persona and Brain classes for creating virtual personas.
+
+Examples:
+    >>> from anam_python_sdk.lab.entities import Persona, Brain
+    >>> brain = Brain(system_prompt="You are a helpful assistant", personality="Friendly", filler_phrases=["um", "ah", "er"])
+    Brain(...)
+    
+    >>> persona = Persona(id="123", name="Christian", description="A friendly AI assistant", persona_preset="Default", brain=brain)
+    Persona(...)
+"""
 
 from dataclasses import dataclass
 from typing import List, Optional

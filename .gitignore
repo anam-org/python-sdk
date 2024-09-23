@@ -10,5 +10,5 @@ __pycache__
 .env
 
 # Code in non-ready-state
-python_sdk/scratch/*
-python_sdk/scratch
+anam_python_sdk/scratch/*
+anam_python_sdk/scratch
