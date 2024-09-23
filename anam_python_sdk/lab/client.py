@@ -23,7 +23,6 @@ Examples:
     Persona(...)
 """
 from typing import Dict, List, Optional
-
 import requests
 from anam_python_sdk.lab.entities import Persona, Brain
 
@@ -142,19 +141,30 @@ class AnamLabClient:
                     id=p['id'],
                     name=p['name'],
                     description=p['description'],
-                    persona_preset=p['personaPreset']
+                    persona_preset=p['personaPreset'],
+                    brain=Brain(
+                        id=p['brain']['id'],
+                        personality=p['brain']['personality'],
+                        system_prompt=p['brain']['systemPrompt'],
+                        filler_phrases=p['brain']['fillerPhrases'],
+                        created_at=p['brain']['createdAt'],
+                        updated_at=p['brain']['updatedAt']
+                    ) if p.get('brain') else None,
+                    is_default_persona=p['isDefaultPersona'],
+                    created_at=p['createdAt'],
+                    updated_at=p['updatedAt']
                 ) for p in data
             ]
         except requests.exceptions.RequestException as e:
             print(f"Error getting personas: {e}")
             return []
 
-    def create_persona(self, persona_data: Dict) -> Optional[Persona]:
+    def create_persona(self, persona: Persona) -> Optional[Persona]:
         """
         Create a new persona.
 
         Args:
-            persona_data (Dict): A dictionary containing the data for the new persona.
+            persona (Persona): A Persona object containing the data for the new persona.
 
         Returns:
             Optional[Persona]: A Persona object representing the newly created persona if successful, None otherwise.
@@ -163,11 +173,22 @@ class AnamLabClient:
             requests.exceptions.RequestException: If there's an error during the API request.
         """
         endpoint = f"{self._base_url}/personas"
+        # TODO: add validation on the persona object
         try:
+            persona_json = {
+                "name": persona.name,
+                "description": persona.description,
+                "personaPreset": persona.persona_preset,
+                "brain": {
+                    "systemPrompt": persona.brain.system_prompt,
+                    "personality": persona.brain.personality,
+                    "fillerPhrases": persona.brain.filler_phrases
+                }
+            }
             response = requests.post(
                 url=endpoint,
                 headers=self._get_headers(),
-                json=persona_data,
+                json=persona_json,
                 timeout=self._api_timeout
             )
             response.raise_for_status()
@@ -177,7 +198,17 @@ class AnamLabClient:
                 name=data['name'],
                 description=data['description'],
                 persona_preset=data['personaPreset'],
-                brain=None  # Brain is not available in this endpoint
+                brain=Brain(
+                    id=data['brain']['id'],
+                    personality=data['brain']['personality'],
+                    system_prompt=data['brain']['systemPrompt'],
+                    filler_phrases=data['brain']['fillerPhrases'],
+                    created_at=data['brain']['createdAt'],
+                    updated_at=data['brain']['updatedAt']
+                ) if data.get('brain') else None,
+                is_default_persona=data['isDefaultPersona'],
+                created_at=data['createdAt'],
+                updated_at=data['updatedAt']
             )
         except requests.exceptions.RequestException as e:
             print(f"Error creating persona: {e}")
@@ -211,10 +242,16 @@ class AnamLabClient:
                 description=data['description'],
                 persona_preset=data['personaPreset'],
                 brain=Brain(
-                    system_prompt=data.get('brain', {}).get('systemPrompt', ''),
-                    personality=data.get('brain', {}).get('personality', ''),
-                    filler_phrases=data.get('brain', {}).get('fillerPhrases', [])
-                )
+                    id=data['brain']['id'],
+                    personality=data['brain']['personality'],
+                    system_prompt=data['brain']['systemPrompt'],
+                    filler_phrases=data['brain']['fillerPhrases'],
+                    created_at=data['brain']['createdAt'],
+                    updated_at=data['brain']['updatedAt']
+                ) if data.get('brain') else None,
+                is_default_persona=data['isDefaultPersona'],
+                created_at=data['createdAt'],
+                updated_at=data['updatedAt']
             )
         except requests.exceptions.RequestException as e:
             print(f"Error getting persona by ID: {e}")
@@ -240,10 +277,16 @@ class AnamLabClient:
                 "description": persona.description,
                 "personaPreset": persona.persona_preset,
                 "brain": {
+                    "id": persona.brain.id,
                     "systemPrompt": persona.brain.system_prompt,
                     "personality": persona.brain.personality,
-                    "fillerPhrases": persona.brain.filler_phrases
-                }
+                    "fillerPhrases": persona.brain.filler_phrases,
+                    "createdAt": persona.brain.created_at,
+                    "updatedAt": persona.brain.updated_at
+                } if persona.brain else None,
+                "isDefaultPersona": persona.is_default_persona,
+                "createdAt": persona.created_at,
+                "updatedAt": persona.updated_at
             }
             response = requests.put(
                 url=endpoint,

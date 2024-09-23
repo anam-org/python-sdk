@@ -20,12 +20,18 @@ class Brain:
     system_prompt: str
     personality: str
     filler_phrases: List[str]
+    id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 @dataclass
 class Persona:
     """Represents a virtual persona with a name, description, persona preset, and brain."""
-    id: str
     name: str
     description: str
     persona_preset: str
+    id: Optional[str] = None
     brain: Optional[Brain] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    is_default_persona: Optional[bool] = None

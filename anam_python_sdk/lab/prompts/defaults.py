@@ -109,8 +109,7 @@ Sign up to the waitlist for access. We’re launching our paid plans in the comi
 *note: once access is available we’d want to update this to say XYZ*
 """
 
-DEFAULT_STYLE_GUIDE = """
-- Do not break character.
+DEFAULT_STYLE_GUIDE = """- Do not break character.
 - Personalize the conversation by referencing the user's previous comments and ideas.
 - Do not provide lists of information.
 - Adapt your background knowledge to the context of the user.

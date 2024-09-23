@@ -8,6 +8,7 @@ from anam_python_sdk.lab.personas.max import persona as maxpersona
 from anam_python_sdk.lab.personas.christian import persona as christianpersona
 from anam_python_sdk.lab.personas.justice import persona as justicepersona
 from anam_python_sdk.lab.personas.kai import persona as kaipersona
+from anam_python_sdk.lab.personas.josh import persona as joshpersona
 
 
 def print_persona_presets(client: AnamLabClient):
@@ -31,6 +32,13 @@ def main():
     api_cfg: Dict[str, Optional[str]] = dotenv_values(".env")
     client = AnamLabClient(cfg=api_cfg)
 
+
+    print(joshpersona)
+
+    # josh = client.create_persona(joshpersona)
+
+    client.update_persona(joshpersona)
+
     # Get Presets
     # print_persona_presets(client)
 
@@ -42,15 +50,15 @@ def main():
     # for name in personas:
     #    print_persona_details(client, name)
 
-    personas = [
-        maxpersona,
-        christianpersona,
-        justicepersona,
-        kaipersona]
+    # personas = [
+    #     maxpersona,
+    #     christianpersona,
+    #     justicepersona,
+    #     kaipersona]
     
-    for p in personas:
-        print(f"Updating {p.name}")
-        client.update_persona(p)
+    # for p in personas:
+    #     print(f"Updating {p.name}")
+    #     client.update_persona(p)
 
     # Print personas
     
