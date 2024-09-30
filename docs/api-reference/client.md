@@ -1,5 +1,5 @@
-# AnamLabClient
+# AnamClient
 
-This page contains the API reference for the AnamLabClient class.
+This page contains the API reference for the AnamClient class.
 
-::: lab.client.AnamLabClient
+::: api.clients.AnamClient

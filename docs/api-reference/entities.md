@@ -4,8 +4,8 @@ This page contains the API reference for the main entities used in the Anam Pyth
 
 ## Persona
 
-::: lab.entities.Persona
+:: api.entities.Persona
 
 ## Brain
 
-::: lab.entities.Brain
+::: api.entities.Brain

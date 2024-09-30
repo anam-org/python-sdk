@@ -39,17 +39,17 @@ ANAM_API_KEY=<your_api_key>
 ```
 
 ### Basic Usage
-Here's a simple example of how to use the AnamLabClient:
+Here's a simple example of how to use the AnamClient:
 
 ```python
-from anam_python_sdk.lab.client import AnamLabClient
+from anam_python_sdk.api.clients import AnamClient
 from dotenv import dotenv_values
 
 # Load configuration from .env file
 api_cfg = dotenv_values(".env")
 
-# Create an AnamLabClient instance
-client = AnamLabClient(cfg=api_cfg)
+# Create an AnamClient instance
+client = AnamClient(cfg=api_cfg)
 
 # Get persona presets
 persona_presets = client.get_persona_presets()

@@ -4,13 +4,13 @@ This page provides some examples of how to use the Anam Python SDK in various sc
 
 ## Creating and Updating a Persona
 ```python
-from anam_python_sdk.lab.client import AnamLabClient
-from anam_python_sdk.lab.entities import Persona, Brain
+from anam_python_sdk.api.clients import AnamClient
+from anam_python_sdk.api.entities import Persona, Brain
 from dotenv import dotenv_values
 
 # Initialize the client
 api_cfg = dotenv_values(".env")
-client = AnamLabClient(cfg=api_cfg)
+client = AnamClient(cfg=api_cfg)
 
 # Create a new persona
 new_persona = Persona(
@@ -35,10 +35,10 @@ print("Updated Persona:", updated_persona)
 ## Working with Multiple Personas
 ```python
 
-from anam_python_sdk.lab.client import AnamLabClient
+from anam_python_sdk.api.clients import AnamClient
 from dotenv import dotenv_values
 api_cfg = dotenv_values(".env")
-client = AnamLabClient(cfg=api_cfg)
+client = AnamClient(cfg=api_cfg)
 
 # Get all personas
 all_personas = client.get_personas()

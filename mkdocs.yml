@@ -30,7 +30,7 @@ nav:
   - Getting Started: getting-started.md
   - User Guide:
     - Creating Personas: user-guide/creating-personas.md
-    - Using the AnamLabClient: user-guide/using-anamlab-client.md
+    - Using the AnamClient: user-guide/using-anamlab-client.md
   - API Reference:
     - Entities: api-reference/entities.md
     - Client: api-reference/client.md
