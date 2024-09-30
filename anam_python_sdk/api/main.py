@@ -3,25 +3,25 @@
 from typing import Dict, Optional
 
 from dotenv import dotenv_values
-from anam_python_sdk.lab.client import AnamLabClient
-from anam_python_sdk.lab.personas.max import cfg as maxcfg
-from anam_python_sdk.lab.personas.christian import cfg as christiancfg
-from anam_python_sdk.lab.personas.justice import cfg as justicecfg
-from anam_python_sdk.lab.personas.kai import cfg as kaicfg
-from anam_python_sdk.lab.personas.josh import cfg as joshcfg
+from anam_python_sdk.api.client import AnamClient
+from anam_python_sdk.api.personas.max import cfg as maxcfg
+from anam_python_sdk.api.personas.christian import cfg as christiancfg
+from anam_python_sdk.api.personas.justice import cfg as justicecfg
+from anam_python_sdk.api.personas.kai import cfg as kaicfg
+from anam_python_sdk.api.personas.josh import cfg as joshcfg
 
 
-def print_persona_presets(client: AnamLabClient):
+def print_persona_presets(client: AnamClient):
     persona_presets = client.get_persona_presets()
     if persona_presets is not None:
         print("Persona Presets:", persona_presets)
 
-def print_personas(client: AnamLabClient):
+def print_personas(client: AnamClient):
     personas = client.get_personas()
     if personas is not None:
         print("Personas:", personas)
 
-def print_persona_details(client: AnamLabClient, name: str):
+def print_persona_details(client: AnamClient, name: str):
     matching_personas = client.get_persona_by_name(name)
     if matching_personas:
         print(f"Matching personas for '{name}':")
@@ -30,12 +30,14 @@ def print_persona_details(client: AnamLabClient, name: str):
 
 def main():
     api_cfg: Dict[str, Optional[str]] = dotenv_values(".env")
-    client = AnamLabClient(cfg=api_cfg)
+    client = AnamClient(cfg=api_cfg)
 
 
-    print(joshcfg)
+
+    # print(joshcfg)
 
     # josh = client.create_persona(joshpersona)
+    
 
     client.update_persona(joshcfg)
 
@@ -48,6 +50,7 @@ def main():
     # Get persona details
     # personas = ["Kai", "Christian", "Eva", "Justice", "Max"]
     # for name in personas:
+
     #    print_persona_details(client, name)
 
     # personas = [

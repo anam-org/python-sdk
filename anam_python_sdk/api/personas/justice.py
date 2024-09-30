@@ -1,7 +1,7 @@
 """Module defining the Justice persona for Anam AI interactions."""
 
-from anam_python_sdk.lab.entities import Persona, Brain
-from anam_python_sdk.lab.prompts.defaults import (
+from anam_python_sdk.api.entities import Persona, Brain
+from anam_python_sdk.api.prompts.defaults import (
     DEFAULT_FILLER_PHRASES,
     ANAM_BACKGROUND_KNOWLEDGE,
     DEFAULT_STYLE_GUIDE
@@ -48,7 +48,7 @@ cfg = Persona(
     id='804fadac-abe8-401a-8d17-c5f78a892c77', 
     name='Justice',
     description='Justice, the customer experience expert',
-    persona_preset='eva',
+    persona_preset='leo_windowsofacorner',
     brain=Brain(
         system_prompt=SYSTEM_PROMPT.format(
             background_knowledge=ANAM_BACKGROUND_KNOWLEDGE,

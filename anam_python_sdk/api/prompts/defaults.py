@@ -1,4 +1,4 @@
-"""Default prompts and phrases for the lab module."""
+"""Default prompts and phrases for the client module."""
 
 DEFAULT_FILLER_PHRASES = [
     'Thank you.', 

@@ -1,7 +1,7 @@
 """Module defining the Kai persona for Anam AI interactions."""
 
-from anam_python_sdk.lab.entities import Persona, Brain
-from anam_python_sdk.lab.prompts.defaults import (
+from anam_python_sdk.api.entities import Persona, Brain
+from anam_python_sdk.api.prompts.defaults import (
     DEFAULT_FILLER_PHRASES,
     ANAM_BACKGROUND_KNOWLEDGE,
     DEFAULT_STYLE_GUIDE
@@ -52,7 +52,7 @@ cfg = Persona(
     id='0a2b032b-f9be-43a5-ab67-dae8e5d29d81',
     name='Kai',
     description='Kai, the futurist explorer',
-    persona_preset='eva',
+    persona_preset='leo_windowsofacorner',
     brain=Brain(
         system_prompt=SYSTEM_PROMPT.format(
             background_knowledge=ANAM_BACKGROUND_KNOWLEDGE,

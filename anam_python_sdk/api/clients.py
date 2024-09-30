@@ -1,12 +1,12 @@
-# lab/client.py
-"""Interact with the Anam Lab API using Python.
+# api/clients.py
+"""Interact with the Anam API using Python.
 
-This module allows you to create, read, update and delete personas in the Anam Lab API.
+This module allows you to create, read, update and delete personas in the Anam API.
 
 Examples:
-    >>> from from anam_python_sdk.lab.client import AnamLabClient
+    >>> from anam_python_sdk.api.client import AnamClient
     >>> api_cfg: Dict[str, Optional[str]] = dotenv_values(".env")
-    >>> client = AnamLabClient(cfg=api_cfg)
+    >>> client = AnamClient(cfg=api_cfg)
     >>> client.get_personas()
     [Persona(...), Persona(...)]
   
@@ -24,31 +24,46 @@ Examples:
 """
 from typing import Dict, List, Optional
 import requests
-from anam_python_sdk.lab.entities import Persona, Brain
+from anam_python_sdk.api.entities import Persona, Brain
+import logging
 
-class AnamLabClient:
+class AnamClient:
     """
-    Client for the Anam Lab API.
+    Client for the Anam API.
 
-    This class provides methods to interact with the Anam Lab API, allowing users to manage personas and persona presets.
+    This class provides methods to interact with the Anam API, allowing users to manage personas and persona presets.
 
     Attributes:
-        _base_url (str): The base URL for the Anam Lab API.
+        _base_url (str): The base URL for the Anam API.
         _api_timeout (int): The timeout duration for API requests in seconds.
         _bearer_token (str): The authentication token for API requests.
+        logger (logging.Logger): Logger for the AnamClient.
     """
     def __init__(self, cfg: Dict[str, Optional[str]]):
         """
-        Initialize the AnamLabClient.
+        Initialize the AnamClient.
 
         Args:
             cfg (Dict[str, Optional[str]]): A dictionary containing configuration parameters, including the API key.
         """
-        self._base_url = "https://api.anam.ai/v1"
+        self._api_version = cfg.get("ANAM_API_VERSION", "v1") if cfg else "v1"
+        self._base_url = f"https://api.anam.ai/{self._api_version}"
         self._api_timeout = 10
         self._bearer_token = cfg.get("ANAM_API_KEY") if cfg else None
+        self.logger = self._setup_logger()
         
         self._validate_setup()
+
+    def _setup_logger(self) -> logging.Logger:
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.DEBUG)
+        
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('[%(asctime)s %(filename)s:%(lineno)s %(funcName)s] %(levelname)s: %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        
+        return logger
 
     def _validate_setup(self):
         """
@@ -58,6 +73,7 @@ class AnamLabClient:
             AssertionError: If the ANAM_API_KEY is not set in the configuration.
         """
         assert self._bearer_token is not None, "ANAM_API_KEY is not set"
+        self.logger.info("AnamClient initialized successfully")
 
     def _get_headers(self):
         """
@@ -79,6 +95,7 @@ class AnamLabClient:
             requests.exceptions.RequestException: If there's an error during the API request.
         """
         endpoint = f"{self._base_url}/personas/presets"
+        self.logger.info("Retrieving persona presets from %s", endpoint)
         try:
             response = requests.get(
                 url=endpoint,
@@ -86,9 +103,10 @@ class AnamLabClient:
                 timeout=self._api_timeout
             )
             response.raise_for_status()
+            self.logger.debug("Successfully retrieved persona presets")
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Error getting persona presets: {e}")
+            self.logger.error("Error getting persona presets: %s", e)
             return None
 
     def get_persona_preset_by_name(self, preset_name: str) -> Optional[Dict]:
@@ -277,16 +295,10 @@ class AnamLabClient:
                 "description": persona.description,
                 "personaPreset": persona.persona_preset,
                 "brain": {
-                    "id": persona.brain.id,
                     "systemPrompt": persona.brain.system_prompt,
                     "personality": persona.brain.personality,
-                    "fillerPhrases": persona.brain.filler_phrases,
-                    "createdAt": persona.brain.created_at,
-                    "updatedAt": persona.brain.updated_at
+                    "fillerPhrases": persona.brain.filler_phrases
                 } if persona.brain else None,
-                "isDefaultPersona": persona.is_default_persona,
-                "createdAt": persona.created_at,
-                "updatedAt": persona.updated_at
             }
             response = requests.put(
                 url=endpoint,
@@ -364,3 +376,56 @@ class AnamLabClient:
             print(f"Error fetching personas: {e}")
             return []
 
+    def start_session(self, persona_id: str) -> Dict:
+        """
+        Start a new session with the specified persona.
+
+        Args:
+            persona_id (str): The ID of the persona to use for the session.
+
+        Returns:
+            Dict: The response from the API containing session information.
+        """
+        self.logger.info("Starting session with persona ID: %s", persona_id)
+        token_headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._bearer_token}"
+        }
+        # Get Session Token with API Key
+        token_url = f"{self._base_url}/auth/session-token"
+        self.logger.debug("Requesting session token from %s", token_url)
+        token_response = requests.get(
+            token_url,
+            headers=token_headers,
+            timeout=self._api_timeout
+        )
+        token_response.raise_for_status()
+
+        session_token = token_response.json().get('sessionToken')
+        self.logger.debug("Session token obtained successfully")
+        # Start Session with Session Token
+        session_url = f"{self._base_url}/engine/session"
+        session_token_headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {session_token}"
+        }
+        # Sensible defaults for now. 
+        session_payload = {
+            "personaConfig": {
+                "personaId": persona_id,
+                "disableBrains": False,
+                "disableFillerPhrases": False
+            },
+            "voiceDetection": {
+               "endOfSpeechSensitivity": 0.5
+            }
+        }
+        session_response = requests.post(
+            session_url,
+            headers=session_token_headers,
+            json=session_payload,
+            timeout=self._api_timeout
+        )
+        self.logger.debug("Session response: %s", session_response.json())
+        session_response.raise_for_status()
+        return session_response.json()
