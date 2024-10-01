@@ -6,7 +6,6 @@ from dotenv import dotenv_values
 from anam_python_sdk.api.clients import AnamClient
 from anam_python_sdk.chat.streaming import StreamingClient
 
-
 async def main():
     """Main control logic for creating a new chat session"""
     api_cfg: Dict[str, Optional[str]] = dotenv_values(".env")

@@ -10,8 +10,8 @@ class ActionType(Enum):
     """Enumeration of action types for signaling."""
     OFFER = 'offer'
     ANSWER = 'answer'
-    ICE_CANDIDATE = 'icecandidate'
-    END_SESSION = 'endsession'
+    ICECANDIDATE = 'icecandidate'
+    ENDSESSION = 'endsession'
     HEARTBEAT = 'heartbeat'
     WARNING = 'warning'
 
@@ -118,10 +118,12 @@ class SignallingClient:
             await self._on_close(e.code, e.reason)
 
     async def _on_message(self, message):
+        """Get ActionType from message (as Enum) and call on_message_callback"""
         if self.on_message_callback:
             self.logger.debug("Calling on_message_callback")
             message_dict = json.loads(message)
             try:
+                # Upcast string to Enum
                 action_type = ActionType[message_dict['actionType'].upper()]
                 message_dict['actionType'] = action_type
             except KeyError:
@@ -138,6 +140,7 @@ class SignallingClient:
         self.heartbeat_task = asyncio.create_task(self._send_heartbeat())
 
     async def _send_heartbeat(self):
+        """Continuously send heartbeat messages to the server."""
         while True:
             if self.ws is None or not self.ws.open:
                 self.logger.warning("WebSocket is not connected. Cannot send heartbeat.")

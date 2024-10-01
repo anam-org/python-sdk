@@ -134,7 +134,7 @@ class StreamingClient:
 
         if action_type == ActionType.ANSWER:
             await self.handle_answer(message['payload'])
-        elif action_type == ActionType.ICE_CANDIDATE:
+        elif action_type == ActionType.ICECANDIDATE:
             await self.handle_ice_candidate(message['payload'])
 
     async def setup_rtc_connection(self):
@@ -176,16 +176,23 @@ class StreamingClient:
 
         # Create and send offer
         self.logger.info("Creating and sending offer")
-        offer = await self.peer_connection.createOffer()
-        await self.peer_connection.setLocalDescription(offer)
-        await self.signalling_client.send_message({
+        offer_msg = await self.peer_connection.createOffer()
+        await self.peer_connection.setLocalDescription(offer_msg)
+        
+        offer_message_payload = {
+            "connectionDescription": {
+                "sdp": offer_msg.sdp,
+                "type": offer_msg.type
+            },
+            "userUid": self.session_data['sessionId']  # Note: This is using sessionId as userUid
+        }
+        offer_msg = {
             "actionType": ActionType.OFFER.value,
             "sessionId": self.session_data['sessionId'],
-            "payload": {
-                "sdp": offer.sdp, 
-                "type": offer.type
-            }
-        })
+            "payload": offer_message_payload
+        }
+        self.logger.info("Sending offer message on Websocket: %s", offer_msg)
+        await self.signalling_client.send_message(offer_msg)
 
     async def setup_audio(self):
         """Set up audio input."""
@@ -240,7 +247,10 @@ class StreamingClient:
         Args:
             answer_payload (Dict): The SDP answer payload.
         """
-        answer = RTCSessionDescription(sdp=answer_payload['sdp'], type=answer_payload['type'])
+        answer = RTCSessionDescription(
+            sdp=answer_payload['sdp'],
+            type=answer_payload['type']
+        )
         await self.peer_connection.setRemoteDescription(answer)
 
     async def handle_ice_candidate(self, candidate_payload: Dict):
@@ -250,21 +260,40 @@ class StreamingClient:
         Args:
             candidate_payload (Dict): The ICE candidate payload.
         """
-        self.logger.debug("Handling ICE candidate")
+        self.logger.debug("Handling ICE candidate: %s", candidate_payload)
+        
+        # The Candidate answer is a spaced-string that needs to split and mapped 
+        # to the RTCIceCandidate properties
+        candidate_property_index = {
+            1: 'component',
+            2: 'protocol',
+            3: 'priority',
+            4: 'ip',
+            5: 'port',
+            6: 'foundation',
+            7: 'type'
+        }
+        # Parse the candidate string
+        candidate_parts = candidate_payload['candidate'].split(" ")
+        # Log the candidate's untangled parts
+        for i, v in candidate_property_index.items():
+            self.logger.debug("Candidate part %s (%d): %s", v, i, candidate_parts[i])
         
         candidate = RTCIceCandidate(
-            sdpMid=candidate_payload.get('sdpMid'),
-            sdpMLineIndex=candidate_payload.get('sdpMLineIndex'),
-            # Optional parameters
-            component=candidate_payload.get('component', 0),
-            foundation=candidate_payload.get('foundation', ""),
-            ip=candidate_payload.get('ip', ""),
-            port=candidate_payload.get('port', 0),
-            priority=candidate_payload.get('priority', 0),
-            protocol=candidate_payload.get('protocol', ""),
-            type=candidate_payload.get('type', "")
+            component=int(candidate_parts[1]),
+            foundation=candidate_parts[0].split(':')[1],
+            ip=candidate_parts[4],
+            port=int(candidate_parts[5]),
+            priority=int(candidate_parts[3]),
+            protocol=candidate_parts[2],
+            type=candidate_parts[7],
+            sdpMid=candidate_payload.get('sdpMid', ''),
+            sdpMLineIndex=candidate_payload.get('sdpMLineIndex', 0)
         )
+        
+        self.logger.info("Adding ICE candidate to peer connection: %s", candidate)
         await self.peer_connection.addIceCandidate(candidate)
+        self.logger.info("ICE candidate added to peer connection.")
 
     async def send_message(self, message: str):
         """
