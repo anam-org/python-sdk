@@ -173,6 +173,28 @@ class SignallingClient:
         """Set the callback function for handling incoming messages."""
         self.on_message_callback = callback
 
+    async def send_offer(self, offer, user_uid):
+        if self.ws is None or not self.ws.open:
+            self.logger.error("WebSocket is not connected. Cannot send offer.")
+            return
+
+        offer_message_payload = {
+            "connectionDescription": {
+                "sdp": offer.sdp,
+                "type": offer.type
+            },
+            "userUid": user_uid
+        }
+        
+        offer_msg = {
+            "actionType": ActionType.OFFER.value,
+            "sessionId": self.session_id,
+            "payload": offer_message_payload
+        }
+        # Already logged in _on_message
+        # self.logger.info("Sending offer message on WebSocket: %s", offer_msg)
+        await self.send_message(offer_msg)
+
 # Example usage
 async def main():
     """Execute the main asynchronous function."""

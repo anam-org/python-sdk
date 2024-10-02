@@ -14,6 +14,8 @@ import logging
 from typing import Dict, Optional
 import sounddevice as sd
 import numpy as np
+import pygame
+from aiortc.contrib.media import MediaPlayer
 
 import av
 from aiortc import (
@@ -28,7 +30,6 @@ from aiortc.contrib.media import MediaRecorder, MediaStreamTrack
 from anam_python_sdk.api.clients import AnamClient
 from anam_python_sdk.chat.signaling import SignallingClient, ActionType
 
-
 class AudioStreamTrack(MediaStreamTrack):
     """Audio stream track for handling audio data."""
     kind = "audio"
@@ -36,18 +37,26 @@ class AudioStreamTrack(MediaStreamTrack):
     def __init__(self, device_name):
         super().__init__()
         self.device_name = device_name
-        self.stream = sd.InputStream(device=device_name, channels=1, samplerate=48000)
-        self.stream.start()
+        try:
+            self.stream = sd.InputStream(device=device_name, channels=1, samplerate=48000, blocksize=960)
+            self.stream.start()
+        except sd.PortAudioError as e:
+            logging.error(f"PortAudio error when initializing device {device_name}: {str(e)}")
+            raise
 
     async def recv(self):
         """Continuously read audio data from the microphone and return it as an audio frame."""
-        frame = av.AudioFrame.from_ndarray(
-            self.stream.read(960)[0], format='s16', layout='mono'
-        )
-        frame.pts = None
-        frame.time_base = av.Rational(1, 48000)
-        return frame
-        
+        try:
+            frame = av.AudioFrame.from_ndarray(
+                self.stream.read(960)[0], format='s16', layout='mono'
+            )
+            frame.pts = None
+            frame.time_base = av.Rational(1, 48000)
+            return frame
+        except Exception as e:
+            logging.error(f"Error reading audio data: {str(e)}")
+            raise
+
 class StreamingClient:
     """
     A client for managing Anam chat sessions using WebRTC.
@@ -74,6 +83,10 @@ class StreamingClient:
         self.data_channel: Optional[RTCDataChannel] = None
         self.logger = self._setup_logger()
         self.logger.info("Initializing AnamChatClient for persona_id: %s", persona_id)
+        self.audio_player = None
+        self.video_surface = None
+        self.connection_received_answer = False
+        self.remote_ice_candidate_buffer = []
 
     class SessionStartError(Exception):
         """Exception raised when a session fails to start."""
@@ -106,15 +119,27 @@ class StreamingClient:
             Exception: If the session fails to start.
         """
         self.logger.info("Starting chat session")
-        self.session_data = self.lab_client.start_session(self.persona_id)
+        self.session_data = self.lab_client.start_session(
+            self.persona_id
+        )
         if not self.session_data:
             self.logger.error("Failed to start session")
             raise self.SessionStartError("Failed to start session")
         self.logger.info("Session started successfully")
+        
+        # Initialize the signalling client
         self.signalling_client = SignallingClient(self.session_data)
-        self.signalling_client.set_on_open_callback(self.on_signalling_open)
-        self.signalling_client.set_on_message_callback(self.on_signalling_message)
+        
+        # Setup RTCPeerConnection once the websocket connection is opened.
+        self.signalling_client.set_on_open_callback(
+            self.on_signalling_open
+        )
+        # Setup message handling: different action types.
+        self.signalling_client.set_on_message_callback(
+            self.on_signalling_message
+        )
 
+        # Connect to the signalling server
         await self.signalling_client.connect()
 
     async def on_signalling_open(self):
@@ -134,14 +159,53 @@ class StreamingClient:
 
         if action_type == ActionType.ANSWER:
             await self.handle_answer(message['payload'])
+            self.connection_received_answer = True
+            await self.flush_remote_ice_candidate_buffer()
         elif action_type == ActionType.ICECANDIDATE:
-            await self.handle_ice_candidate(message['payload'])
+            candidate = self.create_ice_candidate(message['payload'])
+            if self.connection_received_answer:
+                await self.peer_connection.addIceCandidate(candidate)
+            else:
+                self.remote_ice_candidate_buffer.append(candidate)
+
+    async def flush_remote_ice_candidate_buffer(self):
+        for candidate in self.remote_ice_candidate_buffer:
+            await self.peer_connection.addIceCandidate(candidate)
+        self.remote_ice_candidate_buffer.clear()
+
+    def create_ice_candidate(self, payload):
+        """
+        Create an RTCIceCandidate object from the payload.
+
+        Args:
+            payload (Dict): The ICE candidate payload.
+
+        Returns:
+            RTCIceCandidate: The created ICE candidate object.
+        """
+        self.logger.debug("Creating ICE candidate from payload: %s", payload)
+        
+        candidate_parts = payload['candidate'].split(" ")
+        
+        candidate = RTCIceCandidate(
+            component=int(candidate_parts[1]),
+            foundation=candidate_parts[0].split(':')[1],
+            ip=candidate_parts[4],
+            port=int(candidate_parts[5]),
+            priority=int(candidate_parts[3]),
+            protocol=candidate_parts[2],
+            type=candidate_parts[7],
+            sdpMid=payload.get('sdpMid', ''),
+            sdpMLineIndex=payload.get('sdpMLineIndex', 0)
+        )
+        
+        self.logger.debug("Created ICE candidate: %s", candidate)
+        return candidate
 
     async def setup_rtc_connection(self):
-        """Set up the WebRTC peer connection and media tracks."""
         self.logger.info("Setting up RTC connection")
         
-        # Ensure that iceServers is correctly accessed from the session_data
+        # Configure ICE servers (from Anam session data)
         config = RTCConfiguration()
         config.iceServers = []
         for server in self.session_data.get('clientConfig', {}).get('iceServers', []):
@@ -154,75 +218,50 @@ class StreamingClient:
 
         self.peer_connection = RTCPeerConnection(configuration=config)
 
-        # # Set up data channel first
-        self.data_channel = self.peer_connection.createDataChannel("chat")
-        self.data_channel.on("open", self.on_data_channel_open)
-        self.data_channel.on("message", self.on_data_channel_message)
+        # Set up data channel
+        # self.data_channel = self.peer_connection.createDataChannel("chat")
+        # self.data_channel.on("open", self.on_data_channel_open)
+        # self.data_channel.on("message", self.on_data_channel_message)
 
-        @self.peer_connection.on("datachannel")
-        def on_datachannel(channel):
-            self.logger.info("Data channel opened")
-            channel.on("message", self.on_data_channel_message)
+        # @self.peer_connection.on("datachannel")
+        # def on_datachannel(channel):
+        #     self.logger.info("Data channel opened")
+        #     channel.on("message", self.on_data_channel_message)
 
-        # # Attempt to set up audio
-        # audio_added = False
-        # try:
-        #     audio_added = await self.setup_audio()
-        # except self.AudioSetupError:
-        #     self.logger.error("Error setting up audio.")
+        # Set up audio
+        audio_success = await self.setup_audio()
+        if not audio_success:
+            self.logger.warning("Failed to set up audio. Continuing without audio.")
 
-        # if not audio_added:
-        #     self.logger.warning("No audio input available. Proceeding with data channel only.")
+        @self.peer_connection.on("track")
+        def on_track(track):
+            self.logger.info(f"Received {track.kind} track")
+            if track.kind == "audio":
+                self.handle_audio_track(track)
+            elif track.kind == "video":
+                self.handle_video_track(track)
 
         # Create and send offer
         self.logger.info("Creating and sending offer")
-        offer_msg = await self.peer_connection.createOffer()
-        await self.peer_connection.setLocalDescription(offer_msg)
+        offer = await self.peer_connection.createOffer()
         
-        offer_message_payload = {
-            "connectionDescription": {
-                "sdp": offer_msg.sdp,
-                "type": offer_msg.type
-            },
-            "userUid": self.session_data['sessionId']  # Note: This is using sessionId as userUid
-        }
-        offer_msg = {
-            "actionType": ActionType.OFFER.value,
-            "sessionId": self.session_data['sessionId'],
-            "payload": offer_message_payload
-        }
-        self.logger.info("Sending offer message on Websocket: %s", offer_msg)
-        await self.signalling_client.send_message(offer_msg)
+        # Log the SDP for debugging
+        self.logger.debug(f"Offer SDP:\n{offer.sdp}")
+        await self.peer_connection.setLocalDescription(offer)
+        user_uid = self.session_data['sessionId']  # Using sessionId as userUid
+        await self.signalling_client.send_offer(
+            self.peer_connection.localDescription, 
+            user_uid
+        )
 
     async def setup_audio(self):
-        """Set up audio input."""
-        devices = sd.query_devices()
-        input_devices = [d for d in devices if d['max_input_channels'] > 0]
-        
-        if not input_devices:
-            self.logger.error("No audio input devices found.")
-            return False
-
-        self.logger.info("Available audio input devices:")
-        for i, device in enumerate(input_devices):
-            self.logger.info("%d: %s", i, device['name'])
-
-        # Automatically select the first audio device
-        if input_devices:
-            selected_device = input_devices[1]
-            self.logger.info("Automatically selected audio device: %s", selected_device['name'])
-        else:
-            self.logger.warning("No audio input devices found.")
-            return False
-
-        # Create audio track
         try:
-            audio_track = AudioStreamTrack(selected_device['name'])
+            audio_track = AudioStreamTrack(device_name=None)  # Use default device
             self.peer_connection.addTrack(audio_track)
+            self.logger.info("Audio track added successfully")
             return True
         except Exception as e:
-            # raise self.AudioTrackCreationError(f"Failed to create audio track: {str(e)}")
-            self.logger.error("Error creating audio track: %s", e)
+            self.logger.error(f"Failed to set up audio: {str(e)}")
             return False
 
     def on_data_channel_open(self):
@@ -247,53 +286,12 @@ class StreamingClient:
         Args:
             answer_payload (Dict): The SDP answer payload.
         """
+        self.logger.info("Setting remote description with answer: %s", answer_payload)
         answer = RTCSessionDescription(
             sdp=answer_payload['sdp'],
             type=answer_payload['type']
         )
         await self.peer_connection.setRemoteDescription(answer)
-
-    async def handle_ice_candidate(self, candidate_payload: Dict):
-        """
-        Handle ICE candidates received from the remote peer.
-
-        Args:
-            candidate_payload (Dict): The ICE candidate payload.
-        """
-        self.logger.debug("Handling ICE candidate: %s", candidate_payload)
-        
-        # The Candidate answer is a spaced-string that needs to split and mapped 
-        # to the RTCIceCandidate properties
-        candidate_property_index = {
-            1: 'component',
-            2: 'protocol',
-            3: 'priority',
-            4: 'ip',
-            5: 'port',
-            6: 'foundation',
-            7: 'type'
-        }
-        # Parse the candidate string
-        candidate_parts = candidate_payload['candidate'].split(" ")
-        # Log the candidate's untangled parts
-        for i, v in candidate_property_index.items():
-            self.logger.debug("Candidate part %s (%d): %s", v, i, candidate_parts[i])
-        
-        candidate = RTCIceCandidate(
-            component=int(candidate_parts[1]),
-            foundation=candidate_parts[0].split(':')[1],
-            ip=candidate_parts[4],
-            port=int(candidate_parts[5]),
-            priority=int(candidate_parts[3]),
-            protocol=candidate_parts[2],
-            type=candidate_parts[7],
-            sdpMid=candidate_payload.get('sdpMid', ''),
-            sdpMLineIndex=candidate_payload.get('sdpMLineIndex', 0)
-        )
-        
-        self.logger.info("Adding ICE candidate to peer connection: %s", candidate)
-        await self.peer_connection.addIceCandidate(candidate)
-        self.logger.info("ICE candidate added to peer connection.")
 
     async def send_message(self, message: str):
         """
@@ -320,3 +318,81 @@ class StreamingClient:
             await self.signalling_client.ws.close()
         if self.data_channel:
             self.data_channel.close()
+        if self.audio_player:
+            self.audio_player.stop()
+        pygame.quit()
+
+    def handle_audio_track(self, track):
+        """Set up audio playback for the given track."""
+        self.logger.info("Setting up audio playback")
+        self.audio_player = MediaPlayer(track)
+        self.audio_player.start()
+
+    def handle_video_track(self, track):
+        self.logger.info("Setting up video display")
+        pygame.init()
+        self.video_surface = pygame.display.set_mode((640, 480))
+        pygame.display.set_caption("Anam Video Chat")
+
+        async def display_video():
+            while True:
+                frame = await track.recv()
+                if frame:
+                    img = frame.to_ndarray(format="bgr24")
+                    img = np.rot90(img)
+                    surface = pygame.surfarray.make_surface(img)
+                    self.video_surface.blit(surface, (0, 0))
+                    pygame.display.flip()
+                await asyncio.sleep(0.01)
+
+        asyncio.create_task(display_video())
+
+    async def init_peer_connection_and_send_offer(self):
+        await self.init_peer_connection()
+
+        if not self.peer_connection:
+            self.logger.error("StreamingClient - init_peer_connection_and_send_offer: peer connection is not initialized")
+            return
+
+        # Create offer and set local description
+        offer_msg = await self.peer_connection.createOffer()
+        await self.peer_connection.setLocalDescription(offer_msg)
+
+        offer_message_payload = {
+            "connectionDescription": {
+                "sdp": offer_msg.sdp,
+                "type": offer_msg.type
+            },
+            "userUid": self.session_data['sessionId']  # Note: This is using sessionId as userUid
+        }
+        offer_msg = {
+            "actionType": ActionType.OFFER.value,
+            "sessionId": self.session_data['sessionId'],
+            "payload": offer_message_payload
+        }
+        await self.signalling_client.send_message(offer_msg)
+
+    async def init_peer_connection(self):
+        self.peer_connection = RTCPeerConnection(configuration=RTCConfiguration(iceServers=self.ice_servers))
+        
+        # Set up event handlers
+        @self.peer_connection.on("icecandidate")
+        def on_ice_candidate(event):
+            if event.candidate:
+                self.signalling_client.send_ice_candidate(event.candidate)
+
+        @self.peer_connection.on("track")
+        def on_track(track):
+            self.handle_track(track)
+
+        # Set up data channel
+        self.data_channel = self.peer_connection.createDataChannel("chat")
+        self.data_channel.on("open", self.on_data_channel_open)
+        self.data_channel.on("message", self.on_data_channel_message)
+
+        # Add transceivers
+        self.peer_connection.addTransceiver("video", direction="recvonly")
+        self.peer_connection.addTransceiver("audio", direction="sendrecv")
+
+        # Set up audio (if needed)
+        await self.setup_audio()
