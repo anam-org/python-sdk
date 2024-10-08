@@ -17,6 +17,7 @@ async def main():
 
     streaming_client = StreamingClient(anam_client, josh.id)
     await streaming_client.start()
+    # await streaming_client.send_test_message()
 
     # Keep the connection alive for a while
     await asyncio.sleep(60)
@@ -26,3 +27,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+

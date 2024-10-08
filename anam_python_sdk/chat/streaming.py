@@ -11,6 +11,7 @@ Exceptions:
 """
 import asyncio
 import logging
+import wave
 from typing import Dict, Optional
 import sounddevice as sd
 import numpy as np
@@ -29,6 +30,8 @@ from aiortc import (
 from aiortc.contrib.media import MediaRecorder, MediaStreamTrack
 from anam_python_sdk.api.clients import AnamClient
 from anam_python_sdk.chat.signaling import SignallingClient, ActionType
+from aiortc.mediastreams import MediaStreamError
+
 
 class AudioStreamTrack(MediaStreamTrack):
     """Audio stream track for handling audio data."""
@@ -37,21 +40,41 @@ class AudioStreamTrack(MediaStreamTrack):
     def __init__(self, device_name):
         super().__init__()
         self.device_name = device_name
-        try:
-            self.stream = sd.InputStream(device=device_name, channels=1, samplerate=48000, blocksize=960)
-            self.stream.start()
-        except sd.PortAudioError as e:
-            logging.error(f"PortAudio error when initializing device {device_name}: {str(e)}")
-            raise
+        self.stream = sd.InputStream(
+            device=device_name, 
+            channels=1, 
+            samplerate=48000, 
+            blocksize=960
+        )
+        self.stream.start()
+        self.is_speaking = False
+        self.silence_threshold = 0.02  # Adjust this value as needed
+        logging.info(f"AudioStreamTrack initialized with device: {device_name}")
 
     async def recv(self):
         """Continuously read audio data from the microphone and return it as an audio frame."""
         try:
+            audio_data = self.stream.read(960)[0]
+            logging.debug(f"Audio data captured: {audio_data[:10]}...")  # Log first 10 samples for brevity
             frame = av.AudioFrame.from_ndarray(
-                self.stream.read(960)[0], format='s16', layout='mono'
+                audio_data,
+                format='s16', 
+                layout='mono'
             )
             frame.pts = None
             frame.time_base = av.Rational(1, 48000)
+
+            # Check if speaking
+            audio_level = np.abs(audio_data).mean()
+            if audio_level > self.silence_threshold:
+                if not self.is_speaking:
+                    self.is_speaking = True
+                    logging.info("Speaking started")
+            else:
+                if self.is_speaking:
+                    self.is_speaking = False
+                    logging.info("Speaking stopped")
+
             return frame
         except Exception as e:
             logging.error(f"Error reading audio data: {str(e)}")
@@ -84,9 +107,14 @@ class StreamingClient:
         self.logger = self._setup_logger()
         self.logger.info("Initializing AnamChatClient for persona_id: %s", persona_id)
         self.audio_player = None
+        self.audio_buffer = np.array([], dtype=np.float32)
         self.video_surface = None
         self.connection_received_answer = False
         self.remote_ice_candidate_buffer = []
+        self.audio_tasks = []
+        self.speaking_to_avatar = False
+        self.avatar_speaking = False
+        self.remote_description_set = False
 
     class SessionStartError(Exception):
         """Exception raised when a session fails to start."""
@@ -163,6 +191,7 @@ class StreamingClient:
             await self.flush_remote_ice_candidate_buffer()
         elif action_type == ActionType.ICECANDIDATE:
             candidate = self.create_ice_candidate(message['payload'])
+            self.logger.info(f"Received new ice candidate with state: {self.peer_connection.iceConnectionState} and candidate: {candidate}")
             if self.connection_received_answer:
                 await self.peer_connection.addIceCandidate(candidate)
             else:
@@ -172,7 +201,7 @@ class StreamingClient:
         for candidate in self.remote_ice_candidate_buffer:
             await self.peer_connection.addIceCandidate(candidate)
         self.remote_ice_candidate_buffer.clear()
-
+    
     def create_ice_candidate(self, payload):
         """
         Create an RTCIceCandidate object from the payload.
@@ -203,9 +232,31 @@ class StreamingClient:
         return candidate
 
     async def setup_rtc_connection(self):
+        """
+        Set up the RTC (Real-Time Communication) connection.
+
+        This method configures the RTCPeerConnection with ICE servers from the Anam session,
+        sets up event handlers for incoming tracks, initializes data, audio, and video channels, creates an offer, and sends it through the signalling client.
+
+        The method performs the following steps:
+        1. Configures ICE servers using data from the Anam session.
+        2. Creates an RTCPeerConnection with the configured ICE servers.
+        3. Sets up an event handler for incoming tracks (audio and video).
+        4. Initializes data, audio, and video channels.
+        5. Creates an offer for the peer connection.
+        6. Sets the local description of the peer connection.
+        7. Sends the offer through the signalling client.
+
+        Raises:
+            Warning: If any of the channel setups (data, audio, video) fail.
+
+        Note:
+            This method is crucial for establishing the WebRTC connection and should be
+            called before any media transmission can occur.
+        """
         self.logger.info("Setting up RTC connection")
         
-        # Configure ICE servers (from Anam session data)
+        # Configure ICE servers (from Anam session object)
         config = RTCConfiguration()
         config.iceServers = []
         for server in self.session_data.get('clientConfig', {}).get('iceServers', []):
@@ -218,52 +269,130 @@ class StreamingClient:
 
         self.peer_connection = RTCPeerConnection(configuration=config)
 
-        # Set up data channel
-        # self.data_channel = self.peer_connection.createDataChannel("chat")
-        # self.data_channel.on("open", self.on_data_channel_open)
-        # self.data_channel.on("message", self.on_data_channel_message)
-
-        # @self.peer_connection.on("datachannel")
-        # def on_datachannel(channel):
-        #     self.logger.info("Data channel opened")
-        #     channel.on("message", self.on_data_channel_message)
-
-        # Set up audio
-        audio_success = await self.setup_audio()
-        if not audio_success:
-            self.logger.warning("Failed to set up audio. Continuing without audio.")
-
+        # Log ICE connection state changes
+        @self.peer_connection.on("iceconnectionstatechange")
+        def on_ice_connection_state_change():
+            state = self.peer_connection.iceConnectionState
+            self.logger.info(f"ICE connection state changed: {state}")
+            if state == "failed":
+                self.logger.error("ICE connection failed. Check network configuration and ICE server settings.")
+            elif state == "disconnected":
+                self.logger.warning("ICE connection disconnected. Attempting to reconnect...")
+            elif state == "completed":
+                self.logger.info("ICE connection completed successfully.")
+        
         @self.peer_connection.on("track")
         def on_track(track):
-            self.logger.info(f"Received {track.kind} track")
+            self.logger.info("Received %s track", track.kind)
             if track.kind == "audio":
-                self.handle_audio_track(track)
+                asyncio.create_task(self.handle_incoming_track(track))
             elif track.kind == "video":
                 self.handle_video_track(track)
+        # Setup Tracks
+        # data_success: bool = await self.setup_data_channel()
+        audio_success: bool = await self.setup_audio_channel()
+        # video_success: bool = await self.setup_video_channel()
+        
+        # if not audio_success or not data_success or not video_success:
+        #     self.logger.warning(
+        #         "Failed to set up tracks. Audio: %s, Data: %s, Video: %s", 
+        #         str(audio_success),
+        #         str(data_success),
+        #         str(video_success)
+        #     )
 
         # Create and send offer
         self.logger.info("Creating and sending offer")
         offer = await self.peer_connection.createOffer()
-        
-        # Log the SDP for debugging
-        self.logger.debug(f"Offer SDP:\n{offer.sdp}")
-        await self.peer_connection.setLocalDescription(offer)
-        user_uid = self.session_data['sessionId']  # Using sessionId as userUid
-        await self.signalling_client.send_offer(
-            self.peer_connection.localDescription, 
-            user_uid
-        )
 
-    async def setup_audio(self):
-        try:
+        # self.logger.debug("Original Offer SDP:\n %s", offer.sdp)
+
+        # Modify the SDP to use a single set of ICE credentials
+        new_session_desc = RTCSessionDescription(
+            sdp=self.modify_sdp(offer.sdp),
+            type="offer"
+        )
+        # self.logger.debug("Modified Offer SDP:\n  %s", offer.sdp)
+        await self.peer_connection.setLocalDescription(new_session_desc)
+        
+        if self.signalling_client and self.session_data:
+            self.logger.info("Local Decription SDP = new  SDP? %s", self.peer_connection.localDescription.sdp == new_session_desc.sdp)
+
+            # self.logger.info("Original Offer: %s", offer.sdp.split('\r\n'))
+            # self.logger.info("Mofified SDP: %s", new_session_desc.sdp.split('\r\n'))
+            # self.logger.info("Current Local Description: %s", self.peer_connection.localDescription.sdp.split("\r\n"))
+            await self.signalling_client.send_offer(
+                self.peer_connection.localDescription,
+                # offer=new_session_desc,
+                # Using sessionId as userUid
+                user_uid=self.session_data.get('sessionId', '')
+            )
+        else:
+            self.logger.debug(
+                "Cannot send offer: peer connection or session data not available. "
+            )
+
+    async def setup_audio_channel(self) -> bool:
+        self.logger.info("Attempting to set up Audio channel")
+        if self.peer_connection:
+            # Setup track for sending audio
             audio_track = AudioStreamTrack(device_name=None)  # Use default device
+            # Automatically send/receive
             self.peer_connection.addTrack(audio_track)
-            self.logger.info("Audio track added successfully")
+            self.logger.info("Audio channel added successfully in sendrecv mode")
             return True
-        except Exception as e:
-            self.logger.error(f"Failed to set up audio: {str(e)}")
+        else:
+            self.logger.error("Failed to set up audio.")
             return False
 
+    async def setup_video_channel(self) -> bool:
+        """
+        Set up the WebRTC video channel for receiving video.
+
+        This method adds a video transceiver to the peer connection in 'recvonly' mode,
+        allowing the client to receive video from the remote peer but not send any.
+
+        Returns:
+            bool: True if the video channel is set up successfully, False otherwise.
+        Returns:
+            bool: _description_
+        """
+        
+        if self.peer_connection:
+            self.peer_connection.addTransceiver(
+                "video", 
+                direction="recvonly"
+            )
+            self.logger.info("Video channel added successfully")
+            return True
+        else:
+            self.logger.error("Failed to set up video channel.")
+            return False
+
+    async def setup_data_channel(self):
+        """
+        Set up the WebRTC data channel for chat communication.
+
+        This method creates a data channel on the peer connection for sending and receiving chat messages.
+        It also sets up event handlers for the on 'open' and 'message' events on the data channel.
+        """
+        if self.peer_connection:# Set up data channel
+            self.data_channel = self.peer_connection.createDataChannel(
+                label="chat",
+                ordered=True
+            )
+            self.data_channel.on("open", self.on_data_channel_open)
+            self.data_channel.on("message", self.on_data_channel_message)
+            @self.peer_connection.on("datachannel")
+            def on_datachannel(channel):
+                self.logger.info("Data channel opened")
+                channel.on("message", self.on_data_channel_message)
+            self.logger.info("Data channel added successfully")
+            return True
+        else:
+            self.logger.info("Data channel cannot be setup, no peer connection. ")
+            return False
+    
     def on_data_channel_open(self):
         """Callback for when the data channel is opened."""
         self.logger.info("Data channel opened")
@@ -275,9 +404,8 @@ class StreamingClient:
         Args:
             message: The received message.
         """
-        self.logger.info("Received message: %s", message)
-        
-        # Here you can add custom logic to handle incoming messages
+        self.logger.info(f"Received message on data channel: {message}")
+        # You can add more specific logging or validation here
 
     async def handle_answer(self, answer_payload: Dict):
         """
@@ -286,12 +414,16 @@ class StreamingClient:
         Args:
             answer_payload (Dict): The SDP answer payload.
         """
-        self.logger.info("Setting remote description with answer: %s", answer_payload)
-        answer = RTCSessionDescription(
-            sdp=answer_payload['sdp'],
-            type=answer_payload['type']
-        )
-        await self.peer_connection.setRemoteDescription(answer)
+        if not self.remote_description_set:
+            self.logger.info("Setting remote description with answer: %s", answer_payload)
+            answer = RTCSessionDescription(
+                sdp=answer_payload['sdp'],
+                type=answer_payload['type']
+            )
+            await self.peer_connection.setRemoteDescription(answer)
+            self.remote_description_set = True
+        else:
+            self.logger.warning("Remote description already set, ignoring additional answer.")
 
     async def send_message(self, message: str):
         """
@@ -318,16 +450,42 @@ class StreamingClient:
             await self.signalling_client.ws.close()
         if self.data_channel:
             self.data_channel.close()
-        if self.audio_player:
-            self.audio_player.stop()
-        pygame.quit()
+        
+        for task in self.audio_tasks:
+            task.cancel()
+        await asyncio.gather(*self.audio_tasks, return_exceptions=True)
+        
+        # pygame.quit()
 
-    def handle_audio_track(self, track):
-        """Set up audio playback for the given track."""
-        self.logger.info("Setting up audio playback")
-        self.audio_player = MediaPlayer(track)
-        self.audio_player.start()
+    async def handle_audio_track_write(self, track):
+        """Save the audio track to a WAV file."""
+        self.logger.info("Setting up audio saving")
 
+        wav_file = wave.open("received_audio.wav", "wb")
+        wav_file.setnchannels(1)  # Mono audio
+        wav_file.setsampwidth(2)  # 16-bit audio
+        wav_file.setframerate(48000)  # 48 kHz sample rate
+
+        total_frames = 0
+
+        try:
+            self.logger.info("Audio saving started")
+            while True:
+                try:
+                    frame = await track.recv()
+                    audio = frame.to_ndarray().flatten()
+                    audio_int16 = (audio * 32767).astype(np.int16)
+                    wav_file.writeframes(audio_int16.tobytes())
+                    total_frames += len(audio_int16)
+                except MediaStreamError:
+                    break
+        finally:
+            wav_file.setnframes(total_frames)
+            wav_file.writeframes(audio_data)
+            wav_file.close()
+            self.logger.info(f"Audio saving completed. Total frames: {total_frames}")
+        self.logger.info("Audio file saved successfully")
+    
     def handle_video_track(self, track):
         self.logger.info("Setting up video display")
         pygame.init()
@@ -338,6 +496,9 @@ class StreamingClient:
             while True:
                 frame = await track.recv()
                 if frame:
+                    # Log some information about the received frame
+                    self.logger.info(f"Received video frame: pts={frame.pts}, "
+                                     f"format={frame.format.name}, size={frame.width}x{frame.height}")
                     img = frame.to_ndarray(format="bgr24")
                     img = np.rot90(img)
                     surface = pygame.surfarray.make_surface(img)
@@ -347,52 +508,94 @@ class StreamingClient:
 
         asyncio.create_task(display_video())
 
-    async def init_peer_connection_and_send_offer(self):
-        await self.init_peer_connection()
+    def modify_sdp(self, sdp):
+        """
+        Modify the SDP to ensure consistent ICE credentials across media sections.
 
-        if not self.peer_connection:
-            self.logger.error("StreamingClient - init_peer_connection_and_send_offer: peer connection is not initialized")
-            return
+        This function only replaces ice-ufrag and ice-pwd in all media sections
+        with the values from the first media section that has them.
 
-        # Create offer and set local description
-        offer_msg = await self.peer_connection.createOffer()
-        await self.peer_connection.setLocalDescription(offer_msg)
+        Args:
+            sdp (str): The original SDP string.
 
-        offer_message_payload = {
-            "connectionDescription": {
-                "sdp": offer_msg.sdp,
-                "type": offer_msg.type
-            },
-            "userUid": self.session_data['sessionId']  # Note: This is using sessionId as userUid
-        }
-        offer_msg = {
-            "actionType": ActionType.OFFER.value,
-            "sessionId": self.session_data['sessionId'],
-            "payload": offer_message_payload
-        }
-        await self.signalling_client.send_message(offer_msg)
+        Returns:
+            str: The modified SDP string with consistent ICE credentials.
+        """
+        lines = sdp.split('\r\n')
+        modified_lines = []
+        first_ice_ufrag = None
+        first_ice_pwd = None
+        in_media_section = False
 
-    async def init_peer_connection(self):
-        self.peer_connection = RTCPeerConnection(configuration=RTCConfiguration(iceServers=self.ice_servers))
-        
-        # Set up event handlers
-        @self.peer_connection.on("icecandidate")
-        def on_ice_candidate(event):
-            if event.candidate:
-                self.signalling_client.send_ice_candidate(event.candidate)
+        for line in lines:
+            if line.startswith('m='):
+                in_media_section = True
+            
+            if in_media_section:
+                if first_ice_ufrag is None and line.startswith('a=ice-ufrag:'):
+                    first_ice_ufrag = line
+                elif first_ice_pwd is None and line.startswith('a=ice-pwd:'):
+                    first_ice_pwd = line
 
-        @self.peer_connection.on("track")
-        def on_track(track):
-            self.handle_track(track)
+                if line.startswith('a=ice-ufrag:') and first_ice_ufrag:
+                    modified_lines.append(first_ice_ufrag)
+                elif line.startswith('a=ice-pwd:') and first_ice_pwd:
+                    modified_lines.append(first_ice_pwd)
+                else:
+                    modified_lines.append(line)
+            else:
+                modified_lines.append(line)
 
-        # Set up data channel
-        self.data_channel = self.peer_connection.createDataChannel("chat")
-        self.data_channel.on("open", self.on_data_channel_open)
-        self.data_channel.on("message", self.on_data_channel_message)
+        if not first_ice_ufrag or not first_ice_pwd:
+            self.logger.warning("Could not find ice-ufrag and ice-pwd in any media section.")
+            return sdp
 
-        # Add transceivers
-        self.peer_connection.addTransceiver("video", direction="recvonly")
-        self.peer_connection.addTransceiver("audio", direction="sendrecv")
+        modified_sdp = '\r\n'.join(modified_lines)
+        return modified_sdp
 
-        # Set up audio (if needed)
-        await self.setup_audio()
+    async def send_test_message(self):
+        test_message = "Test message from client"
+        if self.data_channel and self.data_channel.readyState == "open":
+            self.data_channel.send(test_message)
+            self.logger.info(f"Sent test message: {test_message}")
+        else:
+            self.logger.warning("Data channel is not open. Test message not sent.")
+
+    async def handle_incoming_track(self, track):
+        if track.kind == "audio":
+            self.logger.info("Received audio track from avatar")
+            audio_task = asyncio.create_task(self.handle_avatar_audio(track))
+            self.audio_tasks.append(audio_task)
+
+    async def handle_avatar_audio(self, track):
+        while True:
+            try:
+                self.logger.info("Awaiting audio ... ")
+                frame = await track.recv()
+                self.logger.info("Playing audio ... ")
+                # Play the audio
+                sd.play(frame.to_ndarray(), samplerate=48000)
+
+
+                if not self.avatar_speaking:
+                    self.avatar_speaking = True
+                    self.logger.info("Avatar started speaking")
+            except MediaStreamError:
+                self.logger.info("Error while playing audio")
+                if self.avatar_speaking:
+                    self.avatar_speaking = False
+                    self.logger.info("Avatar stopped speaking")
+                break
+
+    @property
+    def is_speaking_to_avatar(self):
+        return self.speaking_to_avatar
+
+    @is_speaking_to_avatar.setter
+    def is_speaking_to_avatar(self, value):
+        if value != self.speaking_to_avatar:
+            self.speaking_to_avatar = value
+            if value:
+                self.logger.info("Started speaking to avatar")
+            else:
+                self.logger.info("Stopped speaking to avatar")

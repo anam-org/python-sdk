@@ -5,6 +5,10 @@ from typing import Callable, Dict, Optional, List
 import logging
 import websockets
 from enum import Enum
+import wave
+import numpy as np
+from aiortc import RTCPeerConnection, MediaStreamTrack
+from av import AudioFrame
 
 class ActionType(Enum):
     """Enumeration of action types for signaling."""
@@ -147,11 +151,11 @@ class SignallingClient:
                 await asyncio.sleep(self.heartbeat_interval)
                 continue
             heartbeat_message = {
-                "actionType": ActionType.HEARTBEAT.name,
+                "actionType": ActionType.HEARTBEAT.value,
                 "sessionId": self.session_id,
                 "payload": ""
             }
-            self.logger.debug("Sending heartbeat")
+            self.logger.debug("Sending heartbeat", heartbeat_message)
             await self.ws.send(json.dumps(heartbeat_message))
             await asyncio.sleep(self.heartbeat_interval)
 
@@ -160,7 +164,10 @@ class SignallingClient:
         if self.ws and self.ws.open:
             if 'actionType' in message and isinstance(message['actionType'], ActionType):
                 message['actionType'] = message['actionType'].name
-            self.logger.debug("Sent message: %s", message)
+            
+            # Skip ICECANDIDATE logs for now.
+            if not message['actionType'] == ActionType.ICECANDIDATE.value:
+                self.logger.debug("Sent message: %s", message)
             await self.ws.send(json.dumps(message))
         else:
             self.logger.warning("WebSocket is not connected. Cannot send message.")
