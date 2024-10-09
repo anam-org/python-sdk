@@ -3,12 +3,13 @@
 from typing import Dict, Optional
 
 from dotenv import dotenv_values
-from anam_python_sdk.api.client import AnamClient
+from anam_python_sdk.api.clients import AnamClient
 from anam_python_sdk.api.personas.max import cfg as maxcfg
 from anam_python_sdk.api.personas.christian import cfg as christiancfg
 from anam_python_sdk.api.personas.justice import cfg as justicecfg
 from anam_python_sdk.api.personas.kai import cfg as kaicfg
 from anam_python_sdk.api.personas.josh import cfg as joshcfg
+from anam_python_sdk.api.personas.mina import cfg as minacfg
 
 
 def print_persona_presets(client: AnamClient):
@@ -32,14 +33,14 @@ def main():
     api_cfg: Dict[str, Optional[str]] = dotenv_values(".env")
     client = AnamClient(cfg=api_cfg)
 
-
-
     # print(joshcfg)
 
     # josh = client.create_persona(joshpersona)
-    
+    # mina = client.create_persona(minacfg)
 
+    # print(mina)
     client.update_persona(joshcfg)
+    # client.update_persona(minacfg)
 
     # Get Presets
     # print_persona_presets(client)
@@ -67,6 +68,7 @@ def main():
 
     # Print personas
     
+
 
 
 if __name__ == "__main__":

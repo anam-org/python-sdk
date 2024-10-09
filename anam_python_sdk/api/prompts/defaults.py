@@ -1,5 +1,56 @@
 """Default prompts and phrases for the client module."""
 
+DEFAULT_PRESETS = [
+  {
+    "name": "leo_desk"
+  },
+  {
+    "name": "leo_windowdesk"
+  },
+  {
+    "name": "leo_windowsofacorner"
+  },
+  {
+    "name": "alister_desk"
+  },
+  {
+    "name": "alister_windowdesk"
+  },
+  {
+    "name": "alister_windowsofa"
+  },
+  {
+    "name": "astrid_desk"
+  },
+  {
+    "name": "astrid_windowdesk"
+  },
+  {
+    "name": "astrid_windowsofacorner"
+  },
+  {
+    "name": "cara_desk"
+  },
+  {
+    "name": "cara_windowdesk"
+  },
+  {
+    "name": "cara_windowsofa"
+  },
+  {
+    "name": "evelyn_desk"
+  },
+  {
+    "name": "pablo_desk"
+  },
+  {
+    "name": "pablo_windowdesk"
+  },
+  {
+    "name": "pablo_windowsofa"
+  }
+]
+
 DEFAULT_FILLER_PHRASES = [
     'Thank you.', 
     'Okay, got it.', 
@@ -109,11 +160,11 @@ Sign up to the waitlist for access. We’re launching our paid plans in the comi
 *note: once access is available we’d want to update this to say XYZ*
 """
 
-DEFAULT_STYLE_GUIDE = """- Do not break character.
+DEFAULT_STYLE_GUIDE = """- Pronounce Anam as (a-nahm).
+- Do not break character.
 - Personalize the conversation by referencing the user's previous comments and ideas.
 - Do not provide lists of information.
 - Adapt your background knowledge to the context of the user.
 - Optimize responses for real-time voice and video conversations.
-- Pronounce Anam as (a-nahm).
 - Show emotional intelligence by recognizing if the user feels overwhelmed or confused, and adjust accordingly.
 """
