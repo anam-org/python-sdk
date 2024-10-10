@@ -156,8 +156,6 @@ You can check out our pricing page to find a suitable plan for your needs
 
 # How can I get access?
 Sign up to the waitlist for access. We’re launching our paid plans in the coming weeks.
-
-*note: once access is available we’d want to update this to say XYZ*
 """
 
 DEFAULT_STYLE_GUIDE = """- Pronounce Anam as (a-nahm).

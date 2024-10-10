@@ -9,6 +9,7 @@ from anam_python_sdk.api.personas.christian import cfg as christiancfg
 from anam_python_sdk.api.personas.justice import cfg as justicecfg
 from anam_python_sdk.api.personas.kai import cfg as kaicfg
 from anam_python_sdk.api.personas.leo import cfg as leocfg
+from anam_python_sdk.api.personas.josh import cfg as joshcfg
 from anam_python_sdk.api.personas.mina import cfg as minacfg
 
 
@@ -40,7 +41,8 @@ def main():
     # mina = client.create_persona(minacfg)
 
     # print(mina)
-    client.update_persona(leocfg)
+    # client.update_persona(leocfg)
+    client.update_persona(joshcfg)
     # client.update_persona(minacfg)
 
     # Get Presets
