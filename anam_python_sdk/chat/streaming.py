@@ -31,6 +31,9 @@ from aiortc.contrib.media import MediaRecorder, MediaStreamTrack
 from anam_python_sdk.api.clients import AnamClient
 from anam_python_sdk.chat.signaling import SignallingClient, ActionType
 from aiortc.mediastreams import MediaStreamError
+from anam_python_sdk.chat.handlers.audio import AudioHandler
+from anam_python_sdk.chat.handlers.video import VideoHandler
+from anam_python_sdk.chat.handlers.text import TextHandler
 
 
 class AudioStreamTrack(MediaStreamTrack):
@@ -101,19 +104,14 @@ class StreamingClient:
         self.signalling_client: Optional[SignallingClient] = None
         self.peer_connection: Optional[RTCPeerConnection] = None
         self.session_data: Optional[Dict] = {}
-        self.audio_recorder: Optional[MediaRecorder] = None
-        self.video_recorder: Optional[MediaRecorder] = None
         self.data_channel: Optional[RTCDataChannel] = None
         self.logger = self._setup_logger()
-        self.logger.info("Initializing AnamChatClient for persona_id: %s", persona_id)
-        self.audio_player = None
-        self.audio_buffer = np.array([], dtype=np.float32)
-        self.video_surface = None
+        self.logger.debug("Initializing AnamChatClient for persona_id: %s", persona_id)
+        self.audio_handler = AudioHandler(self.logger)
+        self.video_handler = VideoHandler(self.logger)
+        self.text_handler = TextHandler(self.logger)
         self.connection_received_answer = False
         self.remote_ice_candidate_buffer = []
-        self.audio_tasks = []
-        self.speaking_to_avatar = False
-        self.avatar_speaking = False
         self.remote_description_set = False
 
     class SessionStartError(Exception):
@@ -146,14 +144,14 @@ class StreamingClient:
         Raises:
             Exception: If the session fails to start.
         """
-        self.logger.info("Starting chat session")
+        self.logger.debug("Starting chat session")
         self.session_data = self.lab_client.start_session(
             self.persona_id
         )
         if not self.session_data:
             self.logger.error("Failed to start session")
             raise self.SessionStartError("Failed to start session")
-        self.logger.info("Session started successfully")
+        self.logger.debug("Session started successfully")
         
         # Initialize the signalling client
         self.signalling_client = SignallingClient(self.session_data)
@@ -172,7 +170,7 @@ class StreamingClient:
 
     async def on_signalling_open(self):
         """Callback for when the signalling connection is opened."""
-        self.logger.info("Signalling connection opened")
+        self.logger.debug("Signalling connection opened")
         await self.setup_rtc_connection()
 
     async def on_signalling_message(self, message: Dict):
@@ -191,7 +189,7 @@ class StreamingClient:
             await self.flush_remote_ice_candidate_buffer()
         elif action_type == ActionType.ICECANDIDATE:
             candidate = self.create_ice_candidate(message['payload'])
-            self.logger.info(f"Received new ice candidate with state: {self.peer_connection.iceConnectionState} and candidate: {candidate}")
+            self.logger.debug(f"Received new ice candidate with state: {self.peer_connection.iceConnectionState} and candidate: {candidate}")
             if self.connection_received_answer:
                 await self.peer_connection.addIceCandidate(candidate)
             else:
@@ -239,7 +237,7 @@ class StreamingClient:
         sets up event handlers for incoming tracks, initializes data, audio, and video channels, creates an offer, and sends it through the signalling client.
 
         The method performs the following steps:
-        1. Configures ICE servers using data from the Anam session.
+        1. Configures ICE servers using data from the Anam session object.
         2. Creates an RTCPeerConnection with the configured ICE servers.
         3. Sets up an event handler for incoming tracks (audio and video).
         4. Initializes data, audio, and video channels.
@@ -254,7 +252,7 @@ class StreamingClient:
             This method is crucial for establishing the WebRTC connection and should be
             called before any media transmission can occur.
         """
-        self.logger.info("Setting up RTC connection")
+        self.logger.debug("Setting up RTC connection")
         
         # Configure ICE servers (from Anam session object)
         config = RTCConfiguration()
@@ -273,21 +271,21 @@ class StreamingClient:
         @self.peer_connection.on("iceconnectionstatechange")
         def on_ice_connection_state_change():
             state = self.peer_connection.iceConnectionState
-            self.logger.info(f"ICE connection state changed: {state}")
+            self.logger.debug(f"ICE connection state changed: {state}")
             if state == "failed":
                 self.logger.error("ICE connection failed. Check network configuration and ICE server settings.")
             elif state == "disconnected":
                 self.logger.warning("ICE connection disconnected. Attempting to reconnect...")
             elif state == "completed":
-                self.logger.info("ICE connection completed successfully.")
+                self.logger.debug("ICE connection completed successfully.")
         
         @self.peer_connection.on("track")
         def on_track(track):
-            self.logger.info("Received %s track", track.kind)
+            self.logger.debug("Received %s track", track.kind)
             if track.kind == "audio":
-                asyncio.create_task(self.handle_incoming_track(track))
+                asyncio.create_task(self.audio_handler.handle_avatar_audio(track))
             elif track.kind == "video":
-                self.handle_video_track(track)
+                self.video_handler.handle_video_track(track)
         # Setup Tracks
         # data_success: bool = await self.setup_data_channel()
         audio_success: bool = await self.setup_audio_channel()
@@ -302,7 +300,7 @@ class StreamingClient:
         #     )
 
         # Create and send offer
-        self.logger.info("Creating and sending offer")
+        self.logger.debug("Creating and sending offer")
         offer = await self.peer_connection.createOffer()
 
         # self.logger.debug("Original Offer SDP:\n %s", offer.sdp)
@@ -316,11 +314,11 @@ class StreamingClient:
         await self.peer_connection.setLocalDescription(new_session_desc)
         
         if self.signalling_client and self.session_data:
-            self.logger.info("Local Decription SDP = new  SDP? %s", self.peer_connection.localDescription.sdp == new_session_desc.sdp)
+            self.logger.debug("Local Decription SDP = new  SDP? %s", self.peer_connection.localDescription.sdp == new_session_desc.sdp)
 
-            # self.logger.info("Original Offer: %s", offer.sdp.split('\r\n'))
-            # self.logger.info("Mofified SDP: %s", new_session_desc.sdp.split('\r\n'))
-            # self.logger.info("Current Local Description: %s", self.peer_connection.localDescription.sdp.split("\r\n"))
+            # self.logger.debug("Original Offer: %s", offer.sdp.split('\r\n'))
+            # self.logger.debug("Mofified SDP: %s", new_session_desc.sdp.split('\r\n'))
+            # self.logger.debug("Current Local Description: %s", self.peer_connection.localDescription.sdp.split("\r\n"))
             await self.signalling_client.send_offer(
                 self.peer_connection.localDescription,
                 # offer=new_session_desc,
@@ -333,13 +331,13 @@ class StreamingClient:
             )
 
     async def setup_audio_channel(self) -> bool:
-        self.logger.info("Attempting to set up Audio channel")
+        self.logger.debug("Attempting to set up Audio channel")
         if self.peer_connection:
             # Setup track for sending audio
             audio_track = AudioStreamTrack(device_name=None)  # Use default device
             # Automatically send/receive
             self.peer_connection.addTrack(audio_track)
-            self.logger.info("Audio channel added successfully in sendrecv mode")
+            self.logger.debug("Audio channel added successfully in sendrecv mode")
             return True
         else:
             self.logger.error("Failed to set up audio.")
@@ -363,7 +361,7 @@ class StreamingClient:
                 "video", 
                 direction="recvonly"
             )
-            self.logger.info("Video channel added successfully")
+            self.logger.debug("Video channel added successfully")
             return True
         else:
             self.logger.error("Failed to set up video channel.")
@@ -382,30 +380,20 @@ class StreamingClient:
                 ordered=True
             )
             self.data_channel.on("open", self.on_data_channel_open)
-            self.data_channel.on("message", self.on_data_channel_message)
+            self.data_channel.on("message", self.text_handler.on_data_channel_message)
             @self.peer_connection.on("datachannel")
             def on_datachannel(channel):
-                self.logger.info("Data channel opened")
-                channel.on("message", self.on_data_channel_message)
-            self.logger.info("Data channel added successfully")
+                self.logger.debug("Data channel opened")
+                channel.on("message", self.text_handler.on_data_channel_message)
+            self.logger.debug("Data channel added successfully")
             return True
         else:
-            self.logger.info("Data channel cannot be setup, no peer connection. ")
+            self.logger.debug("Data channel cannot be setup, no peer connection. ")
             return False
     
     def on_data_channel_open(self):
         """Callback for when the data channel is opened."""
-        self.logger.info("Data channel opened")
-
-    def on_data_channel_message(self, message):
-        """
-        Handle incoming messages on the data channel.
-
-        Args:
-            message: The received message.
-        """
-        self.logger.info(f"Received message on data channel: {message}")
-        # You can add more specific logging or validation here
+        self.logger.debug("Data channel opened")
 
     async def handle_answer(self, answer_payload: Dict):
         """
@@ -415,7 +403,7 @@ class StreamingClient:
             answer_payload (Dict): The SDP answer payload.
         """
         if not self.remote_description_set:
-            self.logger.info("Setting remote description with answer: %s", answer_payload)
+            self.logger.debug("Setting remote description with answer: %s", answer_payload)
             answer = RTCSessionDescription(
                 sdp=answer_payload['sdp'],
                 type=answer_payload['type']
@@ -434,32 +422,25 @@ class StreamingClient:
         """
         if self.data_channel and self.data_channel.readyState == "open":
             self.data_channel.send(message)
-            self.logger.info(f"Sent message: {message}")
+            self.logger.debug(f"Sent message: {message}")
         else:
             self.logger.warning("Data channel is not open. Message not sent.")
 
     async def stop(self):
         """Stop the chat session and clean up resources."""
-        if self.audio_recorder:
-            await self.audio_recorder.stop()
-        if self.video_recorder:
-            await self.video_recorder.stop()
+        if self.data_channel:
+            self.data_channel.close()
+        
         if self.peer_connection:
             await self.peer_connection.close()
         if self.signalling_client:
             await self.signalling_client.ws.close()
-        if self.data_channel:
-            self.data_channel.close()
-        
-        for task in self.audio_tasks:
-            task.cancel()
-        await asyncio.gather(*self.audio_tasks, return_exceptions=True)
         
         # pygame.quit()
 
     async def handle_audio_track_write(self, track):
         """Save the audio track to a WAV file."""
-        self.logger.info("Setting up audio saving")
+        self.logger.debug("Setting up audio saving")
 
         wav_file = wave.open("received_audio.wav", "wb")
         wav_file.setnchannels(1)  # Mono audio
@@ -469,7 +450,7 @@ class StreamingClient:
         total_frames = 0
 
         try:
-            self.logger.info("Audio saving started")
+            self.logger.debug("Audio saving started")
             while True:
                 try:
                     frame = await track.recv()
@@ -483,11 +464,11 @@ class StreamingClient:
             wav_file.setnframes(total_frames)
             wav_file.writeframes(audio_data)
             wav_file.close()
-            self.logger.info(f"Audio saving completed. Total frames: {total_frames}")
-        self.logger.info("Audio file saved successfully")
+            self.logger.debug(f"Audio saving completed. Total frames: {total_frames}")
+        self.logger.debug("Audio file saved successfully")
     
     def handle_video_track(self, track):
-        self.logger.info("Setting up video display")
+        self.logger.debug("Setting up video display")
         pygame.init()
         self.video_surface = pygame.display.set_mode((640, 480))
         pygame.display.set_caption("Anam Video Chat")
@@ -497,7 +478,7 @@ class StreamingClient:
                 frame = await track.recv()
                 if frame:
                     # Log some information about the received frame
-                    self.logger.info(f"Received video frame: pts={frame.pts}, "
+                    self.logger.debug(f"Received video frame: pts={frame.pts}, "
                                      f"format={frame.format.name}, size={frame.width}x{frame.height}")
                     img = frame.to_ndarray(format="bgr24")
                     img = np.rot90(img)
@@ -557,34 +538,34 @@ class StreamingClient:
         test_message = "Test message from client"
         if self.data_channel and self.data_channel.readyState == "open":
             self.data_channel.send(test_message)
-            self.logger.info(f"Sent test message: {test_message}")
+            self.logger.debug(f"Sent test message: {test_message}")
         else:
             self.logger.warning("Data channel is not open. Test message not sent.")
 
     async def handle_incoming_track(self, track):
         if track.kind == "audio":
-            self.logger.info("Received audio track from avatar")
+            self.logger.debug("Received audio track from avatar")
             audio_task = asyncio.create_task(self.handle_avatar_audio(track))
             self.audio_tasks.append(audio_task)
 
     async def handle_avatar_audio(self, track):
         while True:
             try:
-                self.logger.info("Awaiting audio ... ")
+                self.logger.debug("Awaiting audio ... ")
                 frame = await track.recv()
-                self.logger.info("Playing audio ... ")
+                self.logger.debug("Playing audio ... ")
                 # Play the audio
                 sd.play(frame.to_ndarray(), samplerate=48000)
 
 
                 if not self.avatar_speaking:
                     self.avatar_speaking = True
-                    self.logger.info("Avatar started speaking")
+                    self.logger.debug("Avatar started speaking")
             except MediaStreamError:
-                self.logger.info("Error while playing audio")
+                self.logger.debug("Error while playing audio")
                 if self.avatar_speaking:
                     self.avatar_speaking = False
-                    self.logger.info("Avatar stopped speaking")
+                    self.logger.debug("Avatar stopped speaking")
                 break
 
     @property
@@ -596,6 +577,6 @@ class StreamingClient:
         if value != self.speaking_to_avatar:
             self.speaking_to_avatar = value
             if value:
-                self.logger.info("Started speaking to avatar")
+                self.logger.debug("Started speaking to avatar")
             else:
-                self.logger.info("Stopped speaking to avatar")
+                self.logger.debug("Stopped speaking to avatar")

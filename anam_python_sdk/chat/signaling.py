@@ -27,7 +27,7 @@ class SignallingClient:
         self.session_info = session_info
         self.websocket_url = self._construct_websocket_url()
         self.logger = self._setup_logger()
-        self.logger.info(
+        self.logger.debug(
             "Initializing SignallingClient with websocket URL: %s", self.websocket_url
         )
         self.session_id = session_info['sessionId']
@@ -93,14 +93,14 @@ class SignallingClient:
 
     async def connect(self):
         """Establish a WebSocket connection to the specified URL."""
-        self.logger.info("Attempting to connect to WebSocket: %s", self.websocket_url)
+        self.logger.debug("Attempting to connect to WebSocket: %s", self.websocket_url)
         self.ws = await websockets.connect(self.websocket_url)
-        self.logger.info("WebSocket connection established")
+        self.logger.debug("WebSocket connection established")
         await self._on_open()
         await self._handle_messages()
 
     async def _on_open(self):
-        self.logger.info("WebSocket connection opened")
+        self.logger.debug("WebSocket connection opened")
         self._start_heartbeat()
         if self.on_open_callback:
             await self.on_open_callback()
@@ -199,7 +199,7 @@ class SignallingClient:
             "payload": offer_message_payload
         }
         # Already logged in _on_message
-        # self.logger.info("Sending offer message on WebSocket: %s", offer_msg)
+        # self.logger.debug("Sending offer message on WebSocket: %s", offer_msg)
         await self.send_message(offer_msg)
 
 # Example usage

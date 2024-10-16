@@ -4,6 +4,7 @@ from typing import Dict, Optional
 
 from dotenv import dotenv_values
 from anam_python_sdk.api.clients import AnamClient
+from anam_python_sdk.api.entities import Persona
 from anam_python_sdk.chat.streaming import StreamingClient
 
 async def main():
@@ -11,16 +12,17 @@ async def main():
     api_cfg: Dict[str, Optional[str]] = dotenv_values(".env")
     anam_client = AnamClient(cfg=api_cfg)
 
-    josh = anam_client.get_persona_by_name("josh")[0]
-    if josh.id is None:
+    persona_name: str = "cara"
+    p: Persona = anam_client.get_persona_by_name(f"{persona_name}")[0]
+    if p.id is None:
         raise ValueError("No persona ID found")
 
-    streaming_client = StreamingClient(anam_client, josh.id)
+    streaming_client = StreamingClient(anam_client, p.id)
     await streaming_client.start()
     # await streaming_client.send_test_message()
 
     # Keep the connection alive for a while
-    await asyncio.sleep(60)
+    await asyncio.sleep(15)
 
     # Stop the client
     await streaming_client.stop()
