@@ -22,11 +22,10 @@ async def main():
     # await streaming_client.send_test_message()
 
     # Keep the connection alive for a while
-    await asyncio.sleep(15)
+    await asyncio.sleep(60)
 
     # Stop the client
     await streaming_client.stop()
 
 if __name__ == "__main__":
     asyncio.run(main())
-

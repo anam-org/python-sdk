@@ -1,11 +1,24 @@
-import asyncio
+"""Handlers for audio data in the webRTC connection."""
 import logging
-import sounddevice as sd
-import numpy as np
 import wave
+
+import av
+import numpy as np
+import sounddevice as sd
+from aiortc.contrib.media import MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
 
+class AudioSetupError(Exception):
+    """Exception raised when audio setup fails."""
+class AudioTrackCreationError(Exception):
+    """Exception raised when an AudioTrack cannot be created."""
+
 class AudioHandler:
+    """
+    AudioHandler class for handling audio data in the webRTC connection.
+
+    This class is responsible for handling audio data, including playing and saving audio.
+    """
     def __init__(self, logger: logging.Logger):
         self.logger = logger
         self.audio_tasks = []
@@ -56,3 +69,40 @@ class AudioHandler:
             wav_file.close()
             self.logger.debug(f"Audio saving completed. Total frames: {total_frames}")
         self.logger.debug("Audio file saved successfully")
+
+class AudioStreamTrack(MediaStreamTrack):
+    """Audio stream track for handling audio data."""
+    kind = "audio"
+
+    def __init__(self, device_name, audio_handler):
+        super().__init__()
+        self.device_name = device_name
+        self.audio_handler = audio_handler
+        self.stream = sd.InputStream(
+            device=device_name, 
+            channels=1, 
+            samplerate=48000, 
+            blocksize=960
+        )
+        self.stream.start()
+        logging.info(f"AudioStreamTrack initialized with device: {device_name}")
+
+    async def recv(self):
+        """Continuously read audio data from the microphone and return it as an audio frame."""
+        try:
+            audio_data = self.stream.read(960)[0]
+            frame = av.AudioFrame.from_ndarray(
+                audio_data,
+                format='s16', 
+                layout='mono'
+            )
+            frame.pts = None
+            frame.time_base = av.Rational(1, 48000)
+
+            # Delegate speaking detection to the audio handler
+            self.audio_handler.process_audio_data(audio_data)
+
+            return frame
+        except Exception as e:
+            logging.error(f"Error reading audio data: {str(e)}")
+            raise
