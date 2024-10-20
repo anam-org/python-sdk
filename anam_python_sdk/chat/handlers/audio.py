@@ -79,9 +79,9 @@ class AudioStreamTrack(MediaStreamTrack):
         self.device_name = device_name
         self.audio_handler = audio_handler
         self.stream = sd.InputStream(
-            device=device_name, 
-            channels=1, 
-            samplerate=48000, 
+            device=device_name,
+            channels=1,
+            samplerate=48000,
             blocksize=960
         )
         self.stream.start()

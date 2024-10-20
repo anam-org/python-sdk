@@ -56,10 +56,12 @@ class StreamingClient:
         self.signalling_client: Optional[SignallingClient] = None
         self.peer_connection: Optional[RTCPeerConnection] = None
         self.session_data: Optional[Dict] = {}
-        self.data_channel: Optional[RTCDataChannel] = None
         self.connection_received_answer = False
         self.remote_ice_candidate_buffer = []
         self.remote_description_set = False
+        self.use_data_channel = True
+        self.use_audio_channel = True
+        self.use_video_channel = True
 
         # Event Handlers
         self.audio_handler = AudioHandler(self.logger)
@@ -103,6 +105,7 @@ class StreamingClient:
 
         # Setup RTCPeerConnection once the websocket connection is opened.
         self.signalling_client.set_on_open_callback(self.on_signalling_open)
+
         # Setup message handling: different action types.
         self.signalling_client.set_on_message_callback(self.on_signalling_message)
 
@@ -111,9 +114,6 @@ class StreamingClient:
 
     async def stop(self):
         """Stop the chat session and clean up resources."""
-        if self.data_channel:
-            self.data_channel.close()
-
         if self.peer_connection:
             await self.peer_connection.close()
         if self.signalling_client:
@@ -141,9 +141,9 @@ class StreamingClient:
         elif action_type == ActionType.ICECANDIDATE:
             candidate = self.create_ice_candidate(message["payload"])
             self.logger.debug(
-                "Received new ice candidate with state: %s and candidate: %s",
+                "Received new ice candidate with state: %s",
                 self.peer_connection.iceConnectionState,
-                candidate,
+                # candidate,
             )
             if self.connection_received_answer:
                 await self.peer_connection.addIceCandidate(candidate)
@@ -156,32 +156,9 @@ class StreamingClient:
             await self.peer_connection.addIceCandidate(candidate)
         self.remote_ice_candidate_buffer.clear()
 
-    # Setup Helpers
-    async def setup_rtc_connection(self):
-        """
-        Set up the RTC (Real-Time Communication) connection.
-
-        This method configures the RTCPeerConnection with ICE servers from the Anam session,
-        sets up event handlers for incoming tracks, initializes data, audio, and video channels, creates an offer, and sends it through the signalling client.
-
-        The method performs the following steps:
-        1. Configures ICE servers using data from the Anam session object.
-        2. Creates an RTCPeerConnection with the configured ICE servers.
-        3. Sets up an event handler for incoming tracks (audio and video).
-        4. Initializes data, audio, and video channels.
-        5. Creates an offer for the peer connection.
-        6. Sets the local description of the peer connection.
-        7. Sends the offer through the signalling client.
-
-        Raises:
-            Warning: If any of the channel setups (data, audio, video) fail.
-
-        Note:
-            This method is crucial for establishing the WebRTC connection and should be
-            called before any media transmission can occur.
-        """
-        self.logger.debug("Setting up RTC connection")
-
+    async def setup_peer_connection(self) -> RTCPeerConnection:
+        """Construct a peer connection object with the appropriate configurations/
+        and handlers."""
         # Configure ICE servers (from Anam session object)
         config = RTCConfiguration()
         config.iceServers = []
@@ -193,17 +170,58 @@ class StreamingClient:
             )
             config.iceServers.append(ice_server)
 
-        self.peer_connection = RTCPeerConnection(configuration=config)
+        pc = RTCPeerConnection(configuration=config)
 
-        # Log ICE connection state changes
-        @self.peer_connection.on("iceconnectionstatechange")
-        def on_ice_connection_state_change():
-            state = self.peer_connection.iceConnectionState
-            self.logger.debug(f"ICE connection state changed: {state}")
-            if state == "failed":
-                self.logger.error(
-                    "ICE connection failed. Check network configuration and ICE server settings."
+    
+        # THERE IS SOME WEIRD BEHAVIOR, resulting in a SDP offer that is rejected.
+        # - If we uncomment only audio, or video, the offer is accepted.
+        # - If we uncomment both audio and video, the offer is rejected.
+        # - If we only uncomment data, the offer is rejected.
+        # - If we uncomment all three, the offer is rejected.
+        
+        # --------------------------------------------------------------------------
+        # Setup track for sending audio
+        if self.use_audio_channel:
+            self.logger.debug("Attaching audio track to peer connection. ")
+            pc.addTrack(
+                track=AudioStreamTrack(
+                device_name=None,
+                audio_handler=self.audio_handler  # Use default device
                 )
+            )
+        # --------------------------------------------------------------------------
+        # Setup video track for receiving video (TODO: why is this different from audio?)
+        if self.use_video_channel:
+            self.logger.debug("Attaching video track to peer connection. ")
+            pc.addTransceiver(
+            "video", 
+                direction="recvonly"
+            )
+        # --------------------------------------------------------------------------
+        # Setup Data Channel
+        if self.use_data_channel:
+            data_channel = pc.createDataChannel(
+            label="chat",
+            ordered=True
+        )
+            data_channel.on("open", self.data_handler.on_data_channel_open)
+            data_channel.on("message", self.data_handler.on_data_channel_message)
+
+            @pc.on("datachannel")
+            def on_datachannel(channel):
+                channel.on("message", self.data_handler.on_data_channel_message)
+        
+        # --------------------------------------------------------------------------
+        # Log ICE connection state changes
+        @pc.on("iceconnectionstatechange")
+        def on_ice_connection_state_change():
+            state = pc.iceConnectionState
+            self.logger.debug("ICE connection state changed: %s", state)
+            if state == "failed":
+                self.logger.error((
+                    "ICE connection failed."
+                     "Check network configuration and ICE server settings."
+                ))
             elif state == "disconnected":
                 self.logger.warning(
                     "ICE connection disconnected. Attempting to reconnect..."
@@ -211,132 +229,75 @@ class StreamingClient:
             elif state == "completed":
                 self.logger.debug("ICE connection completed successfully.")
 
-        @self.peer_connection.on("track")
+        @pc.on("track")
         def on_track(track):
             self.logger.debug("Received %s track", track.kind)
             if track.kind == "audio":
                 asyncio.create_task(self.audio_handler.handle_avatar_audio(track))
             elif track.kind == "video":
+                # TODO: figure out why this approach diverges from the audio approach. 
+                # asyncio.create_task(self.video_handler.handle_video_track(track))
                 self.video_handler.handle_video_track(track)
+        return pc
 
-        # Setup Tracks
-        # data_success: bool = await self.setup_data_channel()
-        audio_success: bool = await self.setup_audio_channel()
-        # video_success: bool = await self.setup_video_channel()
+    # Setup Helpers
+    async def setup_rtc_connection(self):
+        """
+        Set up the RTC (Real-Time Communication) connection.
 
-        # if not audio_success or not data_success or not video_success:
-        #     self.logger.warning(
-        #         "Failed to set up tracks. Audio: %s, Data: %s, Video: %s",
-        #         str(audio_success),
-        #         str(data_success),
-        #         str(video_success)
-        #     )
+        This method configures the RTCPeerConnection with ICE servers from the Anam session,
+        sets up event handlers for incoming tracks, initializes data, audio, and video channels, creates an offer, and sends it through the signalling client.
 
-        # Create and send offer
-        self.logger.debug("Creating and sending offer")
-        offer = await self.peer_connection.createOffer()
+        The method performs the following steps:
+        1. Configures an RTCPeerConnection with the configured ICE servers.
+            2.1. Configures ICE servers using data from the Anam session object.
+            2.2. Sets up handlers for tracks (data, audio and video).
+        2. Creates an offer using the peer connection.
+        3. Sets the local description of the peer connection.
+        4. Sends the offer using the signalling client.
 
-        # self.logger.debug("Original Offer SDP:\n %s", offer.sdp)
+        Raises:
+            Warning: If any of the channel setups (data, audio, video) fail.
 
-        # Modify the SDP to use a single set of ICE credentials
-        new_session_desc = RTCSessionDescription(
-            sdp=self.modify_sdp(offer.sdp), type="offer"
-        )
-        # self.logger.debug("Modified Offer SDP:\n  %s", offer.sdp)
-        await self.peer_connection.setLocalDescription(new_session_desc)
+        Note:
+            This method is crucial for establishing the WebRTC connection and should be
+            called before any media transmission can occur.
+        """
 
-        if self.signalling_client and self.session_data:
-            # Almost always false 
-            # self.logger.debug(
-            #     "Local Decription SDP = new  SDP? %s",
-            #     self.peer_connection.localDescription.sdp == new_session_desc.sdp,
-            # )
-
-            # self.logger.debug("Original Offer: %s", offer.sdp.split('\r\n'))
-            # self.logger.debug("Mofified SDP: %s", new_session_desc.sdp.split('\r\n'))
-            # self.logger.debug("Current Local Description: %s", self.peer_connection.localDescription.sdp.split("\r\n"))
-            await self.signalling_client.send_offer(
-                # self.peer_connection.localDescription,
-                offer=new_session_desc,
-                # Using sessionId as userUid
-                user_uid=self.session_data.get("sessionId", ""),
-            )
-        else:
+        if not self.signalling_client or not self.session_data:
             self.logger.debug(
-                "Cannot send offer: peer connection or session data not available. "
+                "Cannot setup connection without signalling client or session data."
             )
-
-    async def setup_audio_channel(self) -> bool:
-        """
-        Set up the WebRTC audio channel for sending and receiving audio.
-
-        This method adds an audio transceiver to the peer connection in 'sendrecv' mode,
-        allowing the client to send and receive audio.
-
-        Returns:
-            bool: True if the audio channel is set up successfully, False otherwise.
-        """
-        self.logger.debug("Attempting to set up Audio channel")
-        if self.peer_connection:
-
-            # Setup track for sending audio
-            audio_track = AudioStreamTrack(
-                device_name=None, audio_handler=self.audio_handler  # Use default device
-            )
-
-            # Automatically send/receive
-            self.peer_connection.addTrack(audio_track)
-            self.logger.debug("Audio channel added successfully in sendrecv mode")
-            return True
-        else:
-            self.logger.error("Failed to set up audio.")
             return False
+        
+        self.use_audio_channel = False
+        self.use_video_channel = False
+        self.use_data_channel = True
 
-    async def setup_video_channel(self) -> bool:
-        """
-        Set up the WebRTC video channel for receiving video.
+        # 1. Create a peer connection
+        self.logger.debug("Setting up RTC connection")
+        self.peer_connection = await self.setup_peer_connection()
+        
+        # 2. Create an offer
+        self.logger.debug("Creating offer")
+        offer = await self.peer_connection.createOffer()
+        local_desc = RTCSessionDescription(
+            # sdp=self.modify_sdp(offer.sdp),
+            sdp=offer.sdp,
+            type="offer"
+        )
+        await self.peer_connection.setLocalDescription(
+            sessionDescription=local_desc
+        )
 
-        This method adds a video transceiver to the peer connection in 'recvonly' mode,
-        allowing the client to receive video from the remote peer but not send any.
-
-        Returns:
-            bool: True if the video channel is set up successfully, False otherwise.
-        Returns:
-            bool: _description_
-        """
-
-        if self.peer_connection:
-            self.peer_connection.addTransceiver("video", direction="recvonly")
-            self.logger.debug("Video channel added successfully")
-            return True
-        else:
-            self.logger.error("Failed to set up video channel.")
-            return False
-
-    async def setup_data_channel(self):
-        """
-        Set up the WebRTC data channel for chat communication.
-
-        This method creates a data channel on the peer connection for sending and receiving chat messages.
-        It also sets up event handlers for the on 'open' and 'message' events on the data channel.
-        """
-        if self.peer_connection:  # Set up data channel
-            self.data_channel = self.peer_connection.createDataChannel(
-                label="chat", ordered=True
-            )
-            self.data_channel.on("open", self.data_handler.on_data_channel_open)
-            self.data_channel.on("message", self.data_handler.on_data_channel_message)
-
-            @self.peer_connection.on("datachannel")
-            def on_datachannel(channel):
-                self.logger.debug("Data channel opened")
-                channel.on("message", self.data_handler.on_data_channel_message)
-
-            self.logger.debug("Data channel added successfully")
-            return True
-
-        self.logger.debug("Data channel cannot be setup, no peer connection. ")
-        return False
+        # 3. Send the offer
+        self.logger.debug("Sending offer")
+        await self.signalling_client.send_offer(
+            self.peer_connection.localDescription,
+            # offer=new_session_desc,
+            # Using sessionId as userUid
+            user_uid=self.session_data.get("sessionId", ""),
+        )
 
     # SIGNALING
     async def handle_answer(self, answer_payload: Dict):
@@ -346,7 +307,7 @@ class StreamingClient:
         Args:
             answer_payload (Dict): The SDP answer payload.
         """
-        if not self.remote_description_set:
+        if self.peer_connection and not self.remote_description_set:
             self.logger.debug(
                 "Setting remote description with answer: %s", answer_payload
             )
@@ -360,18 +321,19 @@ class StreamingClient:
                 "Remote description already set, ignoring additional answer."
             )
 
-    async def send_message(self, message: str):
-        """
-        Send a message through the data channel.
+    # Removed to simplify the API. 
+    # async def send_message(self, message: str):
+    #     """
+    #     Send a message through the data channel.
 
-        Args:
-            message (str): The message to send.
-        """
-        if self.data_channel and self.data_channel.readyState == "open":
-            self.data_channel.send(message)
-            self.logger.debug(f"Sent message: {message}")
-        else:
-            self.logger.warning("Data channel is not open. Message not sent.")
+    #     Args:
+    #         message (str): The message to send.
+    #     """
+    #     if self.data_channel and self.data_channel.readyState == "open":
+    #         self.data_channel.send(message)
+    #         self.logger.debug(f"Sent message: {message}")
+    #     else:
+    #         self.logger.warning("Data channel is not open. Message not sent.")
 
     # Utilities
     def modify_sdp(self, sdp):
@@ -431,7 +393,7 @@ class StreamingClient:
         Returns:
             RTCIceCandidate: The created ICE candidate object.
         """
-        self.logger.debug("Creating ICE candidate from payload: %s", payload)
+        self.logger.debug("Creating ICE candidate.")
 
         candidate_parts = payload["candidate"].split(" ")
 
@@ -447,5 +409,5 @@ class StreamingClient:
             sdpMLineIndex=payload.get("sdpMLineIndex", 0),
         )
 
-        self.logger.debug("Created ICE candidate: %s", candidate)
+        self.logger.debug("Created ICE candidate.")
         return candidate

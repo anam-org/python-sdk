@@ -115,9 +115,10 @@ class SignallingClient:
                 await self._on_message(message)
         except websockets.exceptions.ConnectionClosed as e:
             self.logger.warning(
-                "WebSocket connection closed: %s - %s",
-                e.code,
-                e.reason
+                "WebSocket connection closed: %s - %s - %s",
+                e.code, 
+                e.reason,
+                e
             )
             await self._on_close(e.code, e.reason)
 
