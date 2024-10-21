@@ -62,8 +62,8 @@ class StreamingClient:
         self.peer_connection: Optional[RTCPeerConnection] = None
         self.data_channel: Optional[RTCDataChannel] = None
         self.use_data_channel = True
-        self.use_audio_channel = True
-        self.use_video_channel = True
+        self.use_audio_channel = False
+        self.use_video_channel = False
 
         # Event Handlers
         self.audio_handler = AudioHandler(self.logger)
@@ -317,10 +317,6 @@ class StreamingClient:
                 "Cannot setup connection without signalling client or session data."
             )
             return False
-        
-        self.use_audio_channel = True
-        self.use_video_channel = True
-        self.use_data_channel = True
 
         # 1. Create a peer connection
         self.logger.debug("Setting up RTC connection")
