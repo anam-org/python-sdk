@@ -1,5 +1,6 @@
 """Handlers for audio data in the webRTC connection."""
 import logging
+import asyncio
 import wave
 
 import av
@@ -24,23 +25,27 @@ class AudioHandler:
         self.audio_tasks = []
         self.avatar_speaking = False
 
-    async def handle_avatar_audio(self, track):
-        while True:
-            try:
-                self.logger.debug("Awaiting audio ... ")
-                frame = await track.recv()
-                self.logger.debug("Playing audio ... ")
-                sd.play(frame.to_ndarray(), samplerate=48000)
+    def handle_avatar_audio(self, track):
+        self.logger.debug("Setting up audio playback")
 
-                if not self.avatar_speaking:
-                    self.avatar_speaking = True
-                    self.logger.debug("Avatar started speaking")
-            except MediaStreamError:
-                self.logger.debug("Error while playing audio")
-                if self.avatar_speaking:
-                    self.avatar_speaking = False
-                    self.logger.debug("Avatar stopped speaking")
-                break
+        async def play_audio():
+            while True:
+                try:
+                    self.logger.debug("Awaiting audio ... ")
+                    frame = await track.recv()
+                    self.logger.debug("Playing audio ... ")
+                    sd.play(frame.to_ndarray(), samplerate=48000)
+
+                    if not self.avatar_speaking:
+                        self.avatar_speaking = True
+                        self.logger.debug("Avatar started speaking")
+                except MediaStreamError:
+                    self.logger.debug("Error while playing audio")
+                    if self.avatar_speaking:
+                        self.avatar_speaking = False
+                        self.logger.debug("Avatar stopped speaking")
+                    break
+        asyncio.create_task(play_audio())
 
     async def handle_audio_track_write(self, track):
         """Save the audio track to a WAV file."""

@@ -19,7 +19,7 @@ async def main():
 
     streaming_client = StreamingClient(anam_client, p.id)
     await streaming_client.start()
-    # await streaming_client.send_test_message()
+    await streaming_client.send_message("Hello, how are you?")
 
     # Keep the connection alive for a while
     await asyncio.sleep(60)

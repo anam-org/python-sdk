@@ -111,13 +111,14 @@ class SignallingClient:
             return
         try:
             async for message in self.ws:
-                self.logger.debug("Received message: %s", message)
+                self.logger.debug(
+                    "Handling message: %s", message
+                )
                 await self._on_message(message)
         except websockets.exceptions.ConnectionClosed as e:
             self.logger.warning(
-                "WebSocket connection closed: %s - %s - %s",
-                e.code, 
-                e.reason,
+                "WebSocket connection closed: %s - %s",
+                e.code,
                 e
             )
             await self._on_close(e.code, e.reason)
@@ -140,6 +141,20 @@ class SignallingClient:
 
     async def _on_close(self, code, reason):
         self.logger.warning("WebSocket connection closed: %s - %s", code, reason)
+        await self._reconnect()
+
+    async def _reconnect(self):
+        """Attempt to reconnect the WebSocket connection."""
+        self.logger.info("Attempting to reconnect WebSocket...")
+        retry_interval = 5  # seconds
+        while True:
+            try:
+                await self.connect()
+                self.logger.info("Reconnected to WebSocket successfully.")
+                break
+            except Exception as e:
+                self.logger.error("Reconnection failed: %s. Retrying in %d seconds...", e, retry_interval)
+                await asyncio.sleep(retry_interval)
 
     def _start_heartbeat(self):
         self.heartbeat_task = asyncio.create_task(self._send_heartbeat())
