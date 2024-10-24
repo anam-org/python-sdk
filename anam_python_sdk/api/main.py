@@ -11,7 +11,7 @@ from anam_python_sdk.api.personas.kai import cfg as kaicfg
 from anam_python_sdk.api.personas.leo import cfg as leocfg
 from anam_python_sdk.api.personas.cara import cfg as caracfg
 from anam_python_sdk.api.personas.mina import cfg as minacfg
-
+from anam_python_sdk.api.personas.ren import cfg as rencfg
 
 def print_persona_presets(client: AnamClient):
     persona_presets = client.get_persona_presets()
@@ -39,11 +39,14 @@ def main():
     # leo = client.create_persona(leocfg)
     # print(leo)
     # mina = client.create_persona(minacfg)
+    ren = client.create_persona(rencfg)
+    print(ren)
 
     # print(mina)
     # client.update_persona(leocfg)
-    client.update_persona(caracfg)
+    # client.update_persona(caracfg)
     # client.update_persona(minacfg)
+    client.update_persona(rencfg)
 
     # Get Presets
     # print_persona_presets(client)
