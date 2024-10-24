@@ -62,7 +62,7 @@ class StreamingClient:
         self.peer_connection: Optional[RTCPeerConnection] = None
         self.data_channel: Optional[RTCDataChannel] = None
         self.use_data_channel = True
-        self.use_audio_channel = False
+        self.use_audio_channel = True
         self.use_video_channel = False
 
         # Event Handlers
@@ -121,7 +121,7 @@ class StreamingClient:
         if self.signalling_client:
             await self.signalling_client.ws.close()
         
-        # Ensure that the data channel is closed. Otherwise, connections will not re-connect.  
+        # Ensure that the data channel is closed.
         if self.data_channel:
             self.data_channel.close()
 
@@ -145,6 +145,7 @@ class StreamingClient:
             self.connection_received_answer = True
             await self.flush_remote_ice_candidate_buffer()
         elif action_type == ActionType.ICECANDIDATE:
+            # Incoming ICE candidates from the remote server. 
             candidate = self.create_ice_candidate(message["payload"])
             if self.connection_received_answer:
                 self.logger.debug(
@@ -176,6 +177,14 @@ class StreamingClient:
                 "Peer connection not initialized. Cannot attach ICE events.")
             return
         
+        @self.peer_connection.on("icegatheringstatechange")
+        def on_ice_gathering_state_change():
+            if self.peer_connection:
+                self.logger.debug(
+                    "ICE gathering state changed! %s", 
+                    self.peer_connection.iceGatheringState
+                )
+
         @self.peer_connection.on("iceconnectionstatechange")
         def on_ice_connection_state_change():
             if not self.peer_connection.iceConnectionState:
@@ -236,12 +245,16 @@ class StreamingClient:
         config = RTCConfiguration()
         config.iceServers = []
         for server in self.session_data.get("clientConfig", {}).get("iceServers", []):
+            # Get a server with all the necessary fields.
+            # if "username" in server and "credential" in server and "urls" in server:
             ice_server = RTCIceServer(
                 urls=server["urls"],
                 username=server.get("username"),
-                credential=server.get("credential"),
+                credential=server.get("credential")
             )
             config.iceServers.append(ice_server)
+            # else: 
+            #     self.logger.warning("ICE server is missing some fields: %s", server)
 
         self.peer_connection = RTCPeerConnection(configuration=config)
         await self.attach_events()
