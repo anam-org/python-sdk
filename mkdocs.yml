@@ -29,7 +29,7 @@ theme:
 
 nav:
   - Home:
-    - Overview: home/index.md
+    - Overview: index.md
     - Installation: home/installation.md
   - User Guide:
     - Getting Started: user-guide/getting-started.md
