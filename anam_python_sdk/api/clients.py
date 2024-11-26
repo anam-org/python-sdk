@@ -275,7 +275,7 @@ class AnamClient:
             print(f"Error getting persona by ID: {e}")
             return None
 
-    def update_persona(self, persona: Persona) -> Optional[Persona]:
+    def update_persona(self, persona: Persona, persona_id: str) -> Optional[Persona]:
         """
         Update an existing persona.
 
@@ -288,7 +288,7 @@ class AnamClient:
         Raises:
             requests.exceptions.RequestException: If there's an error during the API request.
         """
-        endpoint = f"{self._base_url}/personas/{persona.id}"
+        endpoint = f"{self._base_url}/personas/{persona_id}"
         try:
             updated_data = {
                 "name": persona.name,
@@ -309,7 +309,7 @@ class AnamClient:
             response.raise_for_status()
             
             # Use get_persona_by_id to fetch the updated persona
-            return self.get_persona_by_id(persona.id)
+            return self.get_persona_by_id(persona_id)
         except requests.exceptions.RequestException as e:
             print(f"Error updating persona: {e}")
             return None
@@ -409,7 +409,7 @@ class AnamClient:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {session_token}"
         }
-        # Sensible defaults for now. 
+        # Sensible defaults for now.
         session_payload = {
             "personaConfig": {
                 "personaId": persona_id,
