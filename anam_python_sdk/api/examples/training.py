@@ -1,4 +1,4 @@
-"""Module defining the Ren persona for the Sales Training Simulator."""
+"""Module showcasign a Sales Training Simulator."""
 
 from anam_python_sdk.api.entities import Persona, Brain
 from anam_python_sdk.api.prompts.defaults import (

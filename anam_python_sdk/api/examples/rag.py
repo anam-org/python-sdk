@@ -1,4 +1,4 @@
-"""Module defining the Mina persona for Anam AI interactions."""
+"""Module showcasing RAG with Anam AI."""
 
 from anam_python_sdk.api.entities import Persona, Brain
 from anam_python_sdk.api.prompts.defaults import (
