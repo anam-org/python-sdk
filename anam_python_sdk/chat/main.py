@@ -3,8 +3,8 @@ import asyncio
 from typing import Dict, Optional
 
 from dotenv import dotenv_values
-from anam_python_sdk.api.clients import AnamClient
-from anam_python_sdk.api.entities import Persona
+from anam_python_sdk.api.client import AnamClient
+from anam_python_sdk.api.model import Persona
 from anam_python_sdk.chat.streaming import StreamingClient
 
 async def main():

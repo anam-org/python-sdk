@@ -22,7 +22,7 @@ from aiortc import (
     RTCSessionDescription,
 )
 
-from anam_python_sdk.api.clients import AnamClient
+from anam_python_sdk.api.client import AnamClient
 from anam_python_sdk.chat.handlers.audio import AudioHandler, AudioStreamTrack
 from anam_python_sdk.chat.handlers.data import DataHandler
 from anam_python_sdk.chat.handlers.video import VideoHandler

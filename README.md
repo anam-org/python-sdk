@@ -42,7 +42,7 @@ ANAM_API_KEY=<your_api_key>
 Here's a simple example of how to use the AnamClient:
 
 ```python
-from anam_python_sdk.api.clients import AnamClient
+from anam_python_sdk.api.client import AnamClient
 from dotenv import dotenv_values
 
 # Load configuration from .env file
@@ -70,7 +70,7 @@ For comprehensive documentation, please refer to the following sections:
 
 1. [Getting Started](docs/getting-started.md)
 2. [User Guide](docs/user-guide/creating-personas.md)
-3. [API Reference](docs/api-reference/entities.md)
+3. [API Reference](docs/api-reference/model.md)
 4. [Examples](docs/examples.md)
 
 ## License

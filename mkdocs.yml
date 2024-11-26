@@ -2,6 +2,10 @@ site_name: Anam Python SDK
 
 theme:
   name: "material"
+  logo: "assets/logo-no-bg.png"
+  extra_css:
+  - assets/extra.css
+  favicon: "assets/favicon.ico"
   palette:
   # Palette toggle for light mode
   - scheme: default
@@ -26,15 +30,18 @@ theme:
     - content.code.copy
 
 nav:
-  - Home: index.md
-  - Getting Started: getting-started.md
+  - Home:
+    - Overview: home/index.md
+    - Installation: home/installation.md
   - User Guide:
+    - Getting Started: user-guide/getting-started.md
     - Creating Personas: user-guide/creating-personas.md
     - Using the AnamClient: user-guide/using-anamlab-client.md
+    - Examples: user-guide/examples.md
+    - Use Cases: user-guide/usecases.md
   - API Reference:
-    - Entities: api-reference/entities.md
+    - Model: api-reference/model.md
     - Client: api-reference/client.md
-  - Examples: examples.md
 
 plugins:
   - search

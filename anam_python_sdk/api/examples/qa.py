@@ -1,6 +1,6 @@
 """Module showcasing a Q&A with Anam AI."""
 
-from anam_python_sdk.api.entities import Persona, Brain
+from anam_python_sdk.api.model import Persona, Brain
 from anam_python_sdk.api.prompts.defaults import (
     DEFAULT_FILLER_PHRASES,
     ANAM_BACKGROUND_KNOWLEDGE,

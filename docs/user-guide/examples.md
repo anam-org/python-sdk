@@ -1,11 +1,14 @@
-# Examples
+# Example
 
-This page provides some examples of how to use the Anam Python SDK in various scenarios.
+This page provides an end-to-end example of how to use 
+the Python SDK. 
 
 ## Creating and Updating a Persona
+In this example, we create a new persona and update it.
+
 ```python
-from anam_python_sdk.api.clients import AnamClient
-from anam_python_sdk.api.entities import Persona, Brain
+from anam_python_sdk.api.client import AnamClient
+from anam_python_sdk.api.model import Persona, Brain
 from dotenv import dotenv_values
 
 # Initialize the client
@@ -13,8 +16,7 @@ api_cfg = dotenv_values(".env")
 client = AnamClient(cfg=api_cfg)
 
 # Create a new persona
-new_persona = Persona(
-    id="unique_id",
+max_config = Persona(
     name="Max",
     description="A knowledgeable AI researcher",
     persona_preset="Researcher",
@@ -24,8 +26,12 @@ new_persona = Persona(
         filler_phrases=["hmm", "interesting", "let's consider"]
     )
 )
+
+# Create the persona and populate the id field
+max_config = client.create_persona(max_config)
+
 # Update the persona
-client.update_persona(new_persona)
+client.update_persona(max_config)
 
 #Retrieve the updated persona
 updated_persona = client.get_persona_by_name("Max")[0]
@@ -33,9 +39,11 @@ print("Updated Persona:", updated_persona)
 ```
 
 ## Working with Multiple Personas
-```python
+In most cases, you will have multiple personas in your lab. You can retrieve them
+all using the `get_personas` method.
 
-from anam_python_sdk.api.clients import AnamClient
+```python
+from anam_python_sdk.api.client import AnamClient
 from dotenv import dotenv_values
 api_cfg = dotenv_values(".env")
 client = AnamClient(cfg=api_cfg)
@@ -45,6 +53,7 @@ all_personas = client.get_personas()
 
 # Print details of each persona
 for persona in all_personas:
+    print(f"ID: {persona.id}")
     print(f"Name: {persona.name}")
     print(f"Description: {persona.description}")
     print(f"Preset: {persona.persona_preset}")
@@ -52,5 +61,6 @@ for persona in all_personas:
         print(f"Personality: {persona.brain.personality}")
     print("---")
 ```
+**Next Step**
 
-For more examples and use cases, refer to the [User Guide](user-guide/creating-personas.md) section.
+For concrete real-life use cases, refer to the [usecases](../user-guide/usecases.md) section.

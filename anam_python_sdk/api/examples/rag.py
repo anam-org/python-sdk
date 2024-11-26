@@ -1,6 +1,6 @@
 """Module showcasing RAG with Anam AI."""
 
-from anam_python_sdk.api.entities import Persona, Brain
+from anam_python_sdk.api.model import Persona, Brain
 from anam_python_sdk.api.prompts.defaults import (
     ANAM_BACKGROUND_KNOWLEDGE,
     DEFAULT_STYLE_GUIDE

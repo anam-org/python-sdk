@@ -1,9 +1,9 @@
-# /api/entities.py
+# /api/model.py
 """
 This module defines the Persona and Brain classes for creating virtual personas.
 
 Examples:
-    >>> from anam_python_sdk.api.entities import Persona, Brain
+    >>> from anam_python_sdk.api.model import Persona, Brain
     >>> brain = Brain(system_prompt="You are a helpful assistant", personality="Friendly", filler_phrases=["um", "ah", "er"])
     Brain(...)
     

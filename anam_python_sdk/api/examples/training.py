@@ -1,6 +1,6 @@
 """Module showcasign a Sales Training Simulator."""
 
-from anam_python_sdk.api.entities import Persona, Brain
+from anam_python_sdk.api.model import Persona, Brain
 from anam_python_sdk.api.prompts.defaults import (
     DEFAULT_STYLE_GUIDE
 )

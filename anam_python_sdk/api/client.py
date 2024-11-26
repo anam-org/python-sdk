@@ -1,4 +1,4 @@
-# api/clients.py
+# api/client.py
 """Interact with the Anam API using Python.
 
 This module allows you to create, read, update and delete personas in the Anam API.
@@ -24,7 +24,7 @@ Examples:
 """
 from typing import Dict, List, Optional
 import requests
-from anam_python_sdk.api.entities import Persona, Brain
+from anam_python_sdk.api.model import Persona, Brain
 import logging
 
 class AnamClient:
