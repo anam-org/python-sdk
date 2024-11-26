@@ -47,7 +47,7 @@ class AnamClient:
             cfg (Dict[str, Optional[str]]): A dictionary containing configuration parameters, including the API key.
         """
         self._api_version = cfg.get("ANAM_API_VERSION", "v1") if cfg else "v1"
-        self._base_url = f"https://api.anam.ai/{self._api_version}"
+        self._base_url = f"{cfg.get('ANAM_API_HOST', 'https://api.anam.ai')}/{self._api_version}"
         self._api_timeout = 10
         self._bearer_token = cfg.get("ANAM_API_KEY") if cfg else None
         self.logger = self._setup_logger()
