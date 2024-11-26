@@ -1,70 +1,78 @@
-# Getting Started 
-This client uses [Poetry](https://python-poetry.org/) for Python package & dependency management. 
+# Anam Python SDK
 
-## Backlog 
-- Core API 
-    - Establishing a P2P Websocket to the Anam engine
-    - Configuring the API with a Pythonic interface
-    - Plug and play with 
-        - Gradio, Streamlit or FastHTML
-        - Fast API
-- Character Dev
-    - Create 3 to 4 personas
-- Brains 
-    - Creating a RAG tool call & establishing a `talk()` command
-    - Langchain integration
-- Persona API 
-    - Configuring a new persona using the client (i.e. what you do in Anam Lab)
-    - Selecting a persona 
+Welcome to the Anam Python SDK! This SDK provides tools for creating and managing virtual personas using the AnamLab platform.
 
-## Installation (Package)
-```zsh
-    pip install anam-python-sdk
-```
-```python 
-    from anamai.core import AnamClient
-    from anamai.config import DEFAULT_FILTER_PHRASES_EN
-    from dotenv import dotenv_values
+## Features
 
-    ENV = dotenv_values(".env.example")
+- Create and manage virtual personas
+- Interact with the AnamLab platform
+- Customize persona behaviors and responses
 
-    anc = AnamClient(ENV)
+## Installation
 
-    eva = anc.Persona(
-        personality = """
-        You are role-playing as a text chatbot hotel receptionist at The Sunset Hotel. 
-        Your name is Eva.
-        """, 
-        system_prompt="""
-        You are role-playing as a text chatbot hotel receptionist at The Sunset Hotel. 
-        Your name is Eva. Start with 'Hi, this is The Sunset Hotel reception, how may I help you?' 
-        Be mindful of the hotel's availability: single and double rooms 
-        are still available all next week, except Tuesday. 
-        Dogs are allowed. There's a restaurant and bar in the lobby. 
-        If communication breaks down, ask if they want to speak to a human. 
-        Finish every response with a question to drive the conversation. 
-        Do not repeat yourself.
-        """, 
-        filter_phrases=DEFAULT_FILTER_PHRASES_EN
-    )
+To install the Anam Python SDK, use:
 
-
-
-
+```bash
+pip install anam-python-sdk
 ```
 
-## Installation (Local)
-*Using Conda*
-1. Create a python environment `(^3.10)` in your top-level directory. 
-    - `.conda/bin/python`
-    - Ensure that its activated; i.e. `(.conda)` shows. 
-2. Configure poetry to use `.conda/bin/python`: 
-```zsh
-    (.conda) poetry config virtualenvs.path $CONDA_ENV_PATH
-    (.conda) poetry config virtualenvs.create false
-    (.conda) poetry env use .conda/bin/python
+or
+
+```bash
+poetry add anam-python-sdk
 ```
-3. Install the dependencies
-```zsh
-    (.conda) poetry install
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.7 or higher
+- pip (Python package installer)
+
+### Configuration
+
+1. Create a `.env` file in your project root directory.
+2. Add your API credentials to the `.env` file:
+
+```bash
+ANAM_API_KEY=<your_api_key>
 ```
+
+### Basic Usage
+Here's a simple example of how to use the AnamClient:
+
+```python
+from anam_python_sdk.api.client import AnamClient
+from dotenv import dotenv_values
+
+# Load configuration from .env file
+api_cfg = dotenv_values(".env")
+
+# Create an AnamClient instance
+client = AnamClient(cfg=api_cfg)
+
+# Get persona presets
+persona_presets = client.get_persona_presets()
+print("Persona Presets:", persona_presets)
+
+# Get existing personas
+personas = client.get_personas()
+print("Personas:", personas)
+```
+
+### Creating a Persona
+
+For more detailed information on using the SDK, check out the [User Guide](docs/user-guide/creating-personas.md).
+
+## Documentation
+
+For comprehensive documentation, please refer to the following sections:
+
+1. [Getting Started](docs/getting-started.md)
+2. [User Guide](docs/user-guide/creating-personas.md)
+3. [API Reference](docs/api-reference/model.md)
+4. [Examples](docs/examples.md)
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

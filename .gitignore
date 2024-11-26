@@ -6,9 +6,13 @@ __pycache__
 # Apple
 .DS_Store
 
-# Environment
+# Environments
+.env.*
 .env
 
 # Code in non-ready-state
-python_sdk/scratch/*
-python_sdk/scratch
+anam_python_sdk/scratch/*
+anam_python_sdk/scratch
+
+# Builds
+/dist*

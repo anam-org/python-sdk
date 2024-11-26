@@ -1,0 +1,75 @@
+site_name: Anam Python SDK
+
+theme:
+  name: "material"
+  logo: "assets/logo-no-bg.png"
+  extra_css:
+  - assets/extra.css
+  favicon: "assets/favicon.ico"
+  palette:
+  # Palette toggle for light mode
+  - scheme: default
+    toggle:
+      icon: material/brightness-2
+      name: Switch to dark mode
+
+  # Palette toggle for dark mode
+  - scheme: slate
+    toggle:
+      icon: material/brightness-1
+      name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.tracking
+    - navigation.instant.preview
+    - content.code.copy
+
+nav:
+  - Home:
+    - Overview: home/index.md
+    - Installation: home/installation.md
+  - User Guide:
+    - Getting Started: user-guide/getting-started.md
+    - Creating Personas: user-guide/creating-personas.md
+    - Using the AnamClient: user-guide/using-anamlab-client.md
+    - Examples: user-guide/examples.md
+    - Use Cases: user-guide/usecases.md
+  - API Reference:
+    - Model: api-reference/model.md
+    - Client: api-reference/client.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [anam_python_sdk]
+          options:
+            show_source: true
+            show_root_heading: true
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  homepage: https://anam.ai
+  version:
+    provider: mike
+
+# markdown_extensions:
+#   - abbr
+
+repo_url: https://github.com/squidfunk/mkdocs-material
+repo_name: anamai/anam-python-sdk

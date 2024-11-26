@@ -1,0 +1,97 @@
+(.conda) ➜  chat git:(dev) ✗ /Users/quintenrosseel/Development/anam/python-sdk/.conda/bin/python /Users/quinten
+rosseel/Development/anam/python-sdk/anam_python_sdk/chat/main.py
+[2024-09-30 23:05:35,274 clients.py:76 _validate_setup] INFO: AnamClient initialized successfully
+[2024-09-30 23:05:35,824 streaming.py:76 __init__] INFO: Initializing AnamChatClient for persona_id: 278b5935-d6bb-42ff-8ecc-3f100d8bcfee
+[2024-09-30 23:05:35,824 streaming.py:108 start] INFO: Starting chat session
+[2024-09-30 23:05:35,824 clients.py:389 start_session] INFO: Starting session with persona ID: 278b5935-d6bb-42ff-8ecc-3f100d8bcfee
+[2024-09-30 23:05:35,824 clients.py:396 start_session] DEBUG: Requesting session token from https://api.anam.ai/v1/auth/session-token
+[2024-09-30 23:05:35,979 clients.py:405 start_session] DEBUG: Session token obtained successfully
+[2024-09-30 23:05:36,639 clients.py:429 start_session] DEBUG: Session response: {'sessionId': 'bf604606-29f7-4e64-879e-c569ae8e2b38', 'engineHost': 'engine-1-gcp-us-central1-a-gcp-prod-1.engine.anam.ai', 'engineProtocol': 'https', 'signallingEndpoint': '/ws', 'clientConfig': {'maxWsReconnectAttempts': 5, 'expectedHeartbeatIntervalSecs': 5, 'iceServers': [{'credentialType': 'password', 'urls': ['stun:stun.relay.metered.ca:80']}, {'credential': 'spkGLyU5vosSyGKx', 'credentialType': 'password', 'urls': ['turn:a.relay.metered.ca:80', 'turn:a.relay.metered.ca:80?transport=tcp', 'turn:a.relay.metered.ca:443', 'turn:a.relay.metered.ca:443?transport=tcp'], 'username': '75533ce9605644d4873f8be0'}]}}
+[2024-09-30 23:05:36,641 streaming.py:113 start] INFO: Session started successfully
+[2024-09-30 23:05:36,641 signaling.py:26 __init__] INFO: Initializing SignallingClient with websocket URL: wss://engine-1-gcp-us-central1-a-gcp-prod-1.engine.anam.ai/ws?session_id=bf604606-29f7-4e64-879e-c569ae8e2b38
+[2024-09-30 23:05:36,641 signaling.py:92 connect] INFO: Attempting to connect to WebSocket: wss://engine-1-gcp-us-central1-a-gcp-prod-1.engine.anam.ai/ws?session_id=bf604606-29f7-4e64-879e-c569ae8e2b38
+[2024-09-30 23:05:37,059 signaling.py:94 connect] INFO: WebSocket connection established
+[2024-09-30 23:05:37,060 signaling.py:99 _on_open] INFO: WebSocket connection opened
+[2024-09-30 23:05:37,060 streaming.py:122 on_signalling_open] INFO: Signalling connection opened
+[2024-09-30 23:05:37,060 streaming.py:142 setup_rtc_connection] INFO: Setting up RTC connection
+[2024-09-30 23:05:37,084 streaming.py:178 setup_rtc_connection] INFO: Creating and sending offer
+[2024-09-30 23:05:37,087 signaling.py:152 _send_heartbeat] DEBUG: Sending heartbeat
+[2024-09-30 23:05:42,089 signaling.py:152 _send_heartbeat] DEBUG: Sending heartbeat
+[2024-09-30 23:05:42,352 streaming.py:194 setup_rtc_connection] INFO: Sending offer message on Websocket: {'actionType': 'offer', 'sessionId': 'bf604606-29f7-4e64-879e-c569ae8e2b38', 'payload': {'connectionDescription': {'sdp': 'v=0\r\no=- 3936719137 3936719137 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic:WMS *\r\nm=application 9 DTLS/SCTP 5000\r\nc=IN IP4 0.0.0.0\r\na=mid:0\r\na=sctpmap:5000 webrtc-datachannel 65535\r\na=max-message-size:65536\r\na=ice-ufrag:Jgp7\r\na=ice-pwd:75XzPzRAfbGfo4HEy8Bd5H\r\na=fingerprint:sha-256 95:D3:4E:00:3C:D1:00:E2:41:DB:97:5B:CE:8F:8F:D8:6E:76:E6:C8:9E:7C:4F:2D:36:99:34:96:E8:B3:9B:B0\r\na=setup:actpass\r\n', 'type': 'offer'}, 'userUid': 'bf604606-29f7-4e64-879e-c569ae8e2b38'}}
+[2024-09-30 23:05:42,353 signaling.py:161 send_message] DEBUG: Sent message: {'actionType': 'offer', 'sessionId': 'bf604606-29f7-4e64-879e-c569ae8e2b38', 'payload': {'connectionDescription': {'sdp': 'v=0\r\no=- 3936719137 3936719137 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic:WMS *\r\nm=application 9 DTLS/SCTP 5000\r\nc=IN IP4 0.0.0.0\r\na=mid:0\r\na=sctpmap:5000 webrtc-datachannel 65535\r\na=max-message-size:65536\r\na=ice-ufrag:Jgp7\r\na=ice-pwd:75XzPzRAfbGfo4HEy8Bd5H\r\na=fingerprint:sha-256 95:D3:4E:00:3C:D1:00:E2:41:DB:97:5B:CE:8F:8F:D8:6E:76:E6:C8:9E:7C:4F:2D:36:99:34:96:E8:B3:9B:B0\r\na=setup:actpass\r\n', 'type': 'offer'}, 'userUid': 'bf604606-29f7-4e64-879e-c569ae8e2b38'}}
+[2024-09-30 23:05:42,518 signaling.py:110 _handle_messages] DEBUG: Received message: {"actionType":"answer","sessionId":"bf604606-29f7-4e64-879e-c569ae8e2b38","payload":{"type":"answer","sdp":"v=0\r\no=- 3629401242136970666 1727730342 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=fingerprint:sha-256 42:B0:17:25:E5:C3:A4:24:B8:D7:3B:A4:1E:07:0D:B3:58:D1:8E:C5:E8:A1:57:67:A5:4A:49:B6:90:A7:0B:EB\r\na=group:BUNDLE 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=setup:active\r\na=mid:0\r\na=sendrecv\r\na=sctp-port:5000\r\na=ice-ufrag:bxLTzrENbyuBFwSW\r\na=ice-pwd:fZdNLCQFHyZVTXwFAiJRjtwqHlbXzvYE\r\n"}}
+[2024-09-30 23:05:42,518 signaling.py:122 _on_message] DEBUG: Calling on_message_callback
+[2024-09-30 23:05:42,519 streaming.py:133 on_signalling_message] DEBUG: Received signalling message: ActionType.ANSWER
+[2024-09-30 23:05:42,519 signaling.py:110 _handle_messages] DEBUG: Received message: {"actionType":"icecandidate","sessionId":"bf604606-29f7-4e64-879e-c569ae8e2b38","payload":{"candidate":"candidate:4090754654 1 udp 2130706431 10.0.0.7 49881 typ host","sdpMid":"","sdpMLineIndex":0,"usernameFragment":null}}
+[2024-09-30 23:05:42,519 signaling.py:122 _on_message] DEBUG: Calling on_message_callback
+[2024-09-30 23:05:42,519 signaling.py:128 _on_message] WARNING: Unknown action type: icecandidate
+[2024-09-30 23:05:42,519 streaming.py:133 on_signalling_message] DEBUG: Received signalling message: ActionType.ICE_CANDIDATE
+[2024-09-30 23:05:42,519 streaming.py:263 handle_ice_candidate] DEBUG: Handling ICE candidate
+[2024-09-30 23:05:42,519 streaming.py:277 handle_ice_candidate] INFO: Adding ICE candidate to peer connection: RTCIceCandidate(component=0, foundation='', ip='', port=0, priority=0, protocol='', type='', relatedAddress=None, relatedPort=None, sdpMid='', sdpMLineIndex=0, tcpType=None)
+[2024-09-30 23:05:42,519 streaming.py:279 handle_ice_candidate] INFO: ICE candidate addedto peer connection. 
+[2024-09-30 23:05:42,520 signaling.py:110 _handle_messages] DEBUG: Received message: {"actionType":"icecandidate","sessionId":"bf604606-29f7-4e64-879e-c569ae8e2b38","payload":{"candidate":"candidate:233762139 1 udp 2130706431 172.17.0.1 33174 typ host","sdpMid":"","sdpMLineIndex":0,"usernameFragment":null}}
+[2024-09-30 23:05:42,520 signaling.py:122 _on_message] DEBUG: Calling on_message_callback
+[2024-09-30 23:05:42,520 signaling.py:128 _on_message] WARNING: Unknown action type: icecandidate
+[2024-09-30 23:05:42,520 streaming.py:133 on_signalling_message] DEBUG: Received signalling message: ActionType.ICE_CANDIDATE
+[2024-09-30 23:05:42,520 streaming.py:263 handle_ice_candidate] DEBUG: Handling ICE candidate
+[2024-09-30 23:05:42,520 streaming.py:277 handle_ice_candidate] INFO: Adding ICE candidate to peer connection: RTCIceCandidate(component=0, foundation='', ip='', port=0, priority=0, protocol='', type='', relatedAddress=None, relatedPort=None, sdpMid='', sdpMLineIndex=0, tcpType=None)
+[2024-09-30 23:05:42,520 streaming.py:279 handle_ice_candidate] INFO: ICE candidate addedto peer connection. 
+[2024-09-30 23:05:42,610 signaling.py:110 _handle_messages] DEBUG: Received message: {"actionType":"icecandidate","sessionId":"bf604606-29f7-4e64-879e-c569ae8e2b38","payload":{"candidate":"candidate:1545640804 1 udp 16777215 216.39.253.22 40240 typ relay raddr 0.0.0.0 rport 46019","sdpMid":"","sdpMLineIndex":0,"usernameFragment":null}}
+[2024-09-30 23:05:42,610 signaling.py:122 _on_message] DEBUG: Calling on_message_callback
+[2024-09-30 23:05:42,611 signaling.py:128 _on_message] WARNING: Unknown action type: icecandidate
+[2024-09-30 23:05:42,611 streaming.py:133 on_signalling_message] DEBUG: Received signalling message: ActionType.ICE_CANDIDATE
+[2024-09-30 23:05:42,611 streaming.py:263 handle_ice_candidate] DEBUG: Handling ICE candidate
+[2024-09-30 23:05:42,611 streaming.py:277 handle_ice_candidate] INFO: Adding ICE candidate to peer connection: RTCIceCandidate(component=0, foundation='', ip='', port=0, priority=0, protocol='', type='', relatedAddress=None, relatedPort=None, sdpMid='', sdpMLineIndex=0, tcpType=None)
+[2024-09-30 23:05:42,611 streaming.py:279 handle_ice_candidate] INFO: ICE candidate addedto peer connection. 
+[2024-09-30 23:05:42,615 signaling.py:110 _handle_messages] DEBUG: Received message: {"actionType":"icecandidate","sessionId":"bf604606-29f7-4e64-879e-c569ae8e2b38","payload":{"candidate":"candidate:1545640804 1 udp 16777215 216.39.253.22 41612 typ relay raddr 0.0.0.0 rport 37266","sdpMid":"","sdpMLineIndex":0,"usernameFragment":null}}
+[2024-09-30 23:05:42,615 signaling.py:122 _on_message] DEBUG: Calling on_message_callback
+[2024-09-30 23:05:42,615 signaling.py:128 _on_message] WARNING: Unknown action type: icecandidate
+[2024-09-30 23:05:42,615 streaming.py:133 on_signalling_message] DEBUG: Received signalling message: ActionType.ICE_CANDIDATE
+[2024-09-30 23:05:42,615 streaming.py:263 handle_ice_candidate] DEBUG: Handling ICE candidate
+[2024-09-30 23:05:42,615 streaming.py:277 handle_ice_candidate] INFO: Adding ICE candidate to peer connection: RTCIceCandidate(component=0, foundation='', ip='', port=0, priority=0, protocol='', type='', relatedAddress=None, relatedPort=None, sdpMid='', sdpMLineIndex=0, tcpType=None)
+[2024-09-30 23:05:42,615 streaming.py:279 handle_ice_candidate] INFO: ICE candidate addedto peer connection. 
+[2024-09-30 23:05:42,631 signaling.py:110 _handle_messages] DEBUG: Received message: {"actionType":"icecandidate","sessionId":"bf604606-29f7-4e64-879e-c569ae8e2b38","payload":{"candidate":"candidate:1545640804 1 udp 16777215 216.39.253.22 58185 typ relay raddr 10.0.0.7 rport 33154","sdpMid":"","sdpMLineIndex":0,"usernameFragment":null}}
+[2024-09-30 23:05:42,631 signaling.py:122 _on_message] DEBUG: Calling on_message_callback
+[2024-09-30 23:05:42,631 signaling.py:128 _on_message] WARNING: Unknown action type: icecandidate
+[2024-09-30 23:05:42,631 streaming.py:133 on_signalling_message] DEBUG: Received signalling message: ActionType.ICE_CANDIDATE
+[2024-09-30 23:05:42,631 streaming.py:263 handle_ice_candidate] DEBUG: Handling ICE candidate
+[2024-09-30 23:05:42,631 streaming.py:277 handle_ice_candidate] INFO: Adding ICE candidate to peer connection: RTCIceCandidate(component=0, foundation='', ip='', port=0, priority=0, protocol='', type='', relatedAddress=None, relatedPort=None, sdpMid='', sdpMLineIndex=0, tcpType=None)
+[2024-09-30 23:05:42,631 streaming.py:279 handle_ice_candidate] INFO: ICE candidate addedto peer connection. 
+[2024-09-30 23:05:42,635 signaling.py:110 _handle_messages] DEBUG: Received message: {"actionType":"icecandidate","sessionId":"bf604606-29f7-4e64-879e-c569ae8e2b38","payload":{"candidate":"candidate:1545640804 1 udp 16777215 216.39.253.22 60287 typ relay raddr 10.0.0.7 rport 39422","sdpMid":"","sdpMLineIndex":0,"usernameFragment":null}}
+[2024-09-30 23:05:42,635 signaling.py:122 _on_message] DEBUG: Calling on_message_callback
+[2024-09-30 23:05:42,635 signaling.py:128 _on_message] WARNING: Unknown action type: icecandidate
+[2024-09-30 23:05:42,635 streaming.py:133 on_signalling_message] DEBUG: Received signalling message: ActionType.ICE_CANDIDATE
+[2024-09-30 23:05:42,635 streaming.py:263 handle_ice_candidate] DEBUG: Handling ICE candidate
+[2024-09-30 23:05:42,635 streaming.py:277 handle_ice_candidate] INFO: Adding ICE candidate to peer connection: RTCIceCandidate(component=0, foundation='', ip='', port=0, priority=0, protocol='', type='', relatedAddress=None, relatedPort=None, sdpMid='', sdpMLineIndex=0, tcpType=None)
+[2024-09-30 23:05:42,635 streaming.py:279 handle_ice_candidate] INFO: ICE candidate addedto peer connection. 
+[2024-09-30 23:05:42,667 signaling.py:110 _handle_messages] DEBUG: Received message: {"actionType":"icecandidate","sessionId":"bf604606-29f7-4e64-879e-c569ae8e2b38","payload":{"candidate":"candidate:26855958 1 udp 1694498815 34.28.150.149 42866 typ srflx raddr 0.0.0.0 rport 42866","sdpMid":"","sdpMLineIndex":0,"usernameFragment":null}}
+[2024-09-30 23:05:42,667 signaling.py:122 _on_message] DEBUG: Calling on_message_callback
+[2024-09-30 23:05:42,668 signaling.py:128 _on_message] WARNING: Unknown action type: icecandidate
+[2024-09-30 23:05:42,668 streaming.py:133 on_signalling_message] DEBUG: Received signalling message: ActionType.ICE_CANDIDATE
+[2024-09-30 23:05:42,668 streaming.py:263 handle_ice_candidate] DEBUG: Handling ICE candidate
+[2024-09-30 23:05:42,668 streaming.py:277 handle_ice_candidate] INFO: Adding ICE candidate to peer connection: RTCIceCandidate(component=0, foundation='', ip='', port=0, priority=0, protocol='', type='', relatedAddress=None, relatedPort=None, sdpMid='', sdpMLineIndex=0, tcpType=None)
+[2024-09-30 23:05:42,668 streaming.py:279 handle_ice_candidate] INFO: ICE candidate addedto peer connection. 
+[2024-09-30 23:05:47,092 signaling.py:152 _send_heartbeat] DEBUG: Sending heartbeat
+[2024-09-30 23:05:52,095 signaling.py:152 _send_heartbeat] DEBUG: Sending heartbeat
+[2024-09-30 23:05:53,775 signaling.py:110 _handle_messages] DEBUG: Received message: {"actionType":"endsession","sessionId":"bf604606-29f7-4e64-879e-c569ae8e2b38","payload":"It looks like you were away for too long so we've closed the conversation. If you want to talk again, please start a new conversation."}
+[2024-09-30 23:05:53,775 signaling.py:122 _on_message] DEBUG: Calling on_message_callback
+[2024-09-30 23:05:53,775 signaling.py:128 _on_message] WARNING: Unknown action type: endsession
+[2024-09-30 23:05:53,775 streaming.py:133 on_signalling_message] DEBUG: Received signalling message: ActionType.END_SESSION
+[2024-09-30 23:05:57,098 signaling.py:152 _send_heartbeat] DEBUG: Sending heartbeat
+[2024-09-30 23:06:02,101 signaling.py:152 _send_heartbeat] DEBUG: Sending heartbeat
+[2024-09-30 23:06:02,290 signaling.py:113 _handle_messages] WARNING: WebSocket connection closed: CloseCode.ABNORMAL_CLOSURE - 
+[2024-09-30 23:06:02,291 signaling.py:135 _on_close] WARNING: WebSocket connection closed: CloseCode.ABNORMAL_CLOSURE - 
+^CTraceback (most recent call last):
+  File "/Users/quintenrosseel/Development/anam/python-sdk/anam_python_sdk/chat/main.py", line 39, in <module>
+    asyncio.run(main())
+  File "/Users/quintenrosseel/Development/anam/python-sdk/.conda/lib/python3.10/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/Users/quintenrosseel/Development/anam/python-sdk/.conda/lib/python3.10/asyncio/base_events.py", line 636, in run_until_complete
+    self.run_forever()
+  File "/Users/quintenrosseel/Development/anam/python-sdk/.conda/lib/python3.10/asyncio/base_events.py", line 603, in run_forever
+    self._run_once()
+  File "/Users/quintenrosseel/Development/anam/python-sdk/.conda/lib/python3.10/asyncio/base_events.py", line 1871, in _run_once
+    event_list = self._selector.select(timeout)
+  File "/Users/quintenrosseel/Development/anam/python-sdk/.conda/lib/python3.10/selectors.py", line 562, in select
+    kev_list = self._selector.control(None, max_ev, timeout)
+KeyboardInterrupt

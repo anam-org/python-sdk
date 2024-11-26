@@ -1,7 +1,7 @@
-"""Module defining the Christian persona for Anam AI interactions."""
+"""Module showcasing a Q&A with Anam AI."""
 
-from python_sdk.lab.entities import Persona, Brain
-from python_sdk.lab.prompts.defaults import (
+from anam_python_sdk.api.model import Persona, Brain
+from anam_python_sdk.api.prompts.defaults import (
     DEFAULT_FILLER_PHRASES,
     ANAM_BACKGROUND_KNOWLEDGE,
     DEFAULT_STYLE_GUIDE
@@ -43,11 +43,10 @@ You are Christian, a concise, witty, and professional AI persona representing a-
 {background_knowledge}
 """
 
-persona = Persona(
-    id='21ced9ca-bc4a-43d0-9462-0038fd4da416',
+cfg = Persona(
     name='Christian',
     description='Christian, the tech evangelist',
-    persona_preset='eva',
+    persona_preset='leo_windowsofacorner',
     brain=Brain(
         system_prompt=SYSTEM_PROMPT.format(
             background_knowledge=ANAM_BACKGROUND_KNOWLEDGE,

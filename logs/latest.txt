@@ -1,0 +1,148 @@
+[2024-10-03 19:48:18,729 streaming.py:268 setup_rtc_connection] DEBUG: Original Offer SDP:
+ v=0
+o=- 3936966498 3936966498 IN IP4 0.0.0.0
+s=-
+t=0 0
+a=group:BUNDLE 0 1 2
+a=msid-semantic:WMS *
+m=audio 9 UDP/TLS/RTP/SAVPF 96 0 8
+c=IN IP4 0.0.0.0
+a=sendrecv
+a=extmap:1 urn:ietf:params:rtp-hdrext:sdes:mid
+a=extmap:2 urn:ietf:params:rtp-hdrext:ssrc-audio-level
+a=mid:0
+a=msid:91ce4602-3973-407c-a738-53a1dfb62212 e35a001e-af5d-4d53-ac36-29cbbc645c9a
+a=rtcp:9 IN IP4 0.0.0.0
+a=rtcp-mux
+a=ssrc:4272517316 cname:e1bf0816-4d3f-402c-a2d8-267f367ac24e
+a=rtpmap:96 opus/48000/2
+a=rtpmap:0 PCMU/8000
+a=rtpmap:8 PCMA/8000
+a=ice-ufrag:8PxE
+a=ice-pwd:byamSdzx4fCsIAjbOQksb2
+a=fingerprint:sha-256 8A:58:A2:D5:E7:0C:43:31:04:06:35:95:7E:A5:FE:6F:F8:33:0D:9D:03:DE:B9:3A:C3:37:CD:86:B5:B2:E8:1B
+a=setup:actpass
+m=video 9 UDP/TLS/RTP/SAVPF 97 98 99 100 101 102
+c=IN IP4 0.0.0.0
+a=recvonly
+a=extmap:1 urn:ietf:params:rtp-hdrext:sdes:mid
+a=extmap:3 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
+a=mid:1
+a=msid:91ce4602-3973-407c-a738-53a1dfb62212 555dd061-b93f-4ddf-bf1c-6d2bda0e19cb
+a=rtcp:9 IN IP4 0.0.0.0
+a=rtcp-mux
+a=ssrc-group:FID 2818236595 104863539
+a=ssrc:2818236595 cname:e1bf0816-4d3f-402c-a2d8-267f367ac24e
+a=ssrc:104863539 cname:e1bf0816-4d3f-402c-a2d8-267f367ac24e
+a=rtpmap:97 VP8/90000
+a=rtcp-fb:97 nack
+a=rtcp-fb:97 nack pli
+a=rtcp-fb:97 goog-remb
+a=rtpmap:98 rtx/90000
+a=fmtp:98 apt=97
+a=rtpmap:99 H264/90000
+a=rtcp-fb:99 nack
+a=rtcp-fb:99 nack pli
+a=rtcp-fb:99 goog-remb
+a=fmtp:99 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f
+a=rtpmap:100 rtx/90000
+a=fmtp:100 apt=99
+a=rtpmap:101 H264/90000
+a=rtcp-fb:101 nack
+a=rtcp-fb:101 nack pli
+a=rtcp-fb:101 goog-remb
+a=fmtp:101 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f
+a=rtpmap:102 rtx/90000
+a=fmtp:102 apt=101
+a=ice-ufrag:v7Iv
+a=ice-pwd:WqX0nD2FCflyN30sibOq44
+a=fingerprint:sha-256 8A:58:A2:D5:E7:0C:43:31:04:06:35:95:7E:A5:FE:6F:F8:33:0D:9D:03:DE:B9:3A:C3:37:CD:86:B5:B2:E8:1B
+a=setup:actpass
+m=application 9 DTLS/SCTP 5000
+c=IN IP4 0.0.0.0
+a=mid:2
+a=sctpmap:5000 webrtc-datachannel 65535
+a=max-message-size:65536
+a=ice-ufrag:U6rz
+a=ice-pwd:lEfBc5kBGBDVD3jKnvLCjh
+a=fingerprint:sha-256 8A:58:A2:D5:E7:0C:43:31:04:06:35:95:7E:A5:FE:6F:F8:33:0D:9D:03:DE:B9:3A:C3:37:CD:86:B5:B2:E8:1B
+a=setup:actpass
+
+
+
+
+
+
+
+
+
+
+[2024-10-03 19:48:18,729 streaming.py:274 setup_rtc_connection] DEBUG: Modified Offer SDP:
+  v=0
+o=- 3936966498 3936966498 IN IP4 0.0.0.0
+s=-
+t=0 0
+a=group:BUNDLE 0 1 2
+a=msid-semantic:WMS *
+m=audio 9 UDP/TLS/RTP/SAVPF 96 0 8
+c=IN IP4 0.0.0.0
+a=sendrecv
+a=extmap:1 urn:ietf:params:rtp-hdrext:sdes:mid
+a=extmap:2 urn:ietf:params:rtp-hdrext:ssrc-audio-level
+a=mid:0
+a=msid:91ce4602-3973-407c-a738-53a1dfb62212 e35a001e-af5d-4d53-ac36-29cbbc645c9a
+a=rtcp:9 IN IP4 0.0.0.0
+a=rtcp-mux
+a=ssrc:4272517316 cname:e1bf0816-4d3f-402c-a2d8-267f367ac24e
+a=rtpmap:96 opus/48000/2
+a=rtpmap:0 PCMU/8000
+a=rtpmap:8 PCMA/8000
+a=ice-ufrag:8PxE
+a=ice-pwd:byamSdzx4fCsIAjbOQksb2
+a=fingerprint:sha-256 8A:58:A2:D5:E7:0C:43:31:04:06:35:95:7E:A5:FE:6F:F8:33:0D:9D:03:DE:B9:3A:C3:37:CD:86:B5:B2:E8:1B
+a=setup:actpass
+m=video 9 UDP/TLS/RTP/SAVPF 97 98 99 100 101 102
+c=IN IP4 0.0.0.0
+a=recvonly
+a=extmap:1 urn:ietf:params:rtp-hdrext:sdes:mid
+a=extmap:3 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
+a=mid:1
+a=msid:91ce4602-3973-407c-a738-53a1dfb62212 555dd061-b93f-4ddf-bf1c-6d2bda0e19cb
+a=rtcp:9 IN IP4 0.0.0.0
+a=rtcp-mux
+a=ssrc-group:FID 2818236595 104863539
+a=ssrc:2818236595 cname:e1bf0816-4d3f-402c-a2d8-267f367ac24e
+a=ssrc:104863539 cname:e1bf0816-4d3f-402c-a2d8-267f367ac24e
+a=rtpmap:97 VP8/90000
+a=rtcp-fb:97 nack
+a=rtcp-fb:97 nack pli
+a=rtcp-fb:97 goog-remb
+a=rtpmap:98 rtx/90000
+a=fmtp:98 apt=97
+a=rtpmap:99 H264/90000
+a=rtcp-fb:99 nack
+a=rtcp-fb:99 nack pli
+a=rtcp-fb:99 goog-remb
+a=fmtp:99 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f
+a=rtpmap:100 rtx/90000
+a=fmtp:100 apt=99
+a=rtpmap:101 H264/90000
+a=rtcp-fb:101 nack
+a=rtcp-fb:101 nack pli
+a=rtcp-fb:101 goog-remb
+a=fmtp:101 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f
+a=rtpmap:102 rtx/90000
+a=fmtp:102 apt=101
+a=ice-ufrag:8PxE
+a=ice-pwd:byamSdzx4fCsIAjbOQksb2
+a=fingerprint:sha-256 8A:58:A2:D5:E7:0C:43:31:04:06:35:95:7E:A5:FE:6F:F8:33:0D:9D:03:DE:B9:3A:C3:37:CD:86:B5:B2:E8:1B
+a=setup:actpass
+m=application 9 DTLS/SCTP 5000
+c=IN IP4 0.0.0.0
+a=mid:2
+a=sctpmap:5000 webrtc-datachannel 65535
+a=max-message-size:65536
+a=ice-ufrag:8PxE
+a=ice-pwd:byamSdzx4fCsIAjbOQksb2
+a=fingerprint:sha-256 8A:58:A2:D5:E7:0C:43:31:04:06:35:95:7E:A5:FE:6F:F8:33:0D:9D:03:DE:B9:3A:C3:37:CD:86:B5:B2:E8:1B
+a=setup:actpass
