@@ -44,7 +44,6 @@ You are Christian, a concise, witty, and professional AI persona representing a-
 """
 
 cfg = Persona(
-    id='21ced9ca-bc4a-43d0-9462-0038fd4da416',
     name='Christian',
     description='Christian, the tech evangelist',
     persona_preset='leo_windowsofacorner',

@@ -57,11 +57,7 @@ You are:
 {background_knowledge}
 """
 
-# ... make josh say really weird shit: like "Bptuline mayday"
-
 cfg = Persona(
-    # id='278b5935-d6bb-42ff-8ecc-3f100d8bcfee',
-    id='a02d40bf-26b3-4b8d-b3fc-f3121bd076fe', 
     name='Leo',
     description='Leo, the witty game host',
     persona_preset='leo_windowsofacorner',

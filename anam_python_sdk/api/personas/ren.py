@@ -2,7 +2,6 @@
 
 from anam_python_sdk.api.entities import Persona, Brain
 from anam_python_sdk.api.prompts.defaults import (
-    DEFAULT_FILLER_PHRASES,
     DEFAULT_STYLE_GUIDE
 )
 
@@ -60,7 +59,6 @@ You are in discussions with Western sales representatives from Eastman, who offe
 """
 
 cfg = Persona(
-    id='419be65f-a516-49a3-95e4-3cf2e9db19d6',
     name='Ren',
     description='Ren, the procurement manager in the Asian automotive industry',
     persona_preset='pablo_desk',

@@ -45,7 +45,6 @@ You are Justice, a professional, insightful, and engaging AI persona representin
 """
 
 cfg = Persona(
-    id='804fadac-abe8-401a-8d17-c5f78a892c77', 
     name='Justice',
     description='Justice, the customer experience expert',
     persona_preset='leo_windowsofacorner',

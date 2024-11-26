@@ -2,7 +2,6 @@
 
 from anam_python_sdk.api.entities import Persona, Brain
 from anam_python_sdk.api.prompts.defaults import (
-    DEFAULT_FILLER_PHRASES,
     ANAM_BACKGROUND_KNOWLEDGE,
     DEFAULT_STYLE_GUIDE
 )
@@ -167,7 +166,6 @@ Answer: Follow all pre- and post-operative instructions, attend all follow-up ap
 """
 
 cfg = Persona(
-    id="dadec521-83df-49ba-b087-0977546e7c32",
     name='Mina',
     description='Mina, the medical assistant',
     persona_preset='cara_windowdesk',

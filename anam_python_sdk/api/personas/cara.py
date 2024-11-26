@@ -1,4 +1,4 @@
-"""Module defining Leo, the witty game host."""
+"""Module defining Cara, the guess-the-character game host."""
 
 from anam_python_sdk.api.entities import Persona, Brain
 from anam_python_sdk.api.prompts.defaults import (
@@ -57,7 +57,6 @@ The user only has 120 seconds to guess the word, we're under time-pressure.
 # ... make josh say really weird shit: like "Bptuline mayday"
 
 cfg = Persona(
-    id='278b5935-d6bb-42ff-8ecc-3f100d8bcfee',
     name='Cara',
     description='Cara, the witty guess-the-character game master',
     persona_preset='cara_windowdesk',

@@ -46,7 +46,6 @@ You aim to educate users about AI avatars and guide them through understanding t
 """
 
 cfg = Persona(
-    id='f59c3c17-aa97-4d87-b6c5-7da9aa02f999',
     name='Max',
     description='Max the Tech Mentor',
     persona_preset='leo_windowsofacorner',
