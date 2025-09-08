@@ -1,6 +1,9 @@
+WARNING: this is still a work in progress and isn't usable yet!
+
+
 # Anam Python SDK
 
-Welcome to the Anam Python SDK! This SDK provides tools for creating and managing virtual personas using the AnamLab platform.
+Welcome to the Anam Python SDK. This SDK provides tools for creating and managing virtual personas using the AnamLab platform.
 
 ## Features
 
