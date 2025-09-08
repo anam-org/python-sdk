@@ -394,10 +394,11 @@ class AnamClient:
         # Get Session Token with API Key
         token_url = f"{self._base_url}/auth/session-token"
         self.logger.debug("Requesting session token from %s", token_url)
-        token_response = requests.get(
+        token_response = requests.post(
             token_url,
             headers=token_headers,
-            timeout=self._api_timeout
+            timeout=self._api_timeout,
+            json={"personaId": persona_id}
         )
         token_response.raise_for_status()
 
@@ -409,22 +410,11 @@ class AnamClient:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {session_token}"
         }
-        # Sensible defaults for now.
-        session_payload = {
-            "personaConfig": {
-                "personaId": persona_id,
-                "disableBrains": False,
-                "disableFillerPhrases": False
-            },
-            "voiceDetection": {
-               "endOfSpeechSensitivity": 0.5
-            }
-        }
         session_response = requests.post(
             session_url,
             headers=session_token_headers,
-            json=session_payload,
-            timeout=self._api_timeout
+            timeout=self._api_timeout,
+            json = { "personaConfig": { "personaId": persona_id }, "sessionOptions": {}, "clientMetadata": { "client": "python-sdk", "version": "0.0.0" } }
         )
         self.logger.debug("Session response: %s", session_response.json())
         session_response.raise_for_status()

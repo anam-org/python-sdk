@@ -18,8 +18,8 @@ class VideoHandler:
             while True:
                 frame = await track.recv()
                 if frame:
-                    self.logger.debug(f"Received video frame: pts={frame.pts}, "
-                                      f"format={frame.format.name}, size={frame.width}x{frame.height}")
+                    # self.logger.debug(f"Received video frame: pts={frame.pts}, "
+                    #                   f"format={frame.format.name}, size={frame.width}x{frame.height}")
                     img = frame.to_ndarray(format="bgr24")
                     img = np.rot90(img)
                     surface = pygame.surfarray.make_surface(img)

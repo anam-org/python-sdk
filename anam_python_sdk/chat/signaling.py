@@ -18,6 +18,7 @@ class ActionType(Enum):
     ENDSESSION = 'endsession'
     HEARTBEAT = 'heartbeat'
     WARNING = 'warning'
+    SESSIONREADY = 'sessionready'
 
 class SignallingClient:
     """Handles signaling operations for the chat system."""

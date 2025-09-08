@@ -13,4 +13,4 @@ class DataHandler:
 
     def on_data_channel_message(self, message):
         """Callback for when a message is received on the data channel."""
-        self.logger.debug("Received message on data channel: %s", message)
+        # self.logger.debug("Received message on data channel: %s", message)

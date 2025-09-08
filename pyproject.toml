@@ -13,12 +13,15 @@ packages = [{include = "anam_python_sdk"}]
 python = ">=3.10,<4.0" # Numpy is pretty specific on the supported Python environments.
 requests = "^2.32.3"
 python-dotenv = "^1.0.1"
+dotenv = "^0.9.9"
+pygame = "^2.6.1"
+pyaudio = "^0.2.14"
 
 [tool.poetry.group.webrtc]
 optional = true
 
 [tool.poetry.group.webrtc.dependencies]
-aiortc = "1.9.0"
+aiortc = "1.13.0"
 aiohttp = "^3.10.5"
 websockets = "^13.0.1"
 sounddevice = "^0.5.0"
