@@ -39,6 +39,7 @@ ANAM_API_KEY=<your_api_key>
 ```
 
 ### Basic Usage
+
 Here's a simple example of how to use the AnamClient:
 
 ```python

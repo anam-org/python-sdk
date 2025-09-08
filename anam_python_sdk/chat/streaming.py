@@ -22,8 +22,10 @@ from aiortc import (
     RTCSessionDescription,
 )
 
+from aiortc.contrib.media import MediaPlayer
+
 from anam_python_sdk.api.client import AnamClient
-from anam_python_sdk.chat.handlers.audio import AudioHandler, AudioStreamTrack
+from anam_python_sdk.chat.handlers.audio import AudioHandler, AudioStreamTrack, SimpleAudioTrack
 from anam_python_sdk.chat.handlers.data import DataHandler
 from anam_python_sdk.chat.handlers.video import VideoHandler
 from anam_python_sdk.chat.signaling import ActionType, SignallingClient
@@ -63,7 +65,9 @@ class StreamingClient:
         self.data_channel: Optional[RTCDataChannel] = None
         self.use_data_channel = True
         self.use_audio_channel = True
-        self.use_video_channel = False
+        self.use_video_channel = True
+        self.audio_player = None  # Store MediaPlayer instance
+        self.audio_track = None  # Store AudioStreamTrack instance
 
         # Event Handlers
         self.audio_handler = AudioHandler(self.logger)
@@ -116,8 +120,26 @@ class StreamingClient:
 
     async def stop(self):
         """Stop the chat session and clean up resources."""
+        # Stop audio handler first
+        if self.audio_handler:
+            self.audio_handler.stop()
+            
+        # Stop MediaPlayer if used
+        if self.audio_player:
+            self.audio_player.close()
+            
+        # Stop custom audio track if used
+        if self.audio_track and hasattr(self.audio_track, 'stop'):
+            self.audio_track.stop()
+            
+        # Stop any audio tracks
         if self.peer_connection:
+            for sender in self.peer_connection.getSenders():
+                if sender.track and hasattr(sender.track, 'stop'):
+                    sender.track.stop()
+            
             await self.peer_connection.close()
+            
         if self.signalling_client:
             await self.signalling_client.ws.close()
         
@@ -233,10 +255,39 @@ class StreamingClient:
         @self.peer_connection.on("track")
         def on_track(track):
             self.logger.debug("Received %s track", track.kind)
+            self.logger.debug(f"Track ID: {track.id if hasattr(track, 'id') else 'N/A'}")
+            self.logger.debug(f"Track readyState: {track.readyState if hasattr(track, 'readyState') else 'N/A'}")
+            
+            # Log codec info if available
+            if hasattr(track, 'codec'):
+                self.logger.debug(f"Track codec: {track.codec}")
+            
             if track.kind == "audio":
+                self.logger.info("Received remote audio track from avatar")
                 self.audio_handler.handle_avatar_audio(track)
             elif track.kind == "video":
                 self.video_handler.handle_video_track(track)
+        
+        @self.peer_connection.on("icecandidate")
+        async def on_ice_candidate(candidate):
+            """Send local ICE candidates to the remote peer."""
+            self.logger.info("on_ice_candidate called!")  # Debug log
+            if candidate:
+                self.logger.info(f"Local ICE candidate: {candidate.candidate}")
+                # Send the ICE candidate through signaling
+                ice_message = {
+                    "actionType": ActionType.ICECANDIDATE,
+                    "sessionId": self.session_data.get("sessionId", ""),
+                    "payload": {
+                        "candidate": candidate.candidate,
+                        "sdpMid": candidate.sdpMid,
+                        "sdpMLineIndex": candidate.sdpMLineIndex
+                    }
+                }
+                await self.signalling_client.send_message(ice_message)
+                self.logger.info("ICE candidate sent to remote!")
+            else:
+                self.logger.info("ICE gathering completed (null candidate)")
     
     async def init_peer_connection(self) -> bool:
         """Construct a peer connection object with the appropriate configurations/
@@ -284,11 +335,42 @@ class StreamingClient:
         # Setup track for sending audio
         if self.use_audio_channel:
             self.logger.debug("Attaching audio track to peer connection. ")
-            self.peer_connection.addTrack(
-                track=AudioStreamTrack(
-                device_name=None,
-                audio_handler=self.audio_handler  # Use default device
-                )
+            try:
+                audio_track = SimpleAudioTrack()
+                # Store reference to track
+                self.audio_track = audio_track
+                self.peer_connection.addTrack(audio_track)
+                self.logger.info("Audio track added using SimpleAudioTrack")
+                
+                # Debug: Check if track is properly connected
+                senders = self.peer_connection.getSenders()
+                for sender in senders:
+                    if sender.track == audio_track:
+                        self.logger.debug(f"Audio track confirmed in senders list: {sender}")
+                        break
+                else:
+                    self.logger.warning("Audio track not found in senders list!")
+                    
+            except Exception as track_error:
+                self.logger.error(f"Failed to create simple audio track: {track_error}")
+                # Final fallback to original AudioStreamTrack
+                try:
+                    audio_track = AudioStreamTrack(
+                        device_name=None,  # Use default device
+                        audio_handler=self.audio_handler
+                    )
+                    self.audio_track = audio_track
+                    self.peer_connection.addTrack(audio_track)
+                    self.logger.info("Audio track added using AudioStreamTrack as final fallback")
+                except Exception as final_error:
+                    self.logger.error(f"Failed to create any audio track: {final_error}")
+                    raise
+        else:
+            # Only add transceiver if not sending audio (receive only)
+            self.logger.debug("Audio input disabled, adding receive-only transceiver")
+            self.peer_connection.addTransceiver(
+                "audio",
+                direction="recvonly"
             )
         # --------------------------------------------------------------------------
         # Setup video track for receiving video (TODO: why is this different from audio?)
@@ -343,7 +425,6 @@ class StreamingClient:
         self.logger.debug("Creating offer")
         offer = await self.peer_connection.createOffer()
         local_desc = RTCSessionDescription(
-            # sdp=self.modify_sdp(offer.sdp),
             sdp=offer.sdp,
             type="offer"
         )
@@ -397,53 +478,6 @@ class StreamingClient:
             self.logger.warning("Data channel is not open. Message not sent.")
 
     # Utilities
-    def modify_sdp(self, sdp):
-        """
-        Modify the SDP to ensure consistent ICE credentials across media sections.
-
-        This function only replaces ice-ufrag and ice-pwd in all media sections
-        with the values from the first media section that has them.
-
-        Args:
-            sdp (str): The original SDP string.
-
-        Returns:
-            str: The modified SDP string with consistent ICE credentials.
-        """
-        lines = sdp.split("\r\n")
-        modified_lines = []
-        first_ice_ufrag = None
-        first_ice_pwd = None
-        in_media_section = False
-
-        for line in lines:
-            if line.startswith("m="):
-                in_media_section = True
-
-            if in_media_section:
-                if first_ice_ufrag is None and line.startswith("a=ice-ufrag:"):
-                    first_ice_ufrag = line
-                elif first_ice_pwd is None and line.startswith("a=ice-pwd:"):
-                    first_ice_pwd = line
-
-                if line.startswith("a=ice-ufrag:") and first_ice_ufrag:
-                    modified_lines.append(first_ice_ufrag)
-                elif line.startswith("a=ice-pwd:") and first_ice_pwd:
-                    modified_lines.append(first_ice_pwd)
-                else:
-                    modified_lines.append(line)
-            else:
-                modified_lines.append(line)
-
-        if not first_ice_ufrag or not first_ice_pwd:
-            self.logger.warning(
-                "Could not find ice-ufrag and ice-pwd in any media section."
-            )
-            return sdp
-
-        modified_sdp = "\r\n".join(modified_lines)
-        return modified_sdp
-
     def create_ice_candidate(self, payload):
         """
         Create an RTCIceCandidate object from the payload.
