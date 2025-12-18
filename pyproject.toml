@@ -1,61 +1,83 @@
-[tool.poetry]
-name = "anam-python-sdk"
-version = "0.4.0"
-description = "An unofficial package to interact with Anam's Avatar engine."
-authors = ["Quinten Rosseel <quinten@anam.ai>"]
+[project]
+name = "anam-ai"
+version = "1.0.0"
+description = "Official Python SDK for Anam AI - Real-time AI avatar streaming"
 readme = "README.md"
-license = "MIT"
-homepage = "https://www.anam.ai"
-repository = "https://github.com/anam-org/python-sdk"
-packages = [{include = "anam_python_sdk"}]
+license = { text = "MIT" }
+authors = [{ name = "Anam AI", email = "support@anam.ai" }]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+keywords = ["anam", "ai", "avatar", "streaming", "webrtc", "real-time"]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<4.0" # Numpy is pretty specific on the supported Python environments.
-requests = "^2.32.3"
-python-dotenv = "^1.0.1"
-dotenv = "^0.9.9"
-pygame = "^2.6.1"
-pyaudio = "^0.2.14"
+dependencies = [
+    "aiortc>=1.14.0",
+    "aiohttp>=3.9.0",
+    "websockets>=12.0",
+    "numpy>=1.26.0",
+    "python-dotenv>=1.2.1",
+]
 
-[tool.poetry.group.webrtc]
-optional = true
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+# Optional display utilities for testing
+display = [
+    "opencv-python>=4.9.0",
+    "sounddevice>=0.4.6",
+]
 
-[tool.poetry.group.webrtc.dependencies]
-aiortc = "1.13.0"
-aiohttp = "^3.10.5"
-websockets = "^13.0.1"
-sounddevice = "^0.5.0"
-numpy = "^2.1.1"
-
-[tool.poetry.group.livekit]
-optional = true
-
-[tool.poetry.group.livekit.dependencies]
-livekit-api = "^0.7.0"
-livekit = "^0.14.0"
-livekit-agents = "^0.8.10"
-livekit-plugins-deepgram = "^0.6.6"
-livekit-plugins-openai = "^0.8.1"
-livekit-plugins-silero = "^0.6.4"
-opencv-python = "^4.10.0.84"
-
-[tool.poetry.dev-dependencies]
-pytest = "*"
-
-[tool.poetry.group.docs]
-optional = true
-
-[tool.poetry.group.docs.dependencies]
-mkdocs = "^1.6.1"
-mkdocstrings = {extras = ["python"], version = "^0.26.1"}
-mkdocs-material = "^9.5.36"
+[project.urls]
+Homepage = "https://www.anam.ai"
+Documentation = "https://docs.anam.ai"
+Repository = "https://github.com/anam-org/anam-python-sdk"
+Issues = "https://github.com/anam-org/anam-python-sdk/issues"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-# Optional dependencies
-# Install with `poetry install --with livekit` or `poetry install --with webrtc`
-[tool.poetry.extras]
-livekit = ["livekit-api", "livekit", "livekit-agents", "livekit-plugins-deepgram", "livekit-plugins-openai", "livekit-plugins-silero", "opencv-python"]
-webrtc = ["aiortc", "aiohttp", "websockets"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/anam"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/README.md",
+    "/LICENSE",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
