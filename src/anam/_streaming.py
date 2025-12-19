@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+import numpy as np
+
 from typing import Any, Callable, Awaitable
 
 from aiortc import (
@@ -226,13 +228,13 @@ class StreamingClient:
         """Initialize the WebRTC peer connection."""
         # Configure ICE servers
         ice_servers = []
-        logger.debug("ICE servers from session: %s", self._ice_servers)
+        logger.info("Configuring ICE servers: %d server(s)", len(self._ice_servers))
         for server in self._ice_servers:
             urls = server.get("urls", [])
             # Handle both single URL string and list of URLs
             if isinstance(urls, str):
                 urls = [urls]
-            logger.debug(
+            logger.info(
                 "Adding ICE server: urls=%s, username=%s, has_credential=%s",
                 urls, server.get("username"), bool(server.get("credential"))
             )
@@ -243,6 +245,9 @@ class StreamingClient:
                     credential=server.get("credential"),
                 )
             )
+        
+        if not ice_servers:
+            logger.warning("No ICE servers configured - connection may fail behind NAT/firewall")
 
         config = RTCConfiguration(iceServers=ice_servers)
         self._peer_connection = RTCPeerConnection(configuration=config)
@@ -282,7 +287,7 @@ class StreamingClient:
                     if self._on_connection_established:
                         asyncio.create_task(self._on_connection_established())
             elif state == "failed":
-                logger.error("ICE connection failed")
+                logger.error("ICE connection failed - check TURN/STUN server configuration and network connectivity")
                 if hasattr(self, '_connection_ready'):
                     self._connection_ready.set()
             elif state == "closed":
@@ -396,6 +401,44 @@ class StreamingClient:
                 logger.error("Error processing video frame: %s", e)
                 break
 
+    def _resample_pcm16_to_24khz(
+        self, pcm16_bytes: bytes, orig_sample_rate: int, target_sample_rate: int
+    ) -> bytes:
+        """Resample PCM16 audio bytes to target sample rate.
+        
+        Uses util_audio.resample_pcm16_bytes if available, otherwise falls back
+        to simple numpy-based resampling for common cases.
+        """
+        if orig_sample_rate == target_sample_rate:
+            return pcm16_bytes
+        
+        # Try to use util_audio if available (from anam-engine)
+        try:
+            from anam_engine.util_audio import resample_pcm16_bytes
+            return resample_pcm16_bytes(pcm16_bytes, orig_sample_rate, target_sample_rate)
+        except ImportError:
+            # Fallback: simple resampling using numpy for common cases
+            # Note: This is a basic fallback. For production use, install resampy/scipy
+            # or ensure anam-engine is available for high-quality resampling.
+            audio_np = np.frombuffer(pcm16_bytes, dtype=np.int16)
+            
+            ratio = orig_sample_rate / target_sample_rate
+            
+            if ratio == 2.0:
+                # Simple 2:1 downsampling - take every other sample
+                resampled = audio_np[::2]
+            else:
+                # For other ratios, use linear interpolation
+                num_samples = int(len(audio_np) / ratio)
+                indices = np.linspace(0, len(audio_np) - 1, num_samples)
+                resampled = np.interp(indices, np.arange(len(audio_np)), audio_np).astype(np.int16)
+            
+            logger.debug(
+                "Resampled audio using numpy fallback: %dHz -> %dHz (%d -> %d samples)",
+                orig_sample_rate, target_sample_rate, len(audio_np), len(resampled)
+            )
+            return resampled.tobytes()
+
     async def _process_audio_track(self, track: MediaStreamTrack) -> None:
         """Process incoming audio frames."""
         logger.debug("Starting audio track processing")
@@ -406,35 +449,33 @@ class StreamingClient:
                 frame = await track.recv()
                 frame_count += 1
 
-                if frame_count == 1:
-                    sample_rate = frame.sample_rate if hasattr(frame, 'sample_rate') else 48000
-                    logger.info("First audio frame received: %dHz", sample_rate)
+                frame_sample_rate = frame.sample_rate if hasattr(frame, 'sample_rate') else 48000
+                target_sample_rate = 24000
+                
+                if frame_count == 1:   
+                    logger.info("First audio frame received: %dHz, resampling to %dHz", 
+                               frame_sample_rate, target_sample_rate)
 
-                # Convert to our AudioFrame type
-                audio_data = frame.to_ndarray()
-
-                # Handle multi-dimensional audio data
-                if audio_data.ndim == 2:
-                    if audio_data.shape[0] <= 2:
-                        # Shape is (channels, samples), convert to mono
-                        audio_data = audio_data.mean(axis=0)
-                    else:
-                        # Shape might be (samples, channels) or (1, samples)
-                        audio_data = audio_data.flatten()
-
-                # Convert to int16 if needed
-                if audio_data.dtype != 'int16':
-                    if audio_data.dtype in ('float32', 'float64'):
-                        audio_data = (audio_data * 32767).astype('int16')
-                    else:
-                        audio_data = audio_data.astype('int16')
-
+                # Convert av.AudioFrame to our AudioFrame type
+                # Following smallwebrtc pattern: to_ndarray() -> normalize -> tobytes()
+                pcm_array = frame.to_ndarray().astype(np.int16)
+                
+                # Resample to 24kHz if needed (using util_audio pattern)
+                if frame_sample_rate != target_sample_rate:
+                    pcm_bytes = self._resample_pcm16_to_24khz(
+                        pcm_array.tobytes(), frame_sample_rate, target_sample_rate
+                    )
+                else:
+                    pcm_bytes = pcm_array.tobytes()
+                
+                del pcm_array  # free NumPy array immediately
+                
                 audio_frame = AudioFrame(
-                    data=audio_data.tobytes(),
-                    sample_rate=frame.sample_rate if hasattr(frame, 'sample_rate') else 48000,
-                    channels=1,  # We've converted to mono
+                    data=pcm_bytes,
+                    sample_rate=target_sample_rate,
+                    channels=1,  # We expect mono audio
                     timestamp=frame.time if hasattr(frame, 'time') else 0.0,
-                    format="s16",
+                    format="s16le",
                 )
 
                 if self._on_audio_frame:

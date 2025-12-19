@@ -109,7 +109,7 @@ class ClientOptions:
         ice_servers: Custom ICE servers for WebRTC (optional).
     """
 
-    api_base_url: str = "https://api.anam.ai"
+    api_base_url: str = "https://api.anam.dev"
     api_version: str = "v1"
     disable_input_audio: bool = False
     ice_servers: list[dict[str, Any]] | None = None
