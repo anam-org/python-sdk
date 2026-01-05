@@ -76,8 +76,8 @@ class AudioRecorder:
     def __init__(
         self,
         output_path: str,
-        sample_rate: int = 48000,
-        channels: int = 1,
+        sample_rate: int = 24000,
+        channels: int = 2,
     ):
         self.output_path = output_path
         self.sample_rate = sample_rate
@@ -90,7 +90,7 @@ class AudioRecorder:
         # Initialize writer on first frame
         if self.writer is None:
             self.writer = wave.open(self.output_path, 'wb')
-            self.writer.setnchannels(self.channels)
+            self.writer.setnchannels(frame.channels)
             self.writer.setsampwidth(2)  # 16-bit
             self.writer.setframerate(frame.sample_rate)
             logger.info("Recording audio to: %s", self.output_path)
@@ -112,6 +112,8 @@ async def main() -> None:
     # Get configuration (strip quotes that might be in .env)
     api_key = os.environ.get("ANAM_API_KEY", "").strip().strip('"')
     persona_id = os.environ.get("ANAM_PERSONA_ID", "").strip().strip('"')
+    api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
+
 
     if not api_key or not persona_id:
         raise ValueError(
@@ -130,7 +132,7 @@ async def main() -> None:
     client = AnamClient(
         api_key=api_key,
         persona_id=persona_id,
-        options=ClientOptions(disable_input_audio=True),
+        options=ClientOptions(disable_input_audio=True, api_base_url=api_base_url),
     )
 
     @client.on(AnamEvent.VIDEO_FRAME)
