@@ -157,9 +157,9 @@ async def stream_session(
 
 def main() -> None:
     """Main entry point."""
-    # Get configuration (strip quotes that might be in .env)
-    api_key = os.environ.get("ANAM_API_KEY", "Y2IyNDViNGUtNjVlYy00ZGY1LWI2YjQtNjIxOTZhOWM4OThlOk44aUI1WEpEbDZpb3NxSjQxSjFEc3cwNlRFNDNlOG1ablBjRGxEU1JIZU09").strip().strip('"')
-    persona_id = os.environ.get("ANAM_PERSONA_ID", "d3730581-3248-4ca3-9cbc-86c88d560fcb").strip().strip('"')
+    # Get configuration from environment variables (loaded from .env file)
+    api_key = os.environ.get("ANAM_API_KEY", "").strip().strip('"')
+    persona_id = os.environ.get("ANAM_PERSONA_ID", "").strip().strip('"')
 
     if not api_key or not persona_id:
         raise ValueError(
