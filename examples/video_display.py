@@ -160,6 +160,7 @@ def main() -> None:
     # Get configuration from environment variables (loaded from .env file)
     api_key = os.environ.get("ANAM_API_KEY", "").strip().strip('"')
     persona_id = os.environ.get("ANAM_PERSONA_ID", "").strip().strip('"')
+    api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
     if not api_key or not persona_id:
         raise ValueError(
@@ -170,7 +171,7 @@ def main() -> None:
     client = AnamClient(
         api_key=api_key,
         persona_id=persona_id,
-        options=ClientOptions(disable_input_audio=True),
+        options=ClientOptions(disable_input_audio=True, api_base_url=api_base_url),
     )
 
     # Create display and audio player
