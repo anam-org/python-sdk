@@ -1,14 +1,13 @@
 """Internal API client for Anam services."""
 
-import json
 import logging
 from typing import Any
 
 import aiohttp
 
+from ._version import __version__
 from .errors import AnamError, AuthenticationError, ErrorCode, SessionError
 from .types import ClientOptions, PersonaConfig, SessionInfo
-from ._version import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -203,4 +202,3 @@ class CoreApiClient:
                     response.status,
                     details={"response": data},
                 )
-

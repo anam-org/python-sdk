@@ -3,22 +3,21 @@
 import asyncio
 import json
 import logging
+from typing import Any, Awaitable, Callable
+
 import numpy as np
-
-from typing import Any, Callable, Awaitable
-
 from aiortc import (
+    MediaStreamTrack,
     RTCConfiguration,
     RTCDataChannel,
     RTCIceCandidate,
     RTCIceServer,
     RTCPeerConnection,
     RTCSessionDescription,
-    MediaStreamTrack,
 )
 
-from .types import SessionInfo, VideoFrame, AudioFrame
-from ._signalling import SignallingClient, SignalAction
+from ._signalling import SignalAction, SignallingClient
+from .types import AudioFrame, SessionInfo, VideoFrame
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +128,7 @@ class StreamingClient:
         """Handle incoming signalling messages."""
         action_type = message.get("actionType", "").lower()
         payload = message.get("payload")
-        
+
         logger.debug("Signal message received: %s", action_type)
 
         if action_type == SignalAction.ANSWER.value:
@@ -168,7 +167,10 @@ class StreamingClient:
         )
         await self._peer_connection.setRemoteDescription(answer)
         self._connection_received_answer = True
-        logger.info("Remote description set, flushing %d buffered ICE candidates", len(self._remote_ice_buffer))
+        logger.info(
+            "Remote description set, flushing %d buffered ICE candidates",
+            len(self._remote_ice_buffer),
+        )
 
         # Flush buffered ICE candidates
         await self._flush_ice_buffer()
@@ -180,7 +182,9 @@ class StreamingClient:
             return
 
         candidate = self._create_ice_candidate(payload)
-        logger.debug("Remote ICE candidate: %s:%s (%s)", candidate.ip, candidate.port, candidate.type)
+        logger.debug(
+            "Remote ICE candidate: %s:%s (%s)", candidate.ip, candidate.port, candidate.type
+        )
 
         if self._connection_received_answer:
             try:
@@ -236,7 +240,9 @@ class StreamingClient:
                 urls = [urls]
             logger.info(
                 "Adding ICE server: urls=%s, username=%s, has_credential=%s",
-                urls, server.get("username"), bool(server.get("credential"))
+                urls,
+                server.get("username"),
+                bool(server.get("credential")),
             )
             ice_servers.append(
                 RTCIceServer(
@@ -245,7 +251,7 @@ class StreamingClient:
                     credential=server.get("credential"),
                 )
             )
-        
+
         if not ice_servers:
             logger.warning("No ICE servers configured - connection may fail behind NAT/firewall")
 
@@ -257,7 +263,10 @@ class StreamingClient:
         async def on_ice_candidate(candidate: RTCIceCandidate | None) -> None:
             """Send local ICE candidates to the remote peer."""
             if candidate:
-                logger.info("Local ICE candidate: %s", candidate.candidate[:80] if candidate.candidate else "None")
+                logger.info(
+                    "Local ICE candidate: %s",
+                    candidate.candidate[:80] if candidate.candidate else "None",
+                )
                 if self._signalling_client:
                     ice_message = {
                         "actionType": SignalAction.ICE_CANDIDATE.value,
@@ -282,13 +291,15 @@ class StreamingClient:
             if state in ("connected", "completed"):
                 if not self._is_connected:
                     self._is_connected = True
-                    if hasattr(self, '_connection_ready'):
+                    if hasattr(self, "_connection_ready"):
                         self._connection_ready.set()
                     if self._on_connection_established:
                         asyncio.create_task(self._on_connection_established())
             elif state == "failed":
-                logger.error("ICE connection failed - check TURN/STUN server configuration and network connectivity")
-                if hasattr(self, '_connection_ready'):
+                logger.error(
+                    "ICE connection failed - check TURN/STUN server configuration and network connectivity"
+                )
+                if hasattr(self, "_connection_ready"):
                     self._connection_ready.set()
             elif state == "closed":
                 if self._on_connection_closed:
@@ -358,7 +369,7 @@ class StreamingClient:
                     await self._on_message(data)
             except json.JSONDecodeError as e:
                 logger.error("Failed to parse data channel message: %s", e)
-        
+
         self._data_channel_open = False
 
     async def _process_video_track(self, track: MediaStreamTrack) -> None:
@@ -376,7 +387,7 @@ class StreamingClient:
                     # Signal connection established on first actual frame
                     if not self._is_connected:
                         self._is_connected = True
-                        if hasattr(self, '_connection_ready'):
+                        if hasattr(self, "_connection_ready"):
                             self._connection_ready.set()
                         if self._on_connection_established:
                             asyncio.create_task(self._on_connection_established())
@@ -387,7 +398,7 @@ class StreamingClient:
                     data=img.tobytes(),
                     width=frame.width,
                     height=frame.height,
-                    timestamp=frame.time if hasattr(frame, 'time') else 0.0,
+                    timestamp=frame.time if hasattr(frame, "time") else 0.0,
                     format="bgr24",
                 )
 
@@ -405,25 +416,26 @@ class StreamingClient:
         self, pcm16_bytes: bytes, orig_sample_rate: int, target_sample_rate: int
     ) -> bytes:
         """Resample PCM16 audio bytes to target sample rate.
-        
+
         Uses util_audio.resample_pcm16_bytes if available, otherwise falls back
         to simple numpy-based resampling for common cases.
         """
         if orig_sample_rate == target_sample_rate:
             return pcm16_bytes
-        
+
         # Try to use util_audio if available (from anam-engine)
         try:
             from anam_engine.util_audio import resample_pcm16_bytes
+
             return resample_pcm16_bytes(pcm16_bytes, orig_sample_rate, target_sample_rate)
         except ImportError:
             # Fallback: simple resampling using numpy for common cases
             # Note: This is a basic fallback. For production use, install resampy/scipy
             # or ensure anam-engine is available for high-quality resampling.
             audio_np = np.frombuffer(pcm16_bytes, dtype=np.int16)
-            
+
             ratio = orig_sample_rate / target_sample_rate
-            
+
             if ratio == 2.0:
                 # Simple 2:1 downsampling - take every other sample
                 resampled = audio_np[::2]
@@ -432,10 +444,13 @@ class StreamingClient:
                 num_samples = int(len(audio_np) / ratio)
                 indices = np.linspace(0, len(audio_np) - 1, num_samples)
                 resampled = np.interp(indices, np.arange(len(audio_np)), audio_np).astype(np.int16)
-            
+
             logger.debug(
                 "Resampled audio using numpy fallback: %dHz -> %dHz (%d -> %d samples)",
-                orig_sample_rate, target_sample_rate, len(audio_np), len(resampled)
+                orig_sample_rate,
+                target_sample_rate,
+                len(audio_np),
+                len(resampled),
             )
             return resampled.tobytes()
 
@@ -449,17 +464,20 @@ class StreamingClient:
                 frame = await track.recv()
                 frame_count += 1
 
-                frame_sample_rate = frame.sample_rate if hasattr(frame, 'sample_rate') else 48000
+                frame_sample_rate = frame.sample_rate if hasattr(frame, "sample_rate") else 48000
                 target_sample_rate = 24000
-                
-                if frame_count == 1:   
-                    logger.info("First audio frame received: %dHz, resampling to %dHz", 
-                               frame_sample_rate, target_sample_rate)
+
+                if frame_count == 1:
+                    logger.info(
+                        "First audio frame received: %dHz, resampling to %dHz",
+                        frame_sample_rate,
+                        target_sample_rate,
+                    )
 
                 # Convert av.AudioFrame to our AudioFrame type
                 # Following smallwebrtc pattern: to_ndarray() -> normalize -> tobytes()
                 pcm_array = frame.to_ndarray().astype(np.int16)
-                
+
                 # Resample to 24kHz if needed (using util_audio pattern)
                 if frame_sample_rate != target_sample_rate:
                     pcm_bytes = self._resample_pcm16_to_24khz(
@@ -467,14 +485,14 @@ class StreamingClient:
                     )
                 else:
                     pcm_bytes = pcm_array.tobytes()
-                
+
                 del pcm_array  # free NumPy array immediately
-                
+
                 audio_frame = AudioFrame(
                     data=pcm_bytes,
                     sample_rate=target_sample_rate,
                     channels=1,  # We expect mono audio
-                    timestamp=frame.time if hasattr(frame, 'time') else 0.0,
+                    timestamp=frame.time if hasattr(frame, "time") else 0.0,
                     format="s16le",
                 )
 
@@ -500,7 +518,7 @@ class StreamingClient:
 
         # Get the local description (with gathered ICE candidates)
         local_desc = self._peer_connection.localDescription
-        
+
         logger.debug("Sending WebRTC offer")
         await self._signalling_client.send_offer(
             sdp=local_desc.sdp,
@@ -512,28 +530,28 @@ class StreamingClient:
 
         Args:
             message: The message string to send.
-            
+
         Returns:
             True if message was sent, False otherwise.
         """
-        if self._data_channel and getattr(self, '_data_channel_open', False):
+        if self._data_channel and getattr(self, "_data_channel_open", False):
             self._data_channel.send(message)
             return True
         else:
             logger.warning("Data channel not open, message not sent")
             return False
-    
+
     async def wait_for_data_channel(self, timeout: float = 10.0) -> bool:
         """Wait for the data channel to open.
-        
+
         Args:
             timeout: Maximum time to wait in seconds.
-            
+
         Returns:
             True if data channel opened, False if timeout.
         """
         start = asyncio.get_event_loop().time()
-        while not getattr(self, '_data_channel_open', False):
+        while not getattr(self, "_data_channel_open", False):
             if asyncio.get_event_loop().time() - start > timeout:
                 return False
             await asyncio.sleep(0.1)
@@ -611,4 +629,3 @@ class StreamingClient:
 
         self._is_connected = False
         logger.info("Streaming client closed")
-

@@ -78,4 +78,3 @@ class SessionError(AnamError):
         details: dict[str, Any] | None = None,
     ):
         super().__init__(message, code, status_code, details)
-

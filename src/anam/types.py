@@ -225,4 +225,3 @@ class SessionInfo:
             max_reconnection_attempts=client_config.get("maxWsReconnectionAttempts", 5),
             ice_servers=client_config.get("iceServers", []),
         )
-

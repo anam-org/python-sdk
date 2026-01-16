@@ -14,8 +14,8 @@ Usage:
 """
 
 import asyncio
-import os
 import logging
+import os
 from collections import deque
 from typing import Deque
 
@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 from dotenv import load_dotenv
 
-from anam import AnamClient, AnamEvent, ClientOptions, VideoFrame, AudioFrame
+from anam import AnamClient, AnamEvent, AudioFrame, ClientOptions, VideoFrame
 
 # Load environment variables
 load_dotenv()

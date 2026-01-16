@@ -33,7 +33,16 @@ Example:
 For more information, see https://docs.anam.ai
 """
 
+from ._version import __version__
 from .client import AnamClient, Session
+from .errors import (
+    AnamError,
+    AuthenticationError,
+    ConfigurationError,
+    ConnectionError,
+    ErrorCode,
+    SessionError,
+)
 from .types import (
     AnamEvent,
     AudioFrame,
@@ -44,15 +53,6 @@ from .types import (
     PersonaConfig,
     VideoFrame,
 )
-from .errors import (
-    AnamError,
-    AuthenticationError,
-    ConfigurationError,
-    ConnectionError,
-    ErrorCode,
-    SessionError,
-)
-from ._version import __version__
 
 __all__ = [
     # Main client
@@ -77,4 +77,3 @@ __all__ = [
     # Version
     "__version__",
 ]
-

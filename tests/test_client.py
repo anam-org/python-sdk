@@ -1,7 +1,8 @@
 """Tests for AnamClient."""
 
 import pytest
-from anam import AnamClient, PersonaConfig, ClientOptions, AnamEvent
+
+from anam import AnamClient, AnamEvent, ClientOptions, PersonaConfig
 from anam.errors import ConfigurationError
 
 

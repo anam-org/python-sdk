@@ -4,22 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable, Awaitable, TypeVar
+from typing import Any, Awaitable, Callable, TypeVar
 
+from ._api import CoreApiClient
+from ._streaming import StreamingClient
+from .errors import ConfigurationError, SessionError
 from .types import (
     AnamEvent,
     AudioFrame,
     ClientOptions,
-    ConnectionClosedCode,
     Message,
     MessageRole,
     PersonaConfig,
     SessionInfo,
     VideoFrame,
 )
-from .errors import AnamError, ConfigurationError, SessionError
-from ._api import CoreApiClient
-from ._streaming import StreamingClient
 
 logger = logging.getLogger(__name__)
 
@@ -387,7 +386,7 @@ class Session:
 
         # Wait for data channel to be ready
         streaming = self._client._streaming_client
-        if not getattr(streaming, '_data_channel_open', False):
+        if not getattr(streaming, "_data_channel_open", False):
             logger.debug("Waiting for data channel to open...")
             if not await streaming.wait_for_data_channel(timeout=10.0):
                 raise SessionError("Data channel did not open in time")
@@ -446,4 +445,3 @@ class Session:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Exit async context and close session."""
         await self.close()
-

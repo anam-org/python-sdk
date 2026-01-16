@@ -13,11 +13,11 @@ Usage:
 """
 
 import asyncio
-import os
 import logging
+import os
 from pathlib import Path
 
-from anam import AnamClient, AnamEvent, VideoFrame, AudioFrame, Message, ClientOptions
+from anam import AnamClient, AnamEvent, AudioFrame, ClientOptions, Message, VideoFrame
 
 
 def load_env() -> None:
@@ -46,7 +46,7 @@ async def main() -> None:
     """Main entry point."""
     # Load .env file if present
     load_env()
-    
+
     # Get configuration from environment
     api_key = os.environ.get("ANAM_API_KEY")
     persona_id = os.environ.get("ANAM_PERSONA_ID")

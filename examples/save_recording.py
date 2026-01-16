@@ -13,16 +13,15 @@ Usage:
 """
 
 import asyncio
-import os
 import logging
+import os
 import wave
 from pathlib import Path
 
 import cv2
-import numpy as np
 from dotenv import load_dotenv
 
-from anam import AnamClient, AnamEvent, ClientOptions, VideoFrame, AudioFrame
+from anam import AnamClient, AnamEvent, AudioFrame, ClientOptions, VideoFrame
 
 # Load environment variables from .env
 load_dotenv()

@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from enum import Enum
-from typing import Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable
 
 import websockets
 from websockets.client import WebSocketClientProtocol
@@ -55,8 +55,12 @@ class SignallingClient:
         """
         self._session_info = session_info
         self._session_id = session_info.session_id
-        self._heartbeat_interval = session_info.heartbeat_interval_seconds or self.DEFAULT_HEARTBEAT_INTERVAL
-        self._max_reconnection_attempts = session_info.max_reconnection_attempts or self.DEFAULT_MAX_RECONNECTION_ATTEMPTS
+        self._heartbeat_interval = (
+            session_info.heartbeat_interval_seconds or self.DEFAULT_HEARTBEAT_INTERVAL
+        )
+        self._max_reconnection_attempts = (
+            session_info.max_reconnection_attempts or self.DEFAULT_MAX_RECONNECTION_ATTEMPTS
+        )
 
         self._on_message = on_message
         self._on_open = on_open
@@ -160,8 +164,12 @@ class SignallingClient:
             return
 
         delay = 0.1 * self._connection_attempts
-        logger.info("Reconnecting in %.1f seconds (attempt %d/%d)",
-                    delay, self._connection_attempts, self._max_reconnection_attempts)
+        logger.info(
+            "Reconnecting in %.1f seconds (attempt %d/%d)",
+            delay,
+            self._connection_attempts,
+            self._max_reconnection_attempts,
+        )
 
         await asyncio.sleep(delay)
 
@@ -203,10 +211,11 @@ class SignallingClient:
         if not self._ws:
             return False
         # websockets >= 12.0 uses .state, older versions use .open
-        if hasattr(self._ws, 'state'):
+        if hasattr(self._ws, "state"):
             from websockets.protocol import State
+
             return self._ws.state == State.OPEN
-        return getattr(self._ws, 'open', False)
+        return getattr(self._ws, "open", False)
 
     async def send_message(self, message: dict[str, Any]) -> None:
         """Send a message through the WebSocket.
@@ -306,4 +315,3 @@ class SignallingClient:
             self._ws = None
 
         logger.debug("SignallingClient closed")
-
