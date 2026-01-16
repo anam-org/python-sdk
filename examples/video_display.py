@@ -66,6 +66,7 @@ except ImportError:
     _audio_enabled = False
     logger.warning("sounddevice not installed, audio playback disabled")
 
+AUDIO_ENABLED = _audio_enabled
 
 class VideoDisplay:
     """Simple video display using OpenCV."""
@@ -116,7 +117,7 @@ class AudioPlayer:
 
     def start(self) -> None:
         """Start the audio stream."""
-        if not _audio_enabled or sd is None:
+        if not AUDIO_ENABLED or sd is None:
             return
 
         self.stream = sd.OutputStream(
