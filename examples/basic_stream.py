@@ -7,7 +7,7 @@ Usage:
     # Set env vars in .env file or export them:
     export ANAM_API_KEY="your-api-key"
     export ANAM_PERSONA_ID="your-persona-id"
-    
+
     # Run:
     uv run python examples/basic_stream.py
 """
@@ -68,6 +68,8 @@ async def main() -> None:
     audio_frames = 0
 
     # Register event handlers
+    # These functions are registered via decorators and called by the client
+    # They appear unused to static analysis but are actually used at runtime
     @client.on(AnamEvent.VIDEO_FRAME)
     async def on_video(frame: VideoFrame) -> None:
         nonlocal video_frames
