@@ -59,10 +59,10 @@ logger = logging.getLogger(__name__)
 
 # Audio playback (optional)
 try:
-    import sounddevice as sd  # type: ignore[import-untyped]
+    import sounddevice as sd
     _audio_enabled = True
 except ImportError:
-    sd = None  # type: ignore[assignment]
+    sd = None
     _audio_enabled = False
     logger.warning("sounddevice not installed, audio playback disabled")
 
@@ -111,7 +111,7 @@ class AudioPlayer:
         self.sample_rate: int = sample_rate
         self.channels: int = channels
         self.buffer: deque[np.ndarray] = deque(maxlen=100)
-        self.stream: OutputStreamProtocol | None = None  # type: ignore[assignment]
+        self.stream: OutputStreamProtocol | None = None
         self._running: bool = False
 
     def start(self) -> None:
@@ -119,14 +119,14 @@ class AudioPlayer:
         if not _audio_enabled or sd is None:
             return
 
-        self.stream = sd.OutputStream(  # type: ignore[union-attr, name-defined]
+        self.stream = sd.OutputStream(
             samplerate=self.sample_rate,
             channels=self.channels,
             dtype='float32',
             blocksize=1024,
             latency='low',
         )
-        self.stream.start()  # type: ignore[union-attr]
+        self.stream.start()
         self._running = True
 
     def add_frame(self, frame: AudioFrame) -> None:
@@ -139,7 +139,7 @@ class AudioPlayer:
             audio_data = frame.to_ndarray().astype(np.float32) / 32768.0
 
             # Write directly to stream
-            _ = self.stream.write(audio_data)  # type: ignore[union-attr, unused-return-value]
+            _ = self.stream.write(audio_data)
         except Exception as e:
             logger.error("Audio playback error: %s", e)
 
@@ -147,8 +147,8 @@ class AudioPlayer:
         """Stop the audio stream."""
         self._running = False
         if self.stream:
-            self.stream.stop()  # type: ignore[union-attr]
-            self.stream.close()  # type: ignore[union-attr]
+            self.stream.stop()
+            self.stream.close()
             self.stream = None
 
 
@@ -161,16 +161,16 @@ async def stream_session(
 
     # These functions are registered via decorators and called by the client
     # They appear unused to static analysis but are actually used at runtime
-    @client.on(AnamEvent.VIDEO_FRAME)  # type: ignore[misc]
-    async def on_video(frame: VideoFrame) -> None:  # type: ignore[unused-function]
+    @client.on(AnamEvent.VIDEO_FRAME)
+    async def on_video(frame: VideoFrame) -> None:
         display.update(frame)
 
-    @client.on(AnamEvent.AUDIO_FRAME)  # type: ignore[misc]
-    async def on_audio(frame: AudioFrame) -> None:  # type: ignore[unused-function]
+    @client.on(AnamEvent.AUDIO_FRAME)
+    async def on_audio(frame: AudioFrame) -> None:
         audio_player.add_frame(frame)
 
-    @client.on(AnamEvent.CONNECTION_ESTABLISHED)  # type: ignore[misc]
-    async def on_connected() -> None:  # type: ignore[unused-function]
+    @client.on(AnamEvent.CONNECTION_ESTABLISHED)
+    async def on_connected() -> None:
         logger.info("✓ Connected!")
 
     async with client.connect() as session:
@@ -237,7 +237,7 @@ def main() -> None:
     finally:
         display.stop()
         audio_player.stop()
-        _ = stream_task.cancel()  # type: ignore[unused-return-value]
+        _ = stream_task.cancel()
         loop.close()
 
 
