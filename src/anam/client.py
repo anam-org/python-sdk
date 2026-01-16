@@ -7,9 +7,11 @@ import logging
 from typing import Any, Awaitable, Callable, TypeVar
 
 from ._api import CoreApiClient
+from ._agent_audio_input_stream import AgentAudioInputStream
 from ._streaming import StreamingClient
 from .errors import ConfigurationError, SessionError
 from .types import (
+    AgentAudioInputConfig,
     AnamEvent,
     AudioFrame,
     ClientOptions,
@@ -283,6 +285,26 @@ class AnamClient:
         self._is_streaming = False
         await self._emit(AnamEvent.CONNECTION_CLOSED, code, reason)
 
+    def create_agent_audio_input_stream(
+        self, config: AgentAudioInputConfig
+    ) -> AgentAudioInputStream:
+        """Create an agent audio input stream for sending PCM audio data.
+
+        Args:
+            config: Audio format configuration.
+
+        Returns:
+            AgentAudioInputStream instance.
+
+        Raises:
+            SessionError: If session is not started.
+        """
+        if not self._streaming_client:
+            raise SessionError(
+                "Failed to create agent audio input stream: session is not started"
+            )
+        return self._streaming_client.create_agent_audio_input_stream(config)
+
     async def close(self) -> None:
         """Close the connection and clean up resources."""
         if self._streaming_client:
@@ -403,6 +425,24 @@ class Session:
             raise SessionError("Not connected")
 
         self._client._streaming_client.send_interrupt()
+
+    def create_agent_audio_input_stream(
+        self, config: AgentAudioInputConfig
+    ) -> AgentAudioInputStream:
+        """Create an agent audio input stream for sending PCM audio data.
+
+        Args:
+            config: Audio format configuration.
+
+        Returns:
+            AgentAudioInputStream instance.
+
+        Raises:
+            SessionError: If not connected.
+        """
+        if not self._client._streaming_client:
+            raise SessionError("Not connected")
+        return self._client._streaming_client.create_agent_audio_input_stream(config)
 
     def mute_input(self) -> None:
         """Mute microphone input (if enabled)."""

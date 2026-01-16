@@ -198,6 +198,40 @@ class Message:
 
 
 @dataclass
+class AgentAudioInputConfig:
+    """Configuration for agent audio input stream.
+
+    Args:
+        encoding: Audio encoding format ('pcm_s16le' for 16-bit signed PCM).
+        sample_rate: Sample rate in Hz (e.g., 16000, 24000, 44100).
+        channels: Number of audio channels (1 = mono, 2 = stereo).
+    """
+
+    encoding: str = "pcm_s16le"
+    sample_rate: int = 24000
+    channels: int = 1
+
+
+@dataclass
+class AgentAudioInputPayload:
+    """Payload for agent audio input messages.
+
+    Args:
+        audio_data: Base64-encoded PCM audio data.
+        encoding: Audio encoding format ('pcm_s16le').
+        sample_rate: Sample rate in Hz.
+        channels: Number of audio channels.
+        sequence_number: Sequence number for ordering (starts at 0, resets on endSequence).
+    """
+
+    audio_data: str
+    encoding: str
+    sample_rate: int
+    channels: int
+    sequence_number: int
+
+
+@dataclass
 class SessionInfo:
     """Information about an active streaming session.
 

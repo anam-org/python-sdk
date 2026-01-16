@@ -34,6 +34,7 @@ For more information, see https://docs.anam.ai
 """
 
 from ._version import __version__
+from ._agent_audio_input_stream import AgentAudioInputStream
 from .client import AnamClient, Session
 from .errors import (
     AnamError,
@@ -44,6 +45,7 @@ from .errors import (
     SessionError,
 )
 from .types import (
+    AgentAudioInputConfig,
     AnamEvent,
     AudioFrame,
     ClientOptions,
@@ -59,6 +61,8 @@ __all__ = [
     "AnamClient",
     "Session",
     # Types
+    "AgentAudioInputConfig",
+    "AgentAudioInputStream",
     "AnamEvent",
     "AudioFrame",
     "ClientOptions",

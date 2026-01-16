@@ -16,7 +16,9 @@ Usage:
 import asyncio
 import logging
 import os
+import wave
 from collections import deque
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 import cv2
@@ -24,6 +26,8 @@ import numpy as np
 from dotenv import load_dotenv
 
 from anam import AnamClient, AnamEvent, AudioFrame, ClientOptions, VideoFrame
+from anam._agent_audio_input_stream import AgentAudioInputStream
+from anam.types import AgentAudioInputConfig
 
 if TYPE_CHECKING:
     import sounddevice as sd
@@ -67,6 +71,86 @@ except ImportError:
     logger.warning("sounddevice not installed, audio playback disabled")
 
 AUDIO_ENABLED = _audio_enabled
+
+
+async def send_audio_file_chunked(
+    agent: AgentAudioInputStream,
+    wav_file_path: Path,
+    chunk_duration_ms: int = 500,
+) -> None:
+    """Read a WAV file and send it in chunks through the agent audio input stream.
+
+    Args:
+        agent: The agent audio input stream to send chunks to.
+        wav_file_path: Path to the WAV file to read.
+        chunk_duration_ms: Duration of each chunk in milliseconds (default: 500ms).
+
+    Raises:
+        FileNotFoundError: If the WAV file doesn't exist.
+        ValueError: If the WAV file format is incompatible.
+    """
+    if not wav_file_path.exists():
+        raise FileNotFoundError(f"Audio file not found: {wav_file_path}")
+
+    logger.info(f"Reading audio file: {wav_file_path}")
+
+    with wave.open(str(wav_file_path), "rb") as wf:
+        sample_rate = wf.getframerate()
+        num_channels = wf.getnchannels()
+        sample_width = wf.getsampwidth()
+        num_frames = wf.getnframes()
+
+        duration_sec = num_frames / sample_rate
+        logger.info(
+            f"WAV file: {sample_rate}Hz, {num_channels}ch, {sample_width} bytes/sample, "
+            + f"{num_frames} frames ({duration_sec:.2f}s)"
+        )
+
+        # Verify format matches agent config
+        config = agent.get_config()
+        if num_channels != config.channels:
+            logger.warning(
+                f"Channel mismatch: file has {num_channels} channels, "
+                + f"agent expects {config.channels}. Converting to mono."
+            )
+
+        # Calculate chunk size in frames
+        chunk_size_frames = int(sample_rate * chunk_duration_ms / 1000.0)
+
+        # Read and send chunks
+        chunk_count = 0
+        total_bytes_sent = 0
+
+        while True:
+            # Read chunk
+            frames = wf.readframes(chunk_size_frames)
+
+            if not frames:
+                break
+
+            # Convert to mono if needed
+            if num_channels > 1:
+                # Convert multi-channel to mono by averaging
+                audio_array: np.ndarray = np.frombuffer(frames, dtype=np.int16)
+                audio_array = audio_array.reshape(-1, num_channels)
+                audio_array = np.mean(audio_array, axis=1).astype(np.int16)
+                frames = audio_array.tobytes()
+
+            # Send chunk
+            await agent.send_audio_chunk(frames)
+            chunk_count += 1
+            total_bytes_sent += len(frames)
+
+            logger.debug(f"Sent audio chunk {chunk_count}: {len(frames)} bytes")
+
+            # Small delay between chunks to avoid overwhelming the connection
+            await asyncio.sleep(0.01)
+
+        logger.info(
+            f"Finished sending audio: {chunk_count} chunks, "
+            + f"{total_bytes_sent} bytes total"
+        )
+
 
 class VideoDisplay:
     """Simple video display using OpenCV."""
@@ -160,11 +244,27 @@ async def stream_session(
 ) -> None:
     """Run the streaming session."""
 
+    video_frames:int = 0
+
     # These functions are registered via decorators and called by the client
     # They appear unused to static analysis but are actually used at runtime
     @client.on(AnamEvent.VIDEO_FRAME)
     async def on_video(frame: VideoFrame) -> None:
+        nonlocal video_frames
+        video_frames += 1
         display.update(frame)
+        if video_frames == 200:
+            await session.send_message("Hello! Tell me a short joke.")
+        if video_frames == 250:
+            session.interrupt()
+        if video_frames == 300:
+            agent = session.create_agent_audio_input_stream(
+                AgentAudioInputConfig(encoding="pcm_s16le", sample_rate=24000, channels=1)
+            )
+            # Read and send audio file in chunks
+            wav_path = Path(__file__).parent.parent / "input.wav"
+            await send_audio_file_chunked(agent, wav_path)
+            await agent.end_sequence()
 
     @client.on(AnamEvent.AUDIO_FRAME)
     async def on_audio(frame: AudioFrame) -> None:
@@ -212,6 +312,8 @@ def main() -> None:
     audio_player.start()
 
     # Run streaming in background
+    import threading
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -219,18 +321,20 @@ def main() -> None:
         stream_session(client, display, audio_player)
     )
 
+    def run_async() -> None:
+        try:
+            loop.run_until_complete(stream_task)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error("Error in async thread: %s", e)
+
+    thread = threading.Thread(target=run_async, daemon=True)
+    thread.start()
+
     try:
         # Run display in main thread (required by OpenCV on macOS)
         # This will block until 'q' is pressed
-        import threading
-
-        def run_async() -> None:
-            loop.run_until_complete(stream_task)
-
-        thread = threading.Thread(target=run_async, daemon=True)
-        thread.start()
-
-        # Run OpenCV display in main thread
         display.run()
 
     except KeyboardInterrupt:
@@ -238,8 +342,43 @@ def main() -> None:
     finally:
         display.stop()
         audio_player.stop()
-        _ = stream_task.cancel()
-        loop.close()
+
+        # Cancel the async task
+        if not stream_task.done():
+            stream_task.cancel()
+
+        # Stop the event loop gracefully from thread-safe context
+        if loop.is_running():
+            def stop_loop() -> None:
+                loop.stop()
+
+            _ = loop.call_soon_threadsafe(stop_loop)
+
+        # Wait for thread to finish (with timeout)
+        thread.join(timeout=2.0)
+
+        # Only close the loop if it's not running
+        if not loop.is_running():
+            try:
+                # Cancel any remaining tasks
+                pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+                for task in pending:
+                    task.cancel()
+                # Run until all tasks are cancelled
+                if pending:
+                    _ = loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
+            except RuntimeError:
+                # Loop might already be closed or in invalid state
+                pass
+            finally:
+                try:
+                    if not loop.is_closed():
+                        loop.close()
+                except RuntimeError:
+                    # Loop might already be closed
+                    pass
 
 
 if __name__ == "__main__":
