@@ -49,10 +49,10 @@ class VideoRecorder:
 
         # Initialize writer on first frame
         if self.writer is None:
-            fourcc = cv2.VideoWriter.fourcc(*'mp4v')  # type: ignore[attr-defined]
+            fourcc = cv2.VideoWriter.fourcc(*'mp4v')
             self.writer = cv2.VideoWriter(
                 self.output_path,
-                fourcc,  # type: ignore[arg-type]
+                fourcc,
                 self.fps,
                 (frame.width, frame.height),
             )
@@ -136,15 +136,15 @@ async def main() -> None:
 
     # These functions are registered via decorators and called by the client
     # They appear unused to static analysis but are actually used at runtime
-    @client.on(AnamEvent.VIDEO_FRAME)  # type: ignore[misc, unused-function]
+    @client.on(AnamEvent.VIDEO_FRAME)
     async def on_video(frame: VideoFrame) -> None:
         video_recorder.add_frame(frame)
 
-    @client.on(AnamEvent.AUDIO_FRAME)  # type: ignore[misc, unused-function]
+    @client.on(AnamEvent.AUDIO_FRAME)
     async def on_audio(frame: AudioFrame) -> None:
         audio_recorder.add_frame(frame)
 
-    @client.on(AnamEvent.CONNECTION_ESTABLISHED)  # type: ignore[misc, unused-function]
+    @client.on(AnamEvent.CONNECTION_ESTABLISHED)
     async def on_connected() -> None:
         logger.info("✓ Connected - recording started")
 
@@ -153,7 +153,7 @@ async def main() -> None:
     logger.info("Recording for %d seconds...", duration_seconds)
 
     try:
-        async with client.connect() as _session:  # type: ignore
+        async with client.connect() as _session:
             await asyncio.sleep(duration_seconds)
     except KeyboardInterrupt:
         logger.info("Recording interrupted")
