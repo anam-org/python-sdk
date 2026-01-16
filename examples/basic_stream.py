@@ -70,7 +70,7 @@ async def main() -> None:
     # Register event handlers
     # These functions are registered via decorators and called by the client
     # They appear unused to static analysis but are actually used at runtime
-    @client.on(AnamEvent.VIDEO_FRAME)  # type: ignore[misc, unused-function]
+    @client.on(AnamEvent.VIDEO_FRAME)
     async def on_video(frame: VideoFrame) -> None:
         nonlocal video_frames
         video_frames += 1
@@ -82,7 +82,7 @@ async def main() -> None:
                 frame.height,
             )
 
-    @client.on(AnamEvent.AUDIO_FRAME)  # type: ignore[misc, unused-function]
+    @client.on(AnamEvent.AUDIO_FRAME)
     async def on_audio(frame: AudioFrame) -> None:
         nonlocal audio_frames
         audio_frames += 1
@@ -94,15 +94,15 @@ async def main() -> None:
                 frame.channels,
             )
 
-    @client.on(AnamEvent.MESSAGE_RECEIVED)  # type: ignore[misc, unused-function]
+    @client.on(AnamEvent.MESSAGE_RECEIVED)
     async def on_message(message: Message) -> None:
         logger.info("Message [%s]: %s", message.role.value, message.content)
 
-    @client.on(AnamEvent.CONNECTION_ESTABLISHED)  # type: ignore[misc, unused-function]
+    @client.on(AnamEvent.CONNECTION_ESTABLISHED)
     async def on_connected() -> None:
         logger.info("✓ Connection established!")
 
-    @client.on(AnamEvent.CONNECTION_CLOSED)  # type: ignore[misc, unused-function]
+    @client.on(AnamEvent.CONNECTION_CLOSED)
     async def on_closed(code: str, reason: str | None) -> None:
         logger.info("Connection closed: %s - %s", code, reason or "No reason")
 
