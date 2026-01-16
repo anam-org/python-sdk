@@ -7,7 +7,7 @@ Usage:
     # Set environment variables in .env or shell:
     export ANAM_API_KEY="your-api-key"
     export ANAM_PERSONA_ID="your-persona-id"
-    
+
     # Run with display extras:
     uv run --extra display python examples/save_recording.py
 """
@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 from anam import AnamClient, AnamEvent, AudioFrame, ClientOptions, VideoFrame
 
 # Load environment variables from .env
-load_dotenv()
+_ = load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -37,11 +37,11 @@ logger = logging.getLogger(__name__)
 class VideoRecorder:
     """Records video frames to an MP4 file."""
 
-    def __init__(self, output_path: str, fps: float = 30.0):
-        self.output_path = output_path
-        self.fps = fps
+    def __init__(self, output_path: str, fps: float = 30.0) -> None:
+        self.output_path: str = output_path
+        self.fps: float = fps
         self.writer: cv2.VideoWriter | None = None
-        self.frame_count = 0
+        self.frame_count: int = 0
 
     def add_frame(self, frame: VideoFrame) -> None:
         """Add a video frame to the recording."""
@@ -49,10 +49,10 @@ class VideoRecorder:
 
         # Initialize writer on first frame
         if self.writer is None:
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            fourcc = cv2.VideoWriter.fourcc(*'mp4v')  # type: ignore[attr-defined]
             self.writer = cv2.VideoWriter(
                 self.output_path,
-                fourcc,
+                fourcc,  # type: ignore[arg-type]
                 self.fps,
                 (frame.width, frame.height),
             )
@@ -77,12 +77,12 @@ class AudioRecorder:
         output_path: str,
         sample_rate: int = 24000,
         channels: int = 2,
-    ):
-        self.output_path = output_path
-        self.sample_rate = sample_rate
-        self.channels = channels
+    ) -> None:
+        self.output_path: str = output_path
+        self.sample_rate: int = sample_rate
+        self.channels: int = channels
         self.writer: wave.Wave_write | None = None
-        self.frame_count = 0
+        self.frame_count: int = 0
 
     def add_frame(self, frame: AudioFrame) -> None:
         """Add an audio frame to the recording."""
@@ -134,15 +134,17 @@ async def main() -> None:
         options=ClientOptions(disable_input_audio=True, api_base_url=api_base_url),
     )
 
-    @client.on(AnamEvent.VIDEO_FRAME)
+    # These functions are registered via decorators and called by the client
+    # They appear unused to static analysis but are actually used at runtime
+    @client.on(AnamEvent.VIDEO_FRAME)  # type: ignore[misc, unused-function]
     async def on_video(frame: VideoFrame) -> None:
         video_recorder.add_frame(frame)
 
-    @client.on(AnamEvent.AUDIO_FRAME)
+    @client.on(AnamEvent.AUDIO_FRAME)  # type: ignore[misc, unused-function]
     async def on_audio(frame: AudioFrame) -> None:
         audio_recorder.add_frame(frame)
 
-    @client.on(AnamEvent.CONNECTION_ESTABLISHED)
+    @client.on(AnamEvent.CONNECTION_ESTABLISHED)  # type: ignore[misc, unused-function]
     async def on_connected() -> None:
         logger.info("✓ Connected - recording started")
 
@@ -151,7 +153,7 @@ async def main() -> None:
     logger.info("Recording for %d seconds...", duration_seconds)
 
     try:
-        async with client.connect() as session:
+        async with client.connect() as _session:  # type: ignore
             await asyncio.sleep(duration_seconds)
     except KeyboardInterrupt:
         logger.info("Recording interrupted")

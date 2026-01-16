@@ -7,7 +7,7 @@ Usage:
     # Set env vars in .env file or export them:
     export ANAM_API_KEY="your-api-key"
     export ANAM_PERSONA_ID="your-persona-id"
-    
+
     # Run:
     uv run python examples/basic_stream.py
 """
@@ -68,7 +68,9 @@ async def main() -> None:
     audio_frames = 0
 
     # Register event handlers
-    @client.on(AnamEvent.VIDEO_FRAME)
+    # These functions are registered via decorators and called by the client
+    # They appear unused to static analysis but are actually used at runtime
+    @client.on(AnamEvent.VIDEO_FRAME)  # type: ignore[misc, unused-function]
     async def on_video(frame: VideoFrame) -> None:
         nonlocal video_frames
         video_frames += 1
@@ -80,7 +82,7 @@ async def main() -> None:
                 frame.height,
             )
 
-    @client.on(AnamEvent.AUDIO_FRAME)
+    @client.on(AnamEvent.AUDIO_FRAME)  # type: ignore[misc, unused-function]
     async def on_audio(frame: AudioFrame) -> None:
         nonlocal audio_frames
         audio_frames += 1
@@ -92,15 +94,15 @@ async def main() -> None:
                 frame.channels,
             )
 
-    @client.on(AnamEvent.MESSAGE_RECEIVED)
+    @client.on(AnamEvent.MESSAGE_RECEIVED)  # type: ignore[misc, unused-function]
     async def on_message(message: Message) -> None:
         logger.info("Message [%s]: %s", message.role.value, message.content)
 
-    @client.on(AnamEvent.CONNECTION_ESTABLISHED)
+    @client.on(AnamEvent.CONNECTION_ESTABLISHED)  # type: ignore[misc, unused-function]
     async def on_connected() -> None:
         logger.info("✓ Connection established!")
 
-    @client.on(AnamEvent.CONNECTION_CLOSED)
+    @client.on(AnamEvent.CONNECTION_CLOSED)  # type: ignore[misc, unused-function]
     async def on_closed(code: str, reason: str | None) -> None:
         logger.info("Connection closed: %s - %s", code, reason or "No reason")
 
