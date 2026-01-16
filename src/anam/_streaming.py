@@ -653,12 +653,34 @@ class StreamingClient:
 
         # Close signalling
         if self._signalling_client:
-            await self._signalling_client.close()
+            try:
+                await self._signalling_client.close()
+            except Exception as e:
+                logger.warning("Error closing signalling client: %s", e)
+            finally:
+                self._signalling_client = None
 
         # Close peer connection
         if self._peer_connection:
-            await self._peer_connection.close()
-            self._peer_connection = None
+            try:
+                await self._peer_connection.close()
+            except Exception as e:
+                logger.warning("Error closing peer connection: %s", e)
+            finally:
+                self._peer_connection = None
 
         self._is_connected = False
         logger.info("Streaming client closed")
+
+    def __del__(self) -> None:
+        """Cleanup on destruction to prevent warnings."""
+        # Clear peer connection reference if close() wasn't called explicitly.
+        # Note: This won't prevent RTCPeerConnection.__del__ from being called
+        # if the object is garbage collected independently, but it helps in
+        # cases where StreamingClient is destroyed without calling close().
+        # The proper fix is to always call close() explicitly.
+        if self._peer_connection is not None:
+            try:
+                self._peer_connection = None
+            except Exception:
+                pass
