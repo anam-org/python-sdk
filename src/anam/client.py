@@ -411,10 +411,17 @@ class Session:
             content: The message text.
 
         Raises:
-            SessionError: If not connected.
+            SessionError: If not connected or if LLM is not available.
         """
         if not self._client._streaming_client:
             raise SessionError("Not connected")
+
+        # Validate that LLM is available for processing messages
+        persona_config = self._get_persona_config()
+
+        # Check a persona and LLM are consuming the text messages
+        if persona_config.persona_id is None and (persona_config.llm_id == "CUSTOMER_CLIENT_V1" or persona_config.llm_id is None):
+            logger.warning("Persona ID and LLM ID are not set, messages will not be processed by the backend.")
 
         # Wait for data channel to be ready
         streaming = self._client._streaming_client

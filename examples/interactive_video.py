@@ -276,7 +276,6 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                     continue
                 message_text = " ".join(parts[1:])
                 try:
-                    print(f"config: {session._get_persona_config()}")
                     await session.send_message(message_text)
                     print(f"✅ Sent message: {message_text}")
                 except Exception as e:
