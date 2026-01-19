@@ -2,7 +2,7 @@
 
 This example shows how to display the avatar video stream
 in a window using OpenCV while providing CLI controls for
-interactive session management.
+interactive session management, where text messages mimic the transcibed audio and wav files can be send as TTS audio.
 
 Requirements:
     uv sync --extra display

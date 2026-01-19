@@ -1,8 +1,8 @@
 """Interactive video session example with CLI controls.
 
-This example shows how to display the avatar video stream
-in a window using OpenCV while providing CLI controls for
-interactive session management.
+This example shows how use Anam as an avatar provider where
+the avatar is rendered on existing TTS audio. The video is displayed
+in a window using OpenCV
 
 Requirements:
     uv sync --extra display
@@ -10,8 +10,8 @@ Requirements:
 
 Usage:
     export ANAM_API_KEY="your-api-key"
-    export ANAM_PERSONA_ID="your-persona-id"
-    uv run --extra display python examples/interactive_video.py
+    export ANAM_AVATAR_ID="your-avatar-id"
+    uv run --extra display python examples/audio_passthrough.py
 """
 
 import asyncio
