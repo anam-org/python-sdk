@@ -180,15 +180,6 @@ class AudioFrame:
             arr = arr.reshape((-1, self.channels))
         return arr
 
-    def to_float32(self) -> NDArray[np.float32]:
-        """Convert to float32 array normalized to [-1.0, 1.0].
-
-        Returns:
-            NumPy array of float32 samples.
-        """
-        arr = self.to_ndarray().astype(np.float32)
-        return arr / 32768.0
-
 
 @dataclass
 class Message:
