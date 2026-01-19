@@ -76,7 +76,7 @@ class PersonaConfig:
             When using audio passthrough, set brain_type='CUSTOMER_CLIENT_V1' to disable LLM.
     """
 
-    persona_id: str
+    persona_id: str | None = None
     name: str | None = None
     avatar_id: str | None = None
     voice_id: str | None = None
@@ -89,7 +89,9 @@ class PersonaConfig:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API requests."""
-        result: dict[str, Any] = {"personaId": self.persona_id}
+        result: dict[str, Any] = {}
+        if self.persona_id is not None:
+            result["personaId"] = self.persona_id
         if self.name is not None:
             result["name"] = self.name
         if self.avatar_id is not None:
