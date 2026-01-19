@@ -117,6 +117,9 @@ class AnamClient:
         else:
             self._persona_config = PersonaConfig(persona_id=persona_id)  # type: ignore
 
+        if self._persona_config.avatar_id and not self._persona_config.enable_audio_passthrough:
+            raise ConfigurationError("enable_audio_passthrough must be True when avatar_id is provided")
+
         # Event callbacks
         self._event_callbacks: dict[AnamEvent, list[EventCallback]] = {
             event: [] for event in AnamEvent

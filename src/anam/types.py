@@ -67,13 +67,9 @@ class PersonaConfig:
         language_code: Language code (e.g., 'en', 'es') (optional).
         llm_id: LLM model to use (optional).
         max_session_length_seconds: Maximum session duration (optional).
-        brain_type: Brain type to use. Set to 'CUSTOMER_CLIENT_V1' to disable LLM
-            (required for audio passthrough mode).
         enable_audio_passthrough: If True, enables audio passthrough mode where TTS audio
             is sent directly through the socket without transcription, LLM, or TTS processing.
-            For ephemeral personas, this must be set explicitly. For stateful personas,
-            this setting comes from the persona configuration in the database.
-            When using audio passthrough, set brain_type='CUSTOMER_CLIENT_V1' to disable LLM.
+            For ephemeral personas, this must be set explicitly.
     """
 
     persona_id: str | None = None
@@ -84,8 +80,7 @@ class PersonaConfig:
     language_code: str | None = None
     llm_id: str | None = None
     max_session_length_seconds: int | None = None
-    brain_type: str | None = None
-    enable_audio_passthrough: bool | None = None
+    enable_audio_passthrough: bool | None = True
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API requests."""
@@ -106,8 +101,6 @@ class PersonaConfig:
             result["llmId"] = self.llm_id
         if self.max_session_length_seconds is not None:
             result["maxSessionLengthSeconds"] = self.max_session_length_seconds
-        if self.brain_type is not None:
-            result["brainType"] = self.brain_type
         if self.enable_audio_passthrough is not None:
             result["enableAudioPassthrough"] = self.enable_audio_passthrough
         return result

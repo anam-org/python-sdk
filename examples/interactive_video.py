@@ -358,13 +358,12 @@ def main() -> None:
         )
 
     # Create persona config
-    # Set enable_audio_passthrough=True and brain_type='CUSTOMER_CLIENT_V1' to enable
-    # audio passthrough mode. In this mode, TTS audio is sent directly through the socket
+    # Set enable_audio_passthrough=True to allow TTS audio to be sent directly through the socket
     # without transcription, LLM, or TTS processing.
     persona_config = PersonaConfig(
         persona_id=persona_id,
         avatar_id=avatar_id,
-        enable_audio_passthrough=True,  # Enable audio passthrough mode
+        enable_audio_passthrough=True,
     )
 
     # Create client
