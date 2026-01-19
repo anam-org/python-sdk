@@ -370,7 +370,14 @@ class Session:
         # Listen for connection close
         client.add_listener(AnamEvent.CONNECTION_CLOSED, self._on_closed)
 
-    async def _on_closed(self, *args: Any) -> None:
+    def _get_persona_config(self) -> PersonaConfig:
+        if not self._client:
+            raise SessionError("Client not found")
+        if not self._client._persona_config:
+            raise SessionError("Persona configuration not found")
+        return self._client._persona_config
+
+    async def _on_closed(self, code: str, reason: str | None) -> None:
         """Handle connection closed."""
         self._closed = True
         self._close_event.set()

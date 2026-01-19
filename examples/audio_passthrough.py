@@ -235,7 +235,6 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
     print("="*60)
     print("Available commands:")
     print("  f [filename]  - Send audio file (defaults to input.wav)")
-    print("  t <text>      - Send text message")
     print("  i             - Interrupt current audio")
     print("  q             - Quit and stop session")
     print("="*60 + "\n")
@@ -268,19 +267,6 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                     await send_audio_file_chunked(agent, wav_path)
                 else:
                     print(f"❌ File not found: {wav_file}")
-
-            elif command == "t":
-                # Get the rest of the input as the message text
-                if len(parts) < 2:
-                    print("❌ Please provide text to send. Usage: t <your message>")
-                    continue
-                message_text = " ".join(parts[1:])
-                try:
-                    print(f"config: {session._get_persona_config()}")
-                    await session.send_message(message_text)
-                    print(f"✅ Sent message: {message_text}")
-                except Exception as e:
-                    print(f"❌ Error sending message: {e}")
 
             elif command == "i":
                 session.interrupt()
@@ -349,18 +335,18 @@ def main() -> None:
     """Main entry point."""
     # Get configuration from environment variables (loaded from .env file)
     api_key = os.environ.get("ANAM_API_KEY", "").strip().strip('"')
-    persona_id = os.environ.get("ANAM_PERSONA_ID", "").strip().strip('"')
+    avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
-    if not api_key or not persona_id:
+    if not api_key or not avatar_id:
         raise ValueError(
-            "Set ANAM_API_KEY and ANAM_PERSONA_ID environment variables"
+            "Set ANAM_API_KEY and ANAM_AVATAR_ID environment variables"
         )
 
 
     # Create persona config
     persona_config = PersonaConfig(
-        persona_id=persona_id,
+        avatar_id=avatar_id,
         enable_audio_passthrough=True,
     )
 
@@ -368,7 +354,7 @@ def main() -> None:
     client = AnamClient(
         api_key=api_key,
         persona=persona_config,
-        options=ClientOptions(disable_input_audio=False, api_base_url=api_base_url),
+        options=ClientOptions(disable_input_audio=True, api_base_url=api_base_url),
     )
 
     # Create display and audio player
