@@ -466,7 +466,6 @@ class StreamingClient:
                 frame = await track.recv()
                 frame_count += 1
 
-                # Seb this might be to reason why we need 48K in Pipecat?
                 frame_sample_rate = frame.sample_rate if hasattr(frame, "sample_rate") else 24000
                 target_sample_rate = 24000
 
@@ -477,24 +476,18 @@ class StreamingClient:
                         target_sample_rate,
                     )
 
-                # Convert av.AudioFrame to our AudioFrame type
-                # Following smallwebrtc pattern: to_ndarray() -> normalize -> tobytes()
-                pcm_array = frame.to_ndarray().astype(np.int16)
+                pcm_bytes = frame.to_ndarray().astype(np.int16).tobytes()
 
                 # Resample to 24kHz if needed (using util_audio pattern)
                 if frame_sample_rate != target_sample_rate:
                     pcm_bytes = self._resample_pcm16_to_24khz(
-                        pcm_array.tobytes(), frame_sample_rate, target_sample_rate
+                        pcm_bytes, frame_sample_rate, target_sample_rate
                     )
-                else:
-                    pcm_bytes = pcm_array.tobytes()
-
-                del pcm_array  # free NumPy array immediately
 
                 audio_frame = AudioFrame(
                     data=pcm_bytes,
                     sample_rate=target_sample_rate,
-                    channels=1,  # We expect mono audio
+                    channels=1,  # Anam requires mono audio
                     timestamp=frame.time if hasattr(frame, "time") else 0.0,
                     format="s16le",
                 )
