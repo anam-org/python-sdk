@@ -100,6 +100,12 @@ async def send_audio_file_chunked(
         sample_width = wf.getsampwidth()
         num_frames = wf.getnframes()
 
+        if sample_rate != 24000:
+            raise ValueError(f"Sample rate must be 24000, got {sample_rate}")
+        if num_channels != 1:
+            raise ValueError(f"Mono audio only supported, number of channels must be 1, got {num_channels}")
+        if sample_width != 2:
+            raise ValueError(f"16-bit audio only supported, sample width must be 2, got {sample_width}")
         # Read all frames
         all_frames = wf.readframes(num_frames)
 
