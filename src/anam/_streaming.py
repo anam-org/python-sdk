@@ -467,7 +467,7 @@ class StreamingClient:
                 frame_count += 1
 
                 # Seb this might be to reason why we need 48K in Pipecat?
-                frame_sample_rate = frame.sample_rate if hasattr(frame, "sample_rate") else 48000
+                frame_sample_rate = frame.sample_rate if hasattr(frame, "sample_rate") else 24000
                 target_sample_rate = 24000
 
                 if frame_count == 1:
