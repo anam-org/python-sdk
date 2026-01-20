@@ -149,7 +149,9 @@ class VideoDisplay:
 
     def update(self, frame: VideoFrame) -> None:
         """Update the displayed frame."""
-        self.frame = frame.to_ndarray()
+        # Convert RGB to BGR for OpenCV display
+        rgb_frame = frame.to_ndarray()
+        self.frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
 
     def run(self) -> None:
         """Run the display loop (call from main thread)."""

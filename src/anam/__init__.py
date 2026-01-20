@@ -18,7 +18,7 @@ Example:
     @client.on(AnamEvent.VIDEO_FRAME)
     async def handle_video(frame):
         # Process video frame
-        img = frame.to_ndarray()  # numpy array (H, W, 3) BGR format
+        img = frame.to_ndarray()  # numpy array (H, W, 3) RGB format
 
     @client.on(AnamEvent.AUDIO_FRAME)
     async def handle_audio(frame):

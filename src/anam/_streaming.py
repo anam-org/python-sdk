@@ -395,13 +395,13 @@ class StreamingClient:
                             asyncio.create_task(self._on_connection_established())
 
                 # Convert to our VideoFrame type
-                img = frame.to_ndarray(format="bgr24")
+                img = frame.to_ndarray(format="rgb24")
                 video_frame = VideoFrame(
                     data=img.tobytes(),
                     width=frame.width,
                     height=frame.height,
                     timestamp=frame.time if hasattr(frame, "time") else 0.0,
-                    format="bgr24",
+                    format="rgb24",
                 )
 
                 if self._on_video_frame:
@@ -466,6 +466,7 @@ class StreamingClient:
                 frame = await track.recv()
                 frame_count += 1
 
+                # Seb this might be to reason why we need 48K in Pipecat?
                 frame_sample_rate = frame.sample_rate if hasattr(frame, "sample_rate") else 48000
                 target_sample_rate = 24000
 
