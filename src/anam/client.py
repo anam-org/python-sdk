@@ -60,18 +60,18 @@ class AnamClient:
         self,
         api_key: str,
         persona_id: str | None = None,
-        persona: PersonaConfig | None = None,
+        persona_config: PersonaConfig | None = None,
         options: ClientOptions | None = None,
     ):
         """Initialize the Anam client.
 
-        You must provide either `persona_id` for a simple setup, or `persona`
-        for full configuration control.
+        You must provide either `persona_id` for a simple setup, or `persona_config`
+        for full configuration control. `persona_config` takes precedence over `persona_id`.
 
         Args:
             api_key: Your Anam API key.
             persona_id: ID of the persona to use (simple setup).
-            persona: Full persona configuration (advanced setup).
+            persona_config: Full persona configuration (advanced setup).
             options: Additional client options.
 
         Raises:
@@ -102,18 +102,18 @@ class AnamClient:
         if not api_key:
             raise ConfigurationError("api_key is required")
 
-        if not persona_id and not persona:
-            raise ConfigurationError("Either persona_id or persona must be provided")
+        if not persona_id and not persona_config:
+            raise ConfigurationError("Either persona_id or persona config must be provided")
 
-        if persona_id and persona:
-            raise ConfigurationError("Provide either persona_id or persona, not both")
+        if persona_id and persona_config:
+            raise ConfigurationError("Provide either persona_id or persona config, not both")
 
         self._api_key = api_key
         self._options = options or ClientOptions()
 
         # Create persona config
-        if persona:
-            self._persona_config = persona
+        if persona_config:
+            self._persona_config = persona_config
         else:
             self._persona_config = PersonaConfig(persona_id=persona_id)  # type: ignore
 

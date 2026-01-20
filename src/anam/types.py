@@ -139,13 +139,13 @@ class VideoFrame:
     width: int
     height: int
     timestamp: float
-    format: str = "bgr24"
+    format: str = "rgb24"
 
     def to_ndarray(self) -> NDArray[np.uint8]:
         """Convert to numpy array with shape (height, width, 3).
 
         Returns:
-            NumPy array in BGR format by default.
+            NumPy array in RGB format by default.
         """
         arr = np.frombuffer(self.data, dtype=np.uint8)
         return arr.reshape((self.height, self.width, 3))
