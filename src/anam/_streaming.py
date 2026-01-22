@@ -414,48 +414,6 @@ class StreamingClient:
                 logger.error("Error processing video frame: %s", e)
                 break
 
-    def _resample_pcm16_to_24khz(
-        self, pcm16_bytes: bytes, orig_sample_rate: int, target_sample_rate: int
-    ) -> bytes:
-        """Resample PCM16 audio bytes to target sample rate.
-
-        Uses util_audio.resample_pcm16_bytes if available, otherwise falls back
-        to simple numpy-based resampling for common cases.
-        """
-        if orig_sample_rate == target_sample_rate:
-            return pcm16_bytes
-
-        # Try to use util_audio if available (from anam-engine)
-        try:
-            from anam_engine.util_audio import resample_pcm16_bytes
-
-            return resample_pcm16_bytes(pcm16_bytes, orig_sample_rate, target_sample_rate)
-        except ImportError:
-            # Fallback: simple resampling using numpy for common cases
-            # Note: This is a basic fallback. For production use, install resampy/scipy
-            # or ensure anam-engine is available for high-quality resampling.
-            audio_np = np.frombuffer(pcm16_bytes, dtype=np.int16)
-
-            ratio = orig_sample_rate / target_sample_rate
-
-            if ratio == 2.0:
-                # Simple 2:1 downsampling - take every other sample
-                resampled = audio_np[::2]
-            else:
-                # For other ratios, use linear interpolation
-                num_samples = int(len(audio_np) / ratio)
-                indices = np.linspace(0, len(audio_np) - 1, num_samples)
-                resampled = np.interp(indices, np.arange(len(audio_np)), audio_np).astype(np.int16)
-
-            logger.debug(
-                "Resampled audio using numpy fallback: %dHz -> %dHz (%d -> %d samples)",
-                orig_sample_rate,
-                target_sample_rate,
-                len(audio_np),
-                len(resampled),
-            )
-            return resampled.tobytes()
-
     async def _process_audio_track(self, track: MediaStreamTrack) -> None:
         """Process incoming audio frames."""
         logger.debug("Starting audio track processing")
