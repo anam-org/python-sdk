@@ -23,6 +23,7 @@ pip install anam-ai[display]
 
 ```python
 import asyncio
+import cv2
 from anam import AnamClient, AnamEvent, VideoFrame, AudioFrame
 
 async def main():

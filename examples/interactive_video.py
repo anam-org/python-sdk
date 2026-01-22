@@ -189,7 +189,7 @@ class VideoDisplay:
 class AudioPlayer:
     """Simple audio player using sounddevice."""
 
-    def __init__(self, sample_rate: int = 48000, channels: int = 1) -> None:
+    def __init__(self, sample_rate: int = 48000, channels: int = 2) -> None:
         self.sample_rate: int = sample_rate
         self.channels: int = channels
         self.buffer: deque[np.ndarray] = deque(maxlen=100)
