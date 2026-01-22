@@ -463,33 +463,25 @@ class StreamingClient:
 
         while True:
             try:
+                # Receive audio frame from WebRTC and forward to the on_audio subscriber.
+                # incoming audio is PCM, i.e. decoded WebRTC OPUS: 16 bit 48kHz stereo.
                 frame = await track.recv()
                 frame_count += 1
 
-                frame_sample_rate = frame.sample_rate if hasattr(frame, "sample_rate") else 24000
-                target_sample_rate = 24000
-
                 if frame_count == 1:
-                    logger.info(
-                        "First audio frame received: %dHz, resampling to %dHz",
-                        frame_sample_rate,
-                        target_sample_rate,
-                    )
-
-                pcm_bytes = frame.to_ndarray().astype(np.int16).tobytes()
-
-                # Resample to 24kHz if needed (using util_audio pattern)
-                if frame_sample_rate != target_sample_rate:
-                    pcm_bytes = self._resample_pcm16_to_24khz(
-                        pcm_bytes, frame_sample_rate, target_sample_rate
-                    )
+                    logger.debug(f"First audio frame received: {frame.sample_rate}Hz.")
+                    logger.debug(f"Audio frame layout: {frame.layout}")
+                    logger.debug(f"Audio frame channels: {frame.layout.channels}")
+                    logger.debug(f"Audio frame layout name: {frame.layout.name}")
+                    logger.debug(f"Audio frame format: {frame.format}")
+                    logger.debug(f"Audio frame samples: {frame.format.name}")
 
                 audio_frame = AudioFrame(
-                    data=pcm_bytes,
-                    sample_rate=target_sample_rate,
-                    channels=1,  # Anam requires mono audio
+                    data=frame.to_ndarray().astype(np.int16).tobytes(),
+                    sample_rate=frame.sample_rate,
+                    channels=2 if frame.layout.name == "stereo" else 1,
                     timestamp=frame.time if hasattr(frame, "time") else 0.0,
-                    format="s16le",
+                    format=frame.format.name,
                 )
 
                 if self._on_audio_frame:

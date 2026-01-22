@@ -52,6 +52,7 @@ if TYPE_CHECKING:
             """Write audio data."""
             ...
 
+
 # Load environment variables
 _ = load_dotenv()
 
@@ -375,7 +376,7 @@ def main() -> None:
     # Create client
     client = AnamClient(
         api_key=api_key,
-        persona=persona_config,
+        persona_config=persona_config,
         options=ClientOptions(disable_input_audio=False, api_base_url=api_base_url),
     )
 

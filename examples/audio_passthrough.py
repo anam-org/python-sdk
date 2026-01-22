@@ -57,8 +57,8 @@ _ = load_dotenv()
 
 # Configure logging - reduced verbosity
 logging.basicConfig(
-    level=logging.WARNING,  # Reduced from INFO to WARNING
-    format="%(levelname)s: %(message)s",  # Simplified format
+    level=logging.WARNING,
+    format="%(name)s - %(levelname)s - %(message)s",  # Simplified format
 )
 logger = logging.getLogger(__name__)
 
@@ -187,7 +187,7 @@ class VideoDisplay:
 class AudioPlayer:
     """Simple audio player using sounddevice."""
 
-    def __init__(self, sample_rate: int = 48000, channels: int = 1) -> None:
+    def __init__(self, sample_rate: int = 48000, channels: int = 2) -> None:
         self.sample_rate: int = sample_rate
         self.channels: int = channels
         self.buffer: deque[np.ndarray] = deque(maxlen=100)

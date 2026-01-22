@@ -160,7 +160,7 @@ class AudioFrame:
         sample_rate: Audio sample rate in Hz.
         channels: Number of audio channels.
         timestamp: Frame timestamp in seconds.
-        format: Sample format (e.g., 's16' for signed 16-bit).
+        format: Sample format (e.g., 's16' for interleaved signed 16-bit).
     """
 
     data: bytes
