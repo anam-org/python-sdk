@@ -7,9 +7,11 @@ import logging
 from typing import Any, Awaitable, Callable, TypeVar
 
 from ._api import CoreApiClient
+from ._agent_audio_input_stream import AgentAudioInputStream
 from ._streaming import StreamingClient
 from .errors import ConfigurationError, SessionError
 from .types import (
+    AgentAudioInputConfig,
     AnamEvent,
     AudioFrame,
     ClientOptions,
@@ -58,18 +60,18 @@ class AnamClient:
         self,
         api_key: str,
         persona_id: str | None = None,
-        persona: PersonaConfig | None = None,
+        persona_config: PersonaConfig | None = None,
         options: ClientOptions | None = None,
     ):
         """Initialize the Anam client.
 
-        You must provide either `persona_id` for a simple setup, or `persona`
-        for full configuration control.
+        You must provide either `persona_id` for a simple setup, or `persona_config`
+        for full configuration control. `persona_config` takes precedence over `persona_id`.
 
         Args:
             api_key: Your Anam API key.
             persona_id: ID of the persona to use (simple setup).
-            persona: Full persona configuration (advanced setup).
+            persona_config: Full persona configuration (advanced setup).
             options: Additional client options.
 
         Raises:
@@ -100,20 +102,23 @@ class AnamClient:
         if not api_key:
             raise ConfigurationError("api_key is required")
 
-        if not persona_id and not persona:
-            raise ConfigurationError("Either persona_id or persona must be provided")
+        if not persona_id and not persona_config:
+            raise ConfigurationError("Either persona_id or persona config must be provided")
 
-        if persona_id and persona:
-            raise ConfigurationError("Provide either persona_id or persona, not both")
+        if persona_id and persona_config:
+            raise ConfigurationError("Provide either persona_id or persona config, not both")
 
         self._api_key = api_key
         self._options = options or ClientOptions()
 
         # Create persona config
-        if persona:
-            self._persona_config = persona
+        if persona_config:
+            self._persona_config = persona_config
         else:
             self._persona_config = PersonaConfig(persona_id=persona_id)  # type: ignore
+
+        if self._persona_config.avatar_id and not self._persona_config.enable_audio_passthrough:
+            raise ConfigurationError("enable_audio_passthrough must be True when avatar_id is provided")
 
         # Event callbacks
         self._event_callbacks: dict[AnamEvent, list[EventCallback]] = {
@@ -283,6 +288,26 @@ class AnamClient:
         self._is_streaming = False
         await self._emit(AnamEvent.CONNECTION_CLOSED, code, reason)
 
+    def create_agent_audio_input_stream(
+        self, config: AgentAudioInputConfig
+    ) -> AgentAudioInputStream:
+        """Create an agent audio input stream for sending PCM audio data.
+
+        Args:
+            config: Audio format configuration.
+
+        Returns:
+            AgentAudioInputStream instance.
+
+        Raises:
+            SessionError: If session is not started.
+        """
+        if not self._streaming_client:
+            raise SessionError(
+                "Failed to create agent audio input stream: session is not started"
+            )
+        return self._streaming_client.create_agent_audio_input_stream(config)
+
     async def close(self) -> None:
         """Close the connection and clean up resources."""
         if self._streaming_client:
@@ -345,7 +370,14 @@ class Session:
         # Listen for connection close
         client.add_listener(AnamEvent.CONNECTION_CLOSED, self._on_closed)
 
-    async def _on_closed(self, *args: Any) -> None:
+    def _get_persona_config(self) -> PersonaConfig:
+        if not self._client:
+            raise SessionError("Client not found")
+        if not self._client._persona_config:
+            raise SessionError("Persona configuration not found")
+        return self._client._persona_config
+
+    async def _on_closed(self, code: str, reason: str | None) -> None:
         """Handle connection closed."""
         self._closed = True
         self._close_event.set()
@@ -379,10 +411,17 @@ class Session:
             content: The message text.
 
         Raises:
-            SessionError: If not connected.
+            SessionError: If not connected or if LLM is not available.
         """
         if not self._client._streaming_client:
             raise SessionError("Not connected")
+
+        # Validate that LLM is available for processing messages
+        persona_config = self._get_persona_config()
+
+        # Check a persona and LLM are consuming the text messages
+        if persona_config.persona_id is None and (persona_config.llm_id == "CUSTOMER_CLIENT_V1" or persona_config.llm_id is None):
+            logger.warning("Persona ID and LLM ID are not set, messages will not be processed by the backend.")
 
         # Wait for data channel to be ready
         streaming = self._client._streaming_client
@@ -403,6 +442,24 @@ class Session:
             raise SessionError("Not connected")
 
         self._client._streaming_client.send_interrupt()
+
+    def create_agent_audio_input_stream(
+        self, config: AgentAudioInputConfig
+    ) -> AgentAudioInputStream:
+        """Create an agent audio input stream for sending PCM audio data.
+
+        Args:
+            config: Audio format configuration.
+
+        Returns:
+            AgentAudioInputStream instance.
+
+        Raises:
+            SessionError: If not connected.
+        """
+        if not self._client._streaming_client:
+            raise SessionError("Not connected")
+        return self._client._streaming_client.create_agent_audio_input_stream(config)
 
     def mute_input(self) -> None:
         """Mute microphone input (if enabled)."""

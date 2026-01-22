@@ -1,7 +1,8 @@
-"""Video display example using OpenCV.
+"""Interactive video session example with CLI controls.
 
-This example shows how to display the avatar video stream
-in a window using OpenCV.
+This example shows how use Anam as an avatar provider where
+the avatar is rendered on existing TTS audio. The video is displayed
+in a window using OpenCV
 
 Requirements:
     uv sync --extra display
@@ -9,8 +10,8 @@ Requirements:
 
 Usage:
     export ANAM_API_KEY="your-api-key"
-    export ANAM_PERSONA_ID="your-persona-id"
-    uv run --extra display python examples/video_display.py
+    export ANAM_AVATAR_ID="your-avatar-id"
+    uv run --extra display python examples/audio_passthrough.py
 """
 
 import asyncio
@@ -27,7 +28,7 @@ from dotenv import load_dotenv
 
 from anam import AnamClient, AnamEvent, AudioFrame, ClientOptions, VideoFrame
 from anam._agent_audio_input_stream import AgentAudioInputStream
-from anam.types import AgentAudioInputConfig
+from anam.types import AgentAudioInputConfig, PersonaConfig
 
 if TYPE_CHECKING:
     import sounddevice as sd
@@ -54,21 +55,25 @@ if TYPE_CHECKING:
 # Load environment variables
 _ = load_dotenv()
 
-# Configure logging
+# Configure logging - reduced verbosity
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.WARNING,
+    format="%(name)s - %(levelname)s - %(message)s",  # Simplified format
 )
 logger = logging.getLogger(__name__)
 
-# Audio playback (optional)
+# Suppress verbose logging from dependencies
+logging.getLogger("anam").setLevel(logging.WARNING)
+logging.getLogger("websockets").setLevel(logging.WARNING)
+logging.getLogger("aiohttp").setLevel(logging.WARNING)
+
+# Audio playback
 try:
     import sounddevice as sd
     _audio_enabled = True
 except ImportError:
     sd = None
     _audio_enabled = False
-    logger.warning("sounddevice not installed, audio playback disabled")
 
 AUDIO_ENABLED = _audio_enabled
 
@@ -84,15 +89,10 @@ async def send_audio_file_chunked(
         agent: The agent audio input stream to send chunks to.
         wav_file_path: Path to the WAV file to read.
         chunk_duration_ms: Duration of each chunk in milliseconds (default: 500ms).
-
-    Raises:
-        FileNotFoundError: If the WAV file doesn't exist.
-        ValueError: If the WAV file format is incompatible.
     """
     if not wav_file_path.exists():
-        raise FileNotFoundError(f"Audio file not found: {wav_file_path}")
-
-    logger.info(f"Reading audio file: {wav_file_path}")
+        print(f"❌ File not found: {wav_file_path}")
+        return
 
     with wave.open(str(wav_file_path), "rb") as wf:
         sample_rate = wf.getframerate()
@@ -100,56 +100,49 @@ async def send_audio_file_chunked(
         sample_width = wf.getsampwidth()
         num_frames = wf.getnframes()
 
-        duration_sec = num_frames / sample_rate
-        logger.info(
-            f"WAV file: {sample_rate}Hz, {num_channels}ch, {sample_width} bytes/sample, "
-            + f"{num_frames} frames ({duration_sec:.2f}s)"
-        )
+        if sample_rate != 24000:
+            raise ValueError(f"Sample rate must be 24000, got {sample_rate}")
+        if num_channels != 1:
+            raise ValueError(f"Mono audio only supported, number of channels must be 1, got {num_channels}")
+        if sample_width != 2:
+            raise ValueError(f"16-bit audio only supported, sample width must be 2, got {sample_width}")
+        # Read all frames
+        all_frames = wf.readframes(num_frames)
 
         # Verify format matches agent config
         config = agent.get_config()
         if num_channels != config.channels:
-            logger.warning(
-                f"Channel mismatch: file has {num_channels} channels, "
-                + f"agent expects {config.channels}. Converting to mono."
-            )
+            # Convert multi-channel to mono by averaging
+            audio_array: np.ndarray = np.frombuffer(all_frames, dtype=np.int16)
+            audio_array = audio_array.reshape(-1, num_channels)
+            audio_array = np.mean(audio_array, axis=1).astype(np.int16)
+            frames = audio_array.tobytes()
+        else:
+            frames = all_frames
 
         # Calculate chunk size in frames
         chunk_size_frames = int(sample_rate * chunk_duration_ms / 1000.0)
+        sample_bytes = sample_width * (1 if num_channels != config.channels else num_channels)
+        chunk_bytes = chunk_size_frames * sample_bytes
 
-        # Read and send chunks
         chunk_count = 0
-        total_bytes_sent = 0
+        idx = 0
 
-        while True:
-            # Read chunk
-            frames = wf.readframes(chunk_size_frames)
+        while idx < len(frames):
+            chunk = frames[idx : idx + chunk_bytes]
+            idx += chunk_bytes
 
-            if not frames:
+            if not chunk:
                 break
 
-            # Convert to mono if needed
-            if num_channels > 1:
-                # Convert multi-channel to mono by averaging
-                audio_array: np.ndarray = np.frombuffer(frames, dtype=np.int16)
-                audio_array = audio_array.reshape(-1, num_channels)
-                audio_array = np.mean(audio_array, axis=1).astype(np.int16)
-                frames = audio_array.tobytes()
-
-            # Send chunk
-            await agent.send_audio_chunk(frames)
+            await agent.send_audio_chunk(chunk)
             chunk_count += 1
-            total_bytes_sent += len(frames)
 
-            logger.debug(f"Sent audio chunk {chunk_count}: {len(frames)} bytes")
-
-            # Small delay between chunks to avoid overwhelming the connection
+            # Small delay between chunks
             await asyncio.sleep(0.01)
 
-        logger.info(
-            f"Finished sending audio: {chunk_count} chunks, "
-            + f"{total_bytes_sent} bytes total"
-        )
+        await agent.end_sequence()
+        print(f"✅ Sent {chunk_count} audio chunks from {wav_file_path.name}")
 
 
 class VideoDisplay:
@@ -224,8 +217,6 @@ class AudioPlayer:
         try:
             # Convert int16 to float32 for sounddevice
             audio_data = frame.to_ndarray().astype(np.float32) / 32768.0
-
-            # Write directly to stream
             _ = self.stream.write(audio_data)
         except Exception as e:
             logger.error("Audio playback error: %s", e)
@@ -239,6 +230,67 @@ class AudioPlayer:
             self.stream = None
 
 
+async def async_input(prompt: str = "") -> str:
+    """Get user input asynchronously without blocking."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, input, prompt)
+
+
+async def interactive_loop(session, display: VideoDisplay) -> None:
+    """Interactive command loop."""
+    print("\n" + "="*60)
+    print("Interactive Session Started!")
+    print("="*60)
+    print("Available commands:")
+    print("  f [filename]  - Send audio file (defaults to input.wav)")
+    print("  i             - Interrupt current audio")
+    print("  q             - Quit and stop session")
+    print("="*60 + "\n")
+
+    while True:
+        try:
+            # Get user input in a non-blocking way
+            user_input = await async_input(">> ")
+
+            parts = user_input.strip().split()
+            if not parts:
+                continue
+
+            command = parts[0].lower()
+
+            if command == "q":
+                print("Exiting...")
+                display.stop()
+                break
+
+            elif command == "f":
+                # Default to input.wav if no filename provided
+                wav_file = parts[1] if len(parts) > 1 else "input.wav"
+                wav_path = Path(wav_file)
+                if wav_path.exists():
+                    print(f"Sending audio from {wav_file}...")
+                    agent = session.create_agent_audio_input_stream(
+                        AgentAudioInputConfig(encoding="pcm_s16le", sample_rate=24000, channels=1)
+                    )
+                    await send_audio_file_chunked(agent, wav_path)
+                else:
+                    print(f"❌ File not found: {wav_file}")
+
+            elif command == "i":
+                session.interrupt()
+                print("✅ Interrupt sent")
+
+            else:
+                print(f"❌ Unknown command: {command}")
+                print("Available commands: f [filename], t <text>, i, q")
+
+        except KeyboardInterrupt:
+            print("\nInterrupted by user")
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}")
+
+
 async def stream_session(
     client: AnamClient,
     display: VideoDisplay,
@@ -246,27 +298,10 @@ async def stream_session(
 ) -> None:
     """Run the streaming session."""
 
-    video_frames:int = 0
-
     # These functions are registered via decorators and called by the client
-    # They appear unused to static analysis but are actually used at runtime
     @client.on(AnamEvent.VIDEO_FRAME)
     async def on_video(frame: VideoFrame) -> None:
-        nonlocal video_frames
-        video_frames += 1
         display.update(frame)
-        if video_frames == 200:
-            await session.send_message("Hello! Tell me a short joke.")
-        if video_frames == 250:
-            session.interrupt()
-        if video_frames == 300:
-            agent = session.create_agent_audio_input_stream(
-                AgentAudioInputConfig(encoding="pcm_s16le", sample_rate=24000, channels=1)
-            )
-            # Read and send audio file in chunks
-            wav_path = Path(__file__).parent.parent / "input.wav"
-            await send_audio_file_chunked(agent, wav_path)
-            await agent.end_sequence()
 
     @client.on(AnamEvent.AUDIO_FRAME)
     async def on_audio(frame: AudioFrame) -> None:
@@ -274,35 +309,59 @@ async def stream_session(
 
     @client.on(AnamEvent.CONNECTION_ESTABLISHED)
     async def on_connected() -> None:
-        logger.info("✓ Connected!")
+        print("✅ Connected!")
+
+    @client.on(AnamEvent.CONNECTION_CLOSED)
+    async def on_closed(code: str, reason: str | None) -> None:
+        print(f"Connection closed: {code} - {reason or 'No reason'}")
 
     async with client.connect() as session:
-        logger.info("Session: %s", session.session_id)
-        logger.info("Press 'q' in the video window to quit")
+        print(f"Session: {session.session_id}")
+        print("Press 'q' in the video window or type 'q' in CLI to quit")
 
-        # Wait until display is closed or session ends
+        # Start interactive loop
+        interactive_task = asyncio.create_task(interactive_loop(session, display))
+
+        # Wait until display is closed, session ends, or interactive loop exits
         while display.is_running():
             if not session.is_active:
                 break
+            if interactive_task.done():
+                break
             await asyncio.sleep(0.1)
+
+        # Cancel interactive task if still running
+        if not interactive_task.done():
+            interactive_task.cancel()
+            try:
+                await interactive_task
+            except asyncio.CancelledError:
+                pass
 
 
 def main() -> None:
     """Main entry point."""
     # Get configuration from environment variables (loaded from .env file)
     api_key = os.environ.get("ANAM_API_KEY", "").strip().strip('"')
-    persona_id = os.environ.get("ANAM_PERSONA_ID", "").strip().strip('"')
+    avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
-    if not api_key or not persona_id:
+    if not api_key or not avatar_id:
         raise ValueError(
-            "Set ANAM_API_KEY and ANAM_PERSONA_ID environment variables"
+            "Set ANAM_API_KEY and ANAM_AVATAR_ID environment variables"
         )
+
+
+    # Create persona config
+    persona_config = PersonaConfig(
+        avatar_id=avatar_id,
+        enable_audio_passthrough=True,
+    )
 
     # Create client
     client = AnamClient(
         api_key=api_key,
-        persona_id=persona_id,
+        persona_config=persona_config,
         options=ClientOptions(disable_input_audio=True, api_base_url=api_base_url),
     )
 
@@ -329,7 +388,7 @@ def main() -> None:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error("Error in async thread: %s", e)
+            print(f"❌ Error in async thread: {e}")
 
     thread = threading.Thread(target=run_async, daemon=True)
     thread.start()
@@ -340,7 +399,7 @@ def main() -> None:
         display.run()
 
     except KeyboardInterrupt:
-        logger.info("Interrupted")
+        print("\nInterrupted")
     finally:
         display.stop()
         audio_player.stop()
@@ -385,4 +444,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

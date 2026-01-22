@@ -23,6 +23,7 @@ pip install anam-ai[display]
 
 ```python
 import asyncio
+import cv2
 from anam import AnamClient, AnamEvent, VideoFrame, AudioFrame
 
 async def main():
@@ -35,8 +36,10 @@ async def main():
     # Handle video frames
     @client.on(AnamEvent.VIDEO_FRAME)
     async def on_video(frame: VideoFrame):
-        # frame.to_ndarray() returns numpy array (H, W, 3) in BGR format
-        img = frame.to_ndarray()
+        # frame.to_ndarray() returns numpy array (H, W, 3) in RGB format
+        rgb_img = frame.to_ndarray()
+        # Convert RGB to BGR for OpenCV display
+        img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
         print(f"Video frame: {frame.width}x{frame.height}")
 
     # Handle audio frames
@@ -156,10 +159,10 @@ class VideoFrame:
     width: int            # Frame width in pixels
     height: int           # Frame height in pixels
     timestamp: float      # Frame timestamp
-    format: str           # Pixel format (default: "bgr24")
+    format: str           # Pixel format (default: "rgb24")
 
     def to_ndarray(self) -> np.ndarray:
-        """Convert to numpy array (H, W, 3) in BGR format."""
+        """Convert to numpy array (H, W, 3) in RGB format."""
 ```
 
 #### AudioFrame
@@ -196,7 +199,10 @@ audio_writer = wave.open("output.wav", "wb")
 
 @client.on(AnamEvent.VIDEO_FRAME)
 async def save_video(frame):
-    video_writer.write(frame.to_ndarray())
+    # Convert RGB to BGR for OpenCV VideoWriter
+    rgb_frame = frame.to_ndarray()
+    bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+    video_writer.write(bgr_frame)
 
 @client.on(AnamEvent.AUDIO_FRAME)
 async def save_audio(frame):
@@ -218,7 +224,9 @@ latest_frame = None
 @client.on(AnamEvent.VIDEO_FRAME)
 async def update_frame(frame):
     global latest_frame
-    latest_frame = frame.to_ndarray()
+    # Convert RGB to BGR for OpenCV display
+    rgb_frame = frame.to_ndarray()
+    latest_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
 
 # Run display in main thread
 async with client.connect() as session:

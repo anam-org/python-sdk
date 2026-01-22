@@ -9,7 +9,7 @@ from typing import Any, Awaitable, Callable
 import websockets
 from websockets.client import WebSocketClientProtocol
 
-from .types import SessionInfo
+from .types import AgentAudioInputPayload, SessionInfo
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,8 @@ class SignalAction(str, Enum):
     SESSION_READY = "sessionready"
     TALK_STREAM_INPUT = "talkstreaminput"
     TALK_STREAM_INTERRUPTED = "talkstreaminterrupted"
+    AGENT_AUDIO_INPUT = "agentaudioinput"
+    AGENT_AUDIO_INPUT_END = "agentaudioinputend"
 
 
 class SignallingClient:
@@ -291,6 +293,38 @@ class SignallingClient:
                 logger.error("Failed to flush message: %s", e)
                 self._send_buffer.insert(0, message)
                 break
+
+    async def send_agent_audio_input(self, payload: AgentAudioInputPayload) -> None:
+        """Send agent audio input message to the server.
+
+        Args:
+            payload: The audio input payload.
+        """
+        # Convert to camelCase to match backend expectations
+        message = {
+            "actionType": SignalAction.AGENT_AUDIO_INPUT.value,
+            "sessionId": self._session_id,
+            "payload": {
+                "audioData": payload.audio_data,
+                "encoding": payload.encoding,
+                "sampleRate": payload.sample_rate,
+                "channels": payload.channels,
+                "sequenceNumber": payload.sequence_number,
+            },
+        }
+        await self.send_message(message)
+
+    async def send_agent_audio_input_end(self) -> None:
+        """Send agent audio input end signal to the server.
+
+        Signals the end of the current audio sequence/turn.
+        """
+        message = {
+            "actionType": SignalAction.AGENT_AUDIO_INPUT_END.value,
+            "sessionId": self._session_id,
+            "payload": {},
+        }
+        await self.send_message(message)
 
     async def close(self) -> None:
         """Close the WebSocket connection."""

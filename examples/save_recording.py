@@ -45,7 +45,9 @@ class VideoRecorder:
 
     def add_frame(self, frame: VideoFrame) -> None:
         """Add a video frame to the recording."""
-        img = frame.to_ndarray()
+        # Convert RGB to BGR for OpenCV VideoWriter
+        rgb_frame = frame.to_ndarray()
+        img = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
 
         # Initialize writer on first frame
         if self.writer is None:

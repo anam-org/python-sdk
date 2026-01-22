@@ -67,9 +67,12 @@ class PersonaConfig:
         language_code: Language code (e.g., 'en', 'es') (optional).
         llm_id: LLM model to use (optional).
         max_session_length_seconds: Maximum session duration (optional).
+        enable_audio_passthrough: If True, enables audio passthrough mode where TTS audio
+            is sent directly through the socket without transcription, LLM, or TTS processing.
+            For ephemeral personas, this must be set explicitly.
     """
 
-    persona_id: str
+    persona_id: str | None = None
     name: str | None = None
     avatar_id: str | None = None
     voice_id: str | None = None
@@ -77,10 +80,13 @@ class PersonaConfig:
     language_code: str | None = None
     llm_id: str | None = None
     max_session_length_seconds: int | None = None
+    enable_audio_passthrough: bool | None = True
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API requests."""
-        result: dict[str, Any] = {"personaId": self.persona_id}
+        result: dict[str, Any] = {}
+        if self.persona_id is not None:
+            result["personaId"] = self.persona_id
         if self.name is not None:
             result["name"] = self.name
         if self.avatar_id is not None:
@@ -95,6 +101,8 @@ class PersonaConfig:
             result["llmId"] = self.llm_id
         if self.max_session_length_seconds is not None:
             result["maxSessionLengthSeconds"] = self.max_session_length_seconds
+        if self.enable_audio_passthrough is not None:
+            result["enableAudioPassthrough"] = self.enable_audio_passthrough
         return result
 
 
@@ -131,13 +139,13 @@ class VideoFrame:
     width: int
     height: int
     timestamp: float
-    format: str = "bgr24"
+    format: str = "rgb24"
 
     def to_ndarray(self) -> NDArray[np.uint8]:
         """Convert to numpy array with shape (height, width, 3).
 
         Returns:
-            NumPy array in BGR format by default.
+            NumPy array in RGB format by default.
         """
         arr = np.frombuffer(self.data, dtype=np.uint8)
         return arr.reshape((self.height, self.width, 3))
@@ -152,7 +160,7 @@ class AudioFrame:
         sample_rate: Audio sample rate in Hz.
         channels: Number of audio channels.
         timestamp: Frame timestamp in seconds.
-        format: Sample format (e.g., 's16' for signed 16-bit).
+        format: Sample format (e.g., 's16' for interleaved signed 16-bit).
     """
 
     data: bytes
@@ -172,15 +180,6 @@ class AudioFrame:
             arr = arr.reshape((-1, self.channels))
         return arr
 
-    def to_float32(self) -> NDArray[np.float32]:
-        """Convert to float32 array normalized to [-1.0, 1.0].
-
-        Returns:
-            NumPy array of float32 samples.
-        """
-        arr = self.to_ndarray().astype(np.float32)
-        return arr / 32768.0
-
 
 @dataclass
 class Message:
@@ -195,6 +194,40 @@ class Message:
     role: MessageRole
     content: str
     timestamp: str
+
+
+@dataclass
+class AgentAudioInputConfig:
+    """Configuration for agent audio input stream.
+
+    Args:
+        encoding: Audio encoding format ('pcm_s16le' for 16-bit signed PCM).
+        sample_rate: Sample rate in Hz (e.g., 16000, 24000, 44100).
+        channels: Number of audio channels (1 = mono, 2 = stereo).
+    """
+
+    encoding: str = "pcm_s16le"
+    sample_rate: int = 24000
+    channels: int = 1
+
+
+@dataclass
+class AgentAudioInputPayload:
+    """Payload for agent audio input messages.
+
+    Args:
+        audio_data: Base64-encoded PCM audio data.
+        encoding: Audio encoding format ('pcm_s16le').
+        sample_rate: Sample rate in Hz.
+        channels: Number of audio channels.
+        sequence_number: Sequence number for ordering (starts at 0, resets on endSequence).
+    """
+
+    audio_data: str
+    encoding: str
+    sample_rate: int
+    channels: int
+    sequence_number: int
 
 
 @dataclass

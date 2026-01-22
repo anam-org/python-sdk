@@ -16,8 +16,9 @@ from aiortc import (
     RTCSessionDescription,
 )
 
+from ._agent_audio_input_stream import AgentAudioInputStream
 from ._signalling import SignalAction, SignallingClient
-from .types import AudioFrame, SessionInfo, VideoFrame
+from .types import AgentAudioInputConfig, AudioFrame, SessionInfo, VideoFrame
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class StreamingClient:
         self._video_track: MediaStreamTrack | None = None
         self._audio_track: MediaStreamTrack | None = None
         self._is_connected = False
+        self._agent_audio_input_stream: AgentAudioInputStream | None = None
 
         # Tasks
         self._video_task: asyncio.Task[None] | None = None
@@ -393,13 +395,13 @@ class StreamingClient:
                             asyncio.create_task(self._on_connection_established())
 
                 # Convert to our VideoFrame type
-                img = frame.to_ndarray(format="bgr24")
+                img = frame.to_ndarray(format="rgb24")
                 video_frame = VideoFrame(
                     data=img.tobytes(),
                     width=frame.width,
                     height=frame.height,
                     timestamp=frame.time if hasattr(frame, "time") else 0.0,
-                    format="bgr24",
+                    format="rgb24",
                 )
 
                 if self._on_video_frame:
@@ -461,39 +463,25 @@ class StreamingClient:
 
         while True:
             try:
+                # Receive audio frame from WebRTC and forward to the on_audio subscriber.
+                # incoming audio is PCM, i.e. decoded WebRTC OPUS: 16 bit 48kHz stereo.
                 frame = await track.recv()
                 frame_count += 1
 
-                frame_sample_rate = frame.sample_rate if hasattr(frame, "sample_rate") else 48000
-                target_sample_rate = 24000
-
                 if frame_count == 1:
-                    logger.info(
-                        "First audio frame received: %dHz, resampling to %dHz",
-                        frame_sample_rate,
-                        target_sample_rate,
-                    )
-
-                # Convert av.AudioFrame to our AudioFrame type
-                # Following smallwebrtc pattern: to_ndarray() -> normalize -> tobytes()
-                pcm_array = frame.to_ndarray().astype(np.int16)
-
-                # Resample to 24kHz if needed (using util_audio pattern)
-                if frame_sample_rate != target_sample_rate:
-                    pcm_bytes = self._resample_pcm16_to_24khz(
-                        pcm_array.tobytes(), frame_sample_rate, target_sample_rate
-                    )
-                else:
-                    pcm_bytes = pcm_array.tobytes()
-
-                del pcm_array  # free NumPy array immediately
+                    logger.debug(f"First audio frame received: {frame.sample_rate}Hz.")
+                    logger.debug(f"Audio frame layout: {frame.layout}")
+                    logger.debug(f"Audio frame channels: {frame.layout.channels}")
+                    logger.debug(f"Audio frame layout name: {frame.layout.name}")
+                    logger.debug(f"Audio frame format: {frame.format}")
+                    logger.debug(f"Audio frame samples: {frame.format.name}")
 
                 audio_frame = AudioFrame(
-                    data=pcm_bytes,
-                    sample_rate=target_sample_rate,
-                    channels=1,  # We expect mono audio
+                    data=frame.to_ndarray().astype(np.int16).tobytes(),
+                    sample_rate=frame.sample_rate,
+                    channels=2 if frame.layout.name == "stereo" else 1,
                     timestamp=frame.time if hasattr(frame, "time") else 0.0,
-                    format="s16le",
+                    format=frame.format.name,
                 )
 
                 if self._on_audio_frame:
@@ -584,6 +572,37 @@ class StreamingClient:
         }
         self.send_data_message(json.dumps(message))
 
+    def create_agent_audio_input_stream(
+        self, config: AgentAudioInputConfig
+    ) -> AgentAudioInputStream:
+        """Create an agent audio input stream for sending PCM audio data.
+
+        Args:
+            config: Audio format configuration.
+
+        Returns:
+            AgentAudioInputStream instance.
+
+        Raises:
+            RuntimeError: If signalling client is not available.
+        """
+        if not self._signalling_client:
+            raise RuntimeError(
+                "Failed to create agent audio input stream: signalling client is not available"
+            )
+        self._agent_audio_input_stream = AgentAudioInputStream(
+            config, self._signalling_client
+        )
+        return self._agent_audio_input_stream
+
+    def get_agent_audio_input_stream(self) -> AgentAudioInputStream | None:
+        """Get the current agent audio input stream if one exists.
+
+        Returns:
+            The agent audio input stream or None if not created.
+        """
+        return self._agent_audio_input_stream
+
     @property
     def is_connected(self) -> bool:
         """Check if the streaming connection is active."""
@@ -620,12 +639,34 @@ class StreamingClient:
 
         # Close signalling
         if self._signalling_client:
-            await self._signalling_client.close()
+            try:
+                await self._signalling_client.close()
+            except Exception as e:
+                logger.warning("Error closing signalling client: %s", e)
+            finally:
+                self._signalling_client = None
 
         # Close peer connection
         if self._peer_connection:
-            await self._peer_connection.close()
-            self._peer_connection = None
+            try:
+                await self._peer_connection.close()
+            except Exception as e:
+                logger.warning("Error closing peer connection: %s", e)
+            finally:
+                self._peer_connection = None
 
         self._is_connected = False
         logger.info("Streaming client closed")
+
+    def __del__(self) -> None:
+        """Cleanup on destruction to prevent warnings."""
+        # Clear peer connection reference if close() wasn't called explicitly.
+        # Note: This won't prevent RTCPeerConnection.__del__ from being called
+        # if the object is garbage collected independently, but it helps in
+        # cases where StreamingClient is destroyed without calling close().
+        # The proper fix is to always call close() explicitly.
+        if self._peer_connection is not None:
+            try:
+                self._peer_connection = None
+            except Exception:
+                pass
