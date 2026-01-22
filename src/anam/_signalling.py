@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 
 import websockets
 from websockets.client import WebSocketClientProtocol
+from websockets.protocol import State
 
 from .types import AgentAudioInputPayload, SessionInfo
 
@@ -212,12 +213,7 @@ class SignallingClient:
         """Check if WebSocket is connected and open."""
         if not self._ws:
             return False
-        # websockets >= 12.0 uses .state, older versions use .open
-        if hasattr(self._ws, "state"):
-            from websockets.protocol import State
-
-            return self._ws.state == State.OPEN
-        return getattr(self._ws, "open", False)
+        return self._ws.state == State.OPEN
 
     async def send_message(self, message: dict[str, Any]) -> None:
         """Send a message through the WebSocket.
