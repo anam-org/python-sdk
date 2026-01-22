@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 
 import websockets
 from websockets.client import WebSocketClientProtocol
+from websockets.protocol import State
 
 from .types import AgentAudioInputPayload, SessionInfo
 
@@ -212,12 +213,7 @@ class SignallingClient:
         """Check if WebSocket is connected and open."""
         if not self._ws:
             return False
-        # websockets >= 12.0 uses .state, older versions use .open
-        if hasattr(self._ws, "state"):
-            from websockets.protocol import State
-
-            return self._ws.state == State.OPEN
-        return getattr(self._ws, "open", False)
+        return self._ws.state == State.OPEN
 
     async def send_message(self, message: dict[str, Any]) -> None:
         """Send a message through the WebSocket.
@@ -312,6 +308,10 @@ class SignallingClient:
                 "sequenceNumber": payload.sequence_number,
             },
         }
+        if payload.sample_rate < 16000:
+            logger.warning(f"Sample rate {payload.sample_rate}Hz is very low. Quality of speech and avatar is negatively impacted. Consider providing 24kHz audio for better results.")
+        if payload.sample_rate > 24000:
+            logger.warning(f"Sample rate {payload.sample_rate}Hz is high. Latency is negatively affected for minimal audio quality gain. Consider resampling to 24kHz")
         await self.send_message(message)
 
     async def send_agent_audio_input_end(self) -> None:
