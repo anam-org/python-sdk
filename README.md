@@ -167,21 +167,8 @@ class VideoFrame:
 
 #### AudioFrame
 
-```python
-@dataclass
-class AudioFrame:
-    data: bytes           # Raw audio data
-    sample_rate: int      # Sample rate in Hz (typically 48000)
-    channels: int         # Number of channels (typically 1)
-    timestamp: float      # Frame timestamp
-    format: str           # Sample format (default: "s16")
+`AudioFrame` is a PyAV's `AudioFrame`. 
 
-    def to_ndarray(self) -> np.ndarray:
-        """Convert to numpy array of int16 samples."""
-
-    def to_float32(self) -> np.ndarray:
-        """Convert to float32 array normalized to [-1.0, 1.0]."""
-```
 
 ## Examples
 
@@ -206,7 +193,13 @@ async def save_video(frame):
 
 @client.on(AnamEvent.AUDIO_FRAME)
 async def save_audio(frame):
-    audio_writer.writeframes(frame.data)
+    # Initialize writer on first frame
+    if audio_writer.getnframes() == 0:
+        audio_writer.setnchannels(frame.layout.nb_channels)
+        audio_writer.setsampwidth(2)  # 16-bit
+        audio_writer.setframerate(frame.sample_rate)
+    # Write audio data (convert to int16 and get bytes)
+    audio_writer.writeframes(frame.to_ndarray().astype(np.int16).tobytes())
 
 async with client.connect() as session:
     await asyncio.sleep(30)  # Record for 30 seconds

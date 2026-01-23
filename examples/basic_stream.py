@@ -17,7 +17,8 @@ import logging
 import os
 from pathlib import Path
 
-from anam import AnamClient, AnamEvent, AudioFrame, ClientOptions, Message, VideoFrame
+from av.audio.frame import AudioFrame
+from anam import AnamClient, AnamEvent, ClientOptions, Message, VideoFrame
 
 
 def load_env() -> None:
@@ -91,7 +92,7 @@ async def main() -> None:
                 "Audio: %d frames, %dHz, %d channels",
                 audio_frames,
                 frame.sample_rate,
-                frame.channels,
+                frame.layout.nb_channels,
             )
 
     @client.on(AnamEvent.MESSAGE_RECEIVED)

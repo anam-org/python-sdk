@@ -19,6 +19,7 @@ import wave
 from pathlib import Path
 
 import cv2
+import numpy as np
 from dotenv import load_dotenv
 
 from anam import AnamClient, AnamEvent, AudioFrame, ClientOptions, VideoFrame
@@ -91,12 +92,12 @@ class AudioRecorder:
         # Initialize writer on first frame
         if self.writer is None:
             self.writer = wave.open(self.output_path, 'wb')
-            self.writer.setnchannels(frame.channels)
+            self.writer.setnchannels(frame.layout.nb_channels)
             self.writer.setsampwidth(2)  # 16-bit
             self.writer.setframerate(frame.sample_rate)
             logger.info("Recording audio to: %s", self.output_path)
 
-        audio_data = frame.to_ndarray()
+        audio_data = frame.to_ndarray().astype(np.int16)
         self.writer.writeframes(audio_data.tobytes())
         self.frame_count += 1
 

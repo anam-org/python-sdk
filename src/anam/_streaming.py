@@ -5,7 +5,6 @@ import json
 import logging
 from typing import Any, Awaitable, Callable
 
-import numpy as np
 from aiortc import (
     MediaStreamTrack,
     RTCConfiguration,
@@ -15,10 +14,11 @@ from aiortc import (
     RTCPeerConnection,
     RTCSessionDescription,
 )
+from av.audio.frame import AudioFrame
 
 from ._agent_audio_input_stream import AgentAudioInputStream
 from ._signalling import SignalAction, SignallingClient
-from .types import AgentAudioInputConfig, AudioFrame, SessionInfo, VideoFrame
+from .types import AgentAudioInputConfig, SessionInfo, VideoFrame
 
 logger = logging.getLogger(__name__)
 
@@ -429,15 +429,13 @@ class StreamingClient:
                 if frame_count == 1:
                     logger.debug(f"First audio frame received: {frame.sample_rate}Hz.")
                     logger.debug(f"Audio frame layout: {frame.layout}")
-                    logger.debug(f"Audio frame channels: {frame.layout.channels}")
+                    logger.debug(f"Audio frame channels: {frame.layout.nb_channels}")
                     logger.debug(f"Audio frame layout name: {frame.layout.name}")
-                    logger.debug(f"Audio frame format: {frame.format}")
-                    logger.debug(f"Audio frame samples: {frame.format.name}")
-
-                audio_frame = AudioFrame(frame)
+                    logger.debug(f"Audio frame format: {frame.format.name}")
+                    logger.debug(f"Audio frame samples: {frame.samples}")
 
                 if self._on_audio_frame:
-                    await self._on_audio_frame(audio_frame)
+                    await self._on_audio_frame(frame)
 
             except Exception as e:
                 if "MediaStreamError" in str(type(e).__name__):
