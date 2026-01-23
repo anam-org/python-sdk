@@ -113,7 +113,7 @@ client = AnamClient(
 
 ### Video and Audio Frames
 
-Use async iterators to consume video and audio frames:
+Use async iterators to consume continuous streams (audio and video):
 
 ```python
 async with client.connect() as session:
@@ -130,7 +130,7 @@ async with client.connect() as session:
 
 ### Events
 
-Register event handlers for connection and message events using the `@client.on()` decorator:
+Register callbacks for connection and message events using the `@client.on()` decorator:
 
 ```python
 from anam import AnamEvent
