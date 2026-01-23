@@ -11,7 +11,8 @@ import cv2
 import numpy as np
 
 from av.audio.frame import AudioFrame
-from anam import VideoFrame
+from av.video.frame import VideoFrame
+
 from anam._agent_audio_input_stream import AgentAudioInputStream
 
 if TYPE_CHECKING:
@@ -126,9 +127,8 @@ class VideoDisplay:
 
     def update(self, frame: VideoFrame) -> None:
         """Update the displayed frame."""
-        # Convert RGB to BGR for OpenCV display
-        rgb_frame = frame.to_ndarray()
-        self.frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+        # OpenCV requires BGR format
+        self.frame = frame.to_ndarray(format="bgr24")
 
     def run(self) -> None:
         """Run the display loop (call from main thread).

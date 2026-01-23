@@ -4,9 +4,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-import numpy as np
-from numpy.typing import NDArray
-
 
 class AnamEvent(str, Enum):
     """Events emitted by the Anam client."""
@@ -121,34 +118,6 @@ class ClientOptions:
     api_version: str = "v1"
     disable_input_audio: bool = False
     ice_servers: list[dict[str, Any]] | None = None
-
-
-@dataclass
-class VideoFrame:
-    """A video frame received from the avatar.
-
-    Attributes:
-        data: Raw frame data bytes.
-        width: Frame width in pixels.
-        height: Frame height in pixels.
-        timestamp: Frame timestamp in seconds.
-        format: Pixel format (e.g., 'bgr24', 'rgb24').
-    """
-
-    data: bytes
-    width: int
-    height: int
-    timestamp: float
-    format: str = "rgb24"
-
-    def to_ndarray(self) -> NDArray[np.uint8]:
-        """Convert to numpy array with shape (height, width, 3).
-
-        Returns:
-            NumPy array in RGB format by default.
-        """
-        arr = np.frombuffer(self.data, dtype=np.uint8)
-        return arr.reshape((self.height, self.width, 3))
 
 
 @dataclass

@@ -15,10 +15,11 @@ from aiortc import (
     RTCSessionDescription,
 )
 from av.audio.frame import AudioFrame
+from av.video.frame import VideoFrame
 
 from ._agent_audio_input_stream import AgentAudioInputStream
 from ._signalling import SignalAction, SignallingClient
-from .types import AgentAudioInputConfig, SessionInfo, VideoFrame
+from .types import AgentAudioInputConfig, SessionInfo
 
 logger = logging.getLogger(__name__)
 
@@ -394,18 +395,9 @@ class StreamingClient:
                         if self._on_connection_established:
                             asyncio.create_task(self._on_connection_established())
 
-                # Convert to our VideoFrame type
-                img = frame.to_ndarray(format="rgb24")
-                video_frame = VideoFrame(
-                    data=img.tobytes(),
-                    width=frame.width,
-                    height=frame.height,
-                    timestamp=frame.time if hasattr(frame, "time") else 0.0,
-                    format="rgb24",
-                )
-
+                # Pass pyAV VideoFrame directly
                 if self._on_video_frame:
-                    await self._on_video_frame(video_frame)
+                    await self._on_video_frame(frame)
 
             except Exception as e:
                 if "MediaStreamError" in str(type(e).__name__):
