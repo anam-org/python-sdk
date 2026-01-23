@@ -38,43 +38,30 @@ async def main():
     async with client.connect() as session:
         print(f"Connected! Session: {session.session_id}")
         
-        # Create tasks to consume video and audio frames concurrently
+        # Consume video and audio frames concurrently
         async def consume_video():
-            """Consume video frames - runs indefinitely until session closes."""
             async for frame in session.video_frames():
-                # frame.to_ndarray(format="rgb24") returns numpy array (H, W, 3) in RGB format - use "bgr24" for OpenCV
-                img = frame.to_ndarray(format="rgb24")
-                print(f"Video frame: {frame.width}x{frame.height}")
+                img = frame.to_ndarray(format="rgb24")  # numpy array (H, W, 3) in RGB format - use "bgr24" for OpenCV
+                print(f"Video: {frame.width}x{frame.height}")
         
         async def consume_audio():
-            """Consume audio frames - runs indefinitely until session closes."""
             async for frame in session.audio_frames():
-                # frame.to_ndarray() returns numpy array of int16 samples
-                samples = frame.to_ndarray()
-                print(f"Audio frame: {len(samples)} samples at {frame.sample_rate}Hz")
+                samples = frame.to_ndarray()  # int16 samples
+                print(f"Audio: {len(samples)} samples @ {frame.sample_rate}Hz")
         
-        # Run both consumers concurrently - both will process frames in parallel
-        # The session context manager will handle cleanup when done
-        video_task = asyncio.create_task(consume_video())
-        audio_task = asyncio.create_task(consume_audio())
-        
-        # Keep streaming for 60 seconds (or until session closes)
-        try:
-            await asyncio.sleep(60)
-        finally:
-            # Cancel tasks when done
-            video_task.cancel()
-            audio_task.cancel()
-            # Wait for cancellation to complete
-            await asyncio.gather(video_task, audio_task, return_exceptions=True)
+        # Run both streams concurrently until session closes
+        await asyncio.gather(
+            consume_video(),
+            consume_audio(),
+        )
 
 asyncio.run(main())
 ```
 
 ## Features
 
-- 🎥 **Real-time video streaming** - Receive avatar video frames as numpy arrays via async iterators
-- 🔊 **Real-time audio streaming** - Receive avatar audio as numpy arrays via async iterators
+- 🎥 **Real-time video streaming** - Receive avatar video frames as PyAV VideoFrame objects via async iterators
+- 🔊 **Real-time audio streaming** - Receive avatar audio frames asPyAV AudioFrame objects via async iterators  
 - 💬 **Two-way communication** - Send text messages and receive responses
 - 🎯 **Async iterator API** - Clean, Pythonic async/await patterns
 - 📝 **Fully typed** - Complete type hints for IDE support
@@ -98,7 +85,7 @@ client = AnamClient(
 # Advanced initialization with full persona config
 client = AnamClient(
     api_key="your-api-key",
-    persona=PersonaConfig(
+    persona_config=PersonaConfig(
         persona_id="your-persona-id",
         name="My Assistant",
         system_prompt="You are a helpful assistant...",
@@ -113,19 +100,22 @@ client = AnamClient(
 
 ### Video and Audio Frames
 
-Use async iterators to consume continuous streams (audio and video):
+Frames are PyAV objects (VideoFrame/AudioFrame) delivered via async iterators. **Run both iterators concurrently** using `asyncio.gather()`:
 
 ```python
 async with client.connect() as session:
-    # Consume video frames
-    async for frame in session.video_frames():
-        img = frame.to_ndarray(format="rgb24")
-        # Process video frame...
+    async def process_video():
+        async for frame in session.video_frames():
+            img = frame.to_ndarray(format="rgb24")  # RGB numpy array
+            # Process frame...
     
-    # Consume audio frames
-    async for frame in session.audio_frames():
-        samples = frame.to_ndarray()
-        # Process audio frame...
+    async def process_audio():
+        async for frame in session.audio_frames():
+            samples = frame.to_ndarray()  # int16 samples
+            # Process frame...
+    
+    # Both streams run concurrently
+    await asyncio.gather(process_video(), process_audio())
 ```
 
 ### Events
@@ -158,7 +148,7 @@ The `Session` object is returned by `client.connect()` and provides methods for 
 ```python
 async with client.connect() as session:
     # Send a text message (simulates user speech)
-    session.send_message("Hello, how are you?")
+    await session.send_message("Hello, how are you?")
     
     # Interrupt the avatar if speaking
     session.interrupt()
@@ -201,11 +191,10 @@ async def save_audio(session):
         audio_writer.writeframes(frame.to_ndarray().tobytes())
 
 async with client.connect() as session:
-    # Run both consumers concurrently
-    await asyncio.gather(
-        save_video(session),
-        save_audio(session),
-        asyncio.sleep(30),  # Record for 30 seconds
+    # Record for 30 seconds
+    await asyncio.wait_for(
+        asyncio.gather(save_video(session), save_audio(session)),
+        timeout=30.0,
     )
 ```
 
@@ -225,13 +214,20 @@ async def update_frame(session):
         # Read frame as BGR for OpenCV display
         latest_frame = frame.to_ndarray(format="bgr24")
 
-# Run display in main thread
-async with client.connect() as session:
-    while True:
-        if latest_frame is not None:
-            cv2.imshow("Avatar", latest_frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+async def main():
+    async with client.connect() as session:
+        # Start frame consumer
+        frame_task = asyncio.create_task(update_frame(session))
+        
+        # Display loop
+        while True:
+            if latest_frame is not None:
+                cv2.imshow("Avatar", latest_frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        frame_task.cancel()
+
+asyncio.run(main())
 ```
 
 ## Configuration
