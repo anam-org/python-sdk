@@ -21,13 +21,13 @@ Example:
             async for frame in session.video_frames():
                 # yields a PyAV VideoFrame
                 img = frame.to_ndarray(format="rgb24")  # numpy array (H, W, 3) RGB format
-        
+
         # Consume audio frames using async iterator
         async def consume_audio():
             async for frame in session.audio_frames():
                 # yields a PyAV AudioFrame
                 samples = frame.to_ndarray()
-        
+
         # Run both consumers concurrently
         import asyncio
         await asyncio.gather(
@@ -39,8 +39,10 @@ Example:
 For more information, see https://docs.anam.ai
 """
 
-from ._version import __version__
+from av.video.frame import VideoFrame
+
 from ._agent_audio_input_stream import AgentAudioInputStream
+from ._version import __version__
 from .client import AnamClient, Session
 from .errors import (
     AnamError,
@@ -50,8 +52,6 @@ from .errors import (
     ErrorCode,
     SessionError,
 )
-from av.video.frame import VideoFrame
-
 from .types import (
     AgentAudioInputConfig,
     AnamEvent,

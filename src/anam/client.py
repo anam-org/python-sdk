@@ -10,8 +10,8 @@ from typing import Any, Awaitable, Callable, TypeVar
 from av.audio.frame import AudioFrame
 from av.video.frame import VideoFrame
 
-from ._api import CoreApiClient
 from ._agent_audio_input_stream import AgentAudioInputStream
+from ._api import CoreApiClient
 from ._streaming import StreamingClient
 from .errors import ConfigurationError, SessionError
 from .types import (
@@ -52,7 +52,7 @@ class AnamClient:
             async for frame in session.video_frames():
                 # Process video frame
                 image = frame.to_ndarray(format="rgb24")
-            
+
             # Consume audio frames
             async for frame in session.audio_frames():
                 # Process audio frame
@@ -122,7 +122,9 @@ class AnamClient:
             self._persona_config = PersonaConfig(persona_id=persona_id)  # type: ignore
 
         if self._persona_config.avatar_id and not self._persona_config.enable_audio_passthrough:
-            raise ConfigurationError("enable_audio_passthrough must be True when avatar_id is provided")
+            raise ConfigurationError(
+                "enable_audio_passthrough must be True when avatar_id is provided"
+            )
 
         # Event callbacks
         self._event_callbacks: dict[AnamEvent, list[EventCallback]] = {
@@ -296,9 +298,7 @@ class AnamClient:
             SessionError: If session is not started.
         """
         if not self._streaming_client:
-            raise SessionError(
-                "Failed to create agent audio input stream: session is not started"
-            )
+            raise SessionError("Failed to create agent audio input stream: session is not started")
         return self._streaming_client.create_agent_audio_input_stream(config)
 
     async def close(self) -> None:
@@ -413,8 +413,12 @@ class Session:
         persona_config = self._get_persona_config()
 
         # Check a persona and LLM are consuming the text messages
-        if persona_config.persona_id is None and (persona_config.llm_id == "CUSTOMER_CLIENT_V1" or persona_config.llm_id is None):
-            logger.warning("Persona ID and LLM ID are not set, messages will not be processed by the backend.")
+        if persona_config.persona_id is None and (
+            persona_config.llm_id == "CUSTOMER_CLIENT_V1" or persona_config.llm_id is None
+        ):
+            logger.warning(
+                "Persona ID and LLM ID are not set, messages will not be processed by the backend."
+            )
 
         # Wait for data channel to be ready
         streaming = self._client._streaming_client

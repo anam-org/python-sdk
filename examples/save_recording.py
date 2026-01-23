@@ -52,7 +52,7 @@ class VideoRecorder:
 
         # Initialize writer on first frame
         if self.writer is None:
-            fourcc = cv2.VideoWriter.fourcc(*'mp4v')
+            fourcc = cv2.VideoWriter.fourcc(*"mp4v")
             self.writer = cv2.VideoWriter(
                 self.output_path,
                 fourcc,
@@ -91,7 +91,7 @@ class AudioRecorder:
         """Add an audio frame to the recording."""
         # Initialize writer on first frame
         if self.writer is None:
-            self.writer = wave.open(self.output_path, 'wb')
+            self.writer = wave.open(self.output_path, "wb")
             self.writer.setnchannels(frame.layout.nb_channels)
             self.writer.setsampwidth(2)  # 16-bit
             self.writer.setframerate(frame.sample_rate)
@@ -116,11 +116,8 @@ async def main() -> None:
     persona_id = os.environ.get("ANAM_PERSONA_ID", "").strip().strip('"')
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
-
     if not api_key or not persona_id:
-        raise ValueError(
-            "Set ANAM_API_KEY and ANAM_PERSONA_ID environment variables"
-        )
+        raise ValueError("Set ANAM_API_KEY and ANAM_PERSONA_ID environment variables")
 
     # Create output directory
     output_dir = Path("recordings")
@@ -194,4 +191,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

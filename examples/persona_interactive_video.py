@@ -21,8 +21,6 @@ import os
 import sys
 from pathlib import Path
 
-from av.audio.frame import AudioFrame
-from av.video.frame import VideoFrame
 from dotenv import load_dotenv
 
 from anam import AnamClient, AnamEvent, ClientOptions
@@ -50,15 +48,15 @@ logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
 async def interactive_loop(session, display: VideoDisplay) -> None:
     """Interactive command loop."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Interactive Session Started!")
-    print("="*60)
+    print("=" * 60)
     print("Available commands:")
     print("  f [filename]  - Send audio file (defaults to input.wav)")
     print("  t <text>      - Send text message")
     print("  i             - Interrupt current audio")
     print("  q             - Quit and stop session")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     while True:
         try:
@@ -191,10 +189,7 @@ def main() -> None:
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
     if not api_key or not persona_id:
-        raise ValueError(
-            "Set ANAM_API_KEY and ANAM_PERSONA_ID environment variables"
-        )
-
+        raise ValueError("Set ANAM_API_KEY and ANAM_PERSONA_ID environment variables")
 
     # Create persona config
     persona_config = PersonaConfig(
@@ -222,9 +217,7 @@ def main() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    stream_task = loop.create_task(
-        stream_session(client, display, audio_player)
-    )
+    stream_task = loop.create_task(stream_session(client, display, audio_player))
 
     def run_async() -> None:
         try:
@@ -254,6 +247,7 @@ def main() -> None:
 
         # Stop the event loop gracefully from thread-safe context
         if loop.is_running():
+
             def stop_loop() -> None:
                 loop.stop()
 
@@ -271,9 +265,7 @@ def main() -> None:
                     task.cancel()
                 # Run until all tasks are cancelled
                 if pending:
-                    _ = loop.run_until_complete(
-                        asyncio.gather(*pending, return_exceptions=True)
-                    )
+                    _ = loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
             except RuntimeError:
                 # Loop might already be closed or in invalid state
                 pass

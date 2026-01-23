@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Protocol
 
 import cv2
 import numpy as np
-
 from av.audio.frame import AudioFrame
 from av.video.frame import VideoFrame
 
@@ -41,6 +40,7 @@ if TYPE_CHECKING:
 # Audio playback
 try:
     import sounddevice as sd
+
     _audio_enabled = True
 except ImportError:
     sd = None
@@ -74,9 +74,13 @@ async def send_audio_file_chunked(
         if sample_rate != 24000:
             raise ValueError(f"Sample rate must be 24000, got {sample_rate}")
         if num_channels != 1:
-            raise ValueError(f"Mono audio only supported, number of channels must be 1, got {num_channels}")
+            raise ValueError(
+                f"Mono audio only supported, number of channels must be 1, got {num_channels}"
+            )
         if sample_width != 2:
-            raise ValueError(f"16-bit audio only supported, sample width must be 2, got {sample_width}")
+            raise ValueError(
+                f"16-bit audio only supported, sample width must be 2, got {sample_width}"
+            )
 
         # Read all frames
         all_frames = wf.readframes(num_frames)
@@ -174,9 +178,9 @@ class AudioPlayer:
         self.stream = sd.OutputStream(
             samplerate=self.sample_rate,
             channels=self.channels,
-            dtype='float32',
+            dtype="float32",
             blocksize=1024,
-            latency='low',
+            latency="low",
         )
         self.stream.start()
         self._running = True
@@ -188,7 +192,10 @@ class AudioPlayer:
 
         try:
             # Convert int16 to float32 for sounddevice - reshape to (samples, channels) for stereo playback compatibility
-            audio_data = frame.to_ndarray().reshape(-1, frame.layout.nb_channels).astype(np.float32) / 32768.0
+            audio_data = (
+                frame.to_ndarray().reshape(-1, frame.layout.nb_channels).astype(np.float32)
+                / 32768.0
+            )
             _ = self.stream.write(audio_data)
         except Exception as e:
             logger = logging.getLogger(__name__)

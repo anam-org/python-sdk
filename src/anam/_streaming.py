@@ -558,9 +558,7 @@ class StreamingClient:
             raise RuntimeError(
                 "Failed to create agent audio input stream: signalling client is not available"
             )
-        self._agent_audio_input_stream = AgentAudioInputStream(
-            config, self._signalling_client
-        )
+        self._agent_audio_input_stream = AgentAudioInputStream(config, self._signalling_client)
         return self._agent_audio_input_stream
 
     def get_agent_audio_input_stream(self) -> AgentAudioInputStream | None:

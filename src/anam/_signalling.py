@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any, Awaitable, Callable
 
 import websockets
-from websockets.client import WebSocketClientProtocol
+from websockets.asyncio.client import ClientConnection
 from websockets.protocol import State
 
 from .types import AgentAudioInputPayload, SessionInfo
@@ -69,7 +69,7 @@ class SignallingClient:
         self._on_open = on_open
         self._on_close = on_close
 
-        self._ws: WebSocketClientProtocol | None = None
+        self._ws: ClientConnection | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._receive_task: asyncio.Task[None] | None = None
         self._stop_signal = False
@@ -106,7 +106,7 @@ class SignallingClient:
         """
         logger.debug("Connecting to signalling server: %s", self._ws_url)
         try:
-            self._ws = await websockets.connect(self._ws_url)
+            self._ws = await websockets.asyncio.client.connect(self._ws_url)
             self._connection_attempts = 0
             logger.info("WebSocket connection established")
 
@@ -309,9 +309,13 @@ class SignallingClient:
             },
         }
         if payload.sample_rate < 16000:
-            logger.warning(f"Sample rate {payload.sample_rate}Hz is very low. Quality of speech and avatar is negatively impacted. Consider providing 24kHz audio for better results.")
+            logger.warning(
+                f"Sample rate {payload.sample_rate}Hz is very low. Quality of speech and avatar is negatively impacted. Consider providing 24kHz audio for better results."
+            )
         if payload.sample_rate > 24000:
-            logger.warning(f"Sample rate {payload.sample_rate}Hz is high. Latency is negatively affected for minimal audio quality gain. Consider resampling to 24kHz")
+            logger.warning(
+                f"Sample rate {payload.sample_rate}Hz is high. Latency is negatively affected for minimal audio quality gain. Consider resampling to 24kHz"
+            )
         await self.send_message(message)
 
     async def send_agent_audio_input_end(self) -> None:

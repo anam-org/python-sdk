@@ -20,12 +20,12 @@ class TestAnamClientInit:
             AnamClient(api_key="test-key")
 
     def test_cannot_provide_both_persona_options(self) -> None:
-        """Test that you can't provide both persona_id and persona."""
+        """Test that you can't provide both persona_id and persona_config."""
         with pytest.raises(ConfigurationError, match="not both"):
             AnamClient(
                 api_key="test-key",
                 persona_id="test-persona",
-                persona=PersonaConfig(persona_id="another-persona"),
+                persona_config=PersonaConfig(persona_id="another-persona"),
             )
 
     def test_init_with_persona_id(self) -> None:
@@ -46,7 +46,7 @@ class TestAnamClientInit:
         )
         client = AnamClient(
             api_key="test-key",
-            persona=persona,
+            persona_config=persona,
         )
         assert client._persona_config.name == "Test Assistant"
         assert client._persona_config.system_prompt == "You are a test assistant."
@@ -112,7 +112,8 @@ class TestPersonaConfig:
         """Test to_dict with minimal config."""
         config = PersonaConfig(persona_id="test-id")
         result = config.to_dict()
-        assert result == {"personaId": "test-id"}
+        # enableAudioPassthrough defaults to True, so it's included
+        assert result == {"personaId": "test-id", "enableAudioPassthrough": True}
 
     def test_to_dict_full(self) -> None:
         """Test to_dict with all fields."""
@@ -135,4 +136,3 @@ class TestPersonaConfig:
         assert result["languageCode"] == "en"
         assert result["llmId"] == "gpt-4"
         assert result["maxSessionLengthSeconds"] == 300
-
