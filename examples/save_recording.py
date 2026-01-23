@@ -20,9 +20,10 @@ from pathlib import Path
 
 import cv2
 from av.audio.frame import AudioFrame
+from av.video.frame import VideoFrame
 from dotenv import load_dotenv
 
-from anam import AnamClient, AnamEvent, ClientOptions, VideoFrame
+from anam import AnamClient, AnamEvent, ClientOptions
 
 # Load environment variables from .env
 _ = load_dotenv()
@@ -46,9 +47,8 @@ class VideoRecorder:
 
     def add_frame(self, frame: VideoFrame) -> None:
         """Add a video frame to the recording."""
-        # Convert RGB to BGR for OpenCV VideoWriter
-        rgb_frame = frame.to_ndarray()
-        img = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+        # OpenCV requires BGR format
+        img = frame.to_ndarray(format="bgr24")
 
         # Initialize writer on first frame
         if self.writer is None:

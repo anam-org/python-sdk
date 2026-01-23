@@ -36,10 +36,8 @@ async def main():
     # Handle video frames
     @client.on(AnamEvent.VIDEO_FRAME)
     async def on_video(frame: VideoFrame):
-        # frame.to_ndarray() returns numpy array (H, W, 3) in RGB format
-        rgb_img = frame.to_ndarray()
-        # Convert RGB to BGR for OpenCV display
-        img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
+        # frame.to_ndarray(format="rgb24") returns numpy array (H, W, 3) in RGB format - use "bgr24" for OpenCV
+        img = frame.to_ndarray(format="rgb24")
         print(f"Video frame: {frame.width}x{frame.height}")
 
     # Handle audio frames
@@ -148,22 +146,6 @@ async with client.connect() as session:
     await session.wait_until_closed()
 ```
 
-### Frame Types
-
-#### VideoFrame
-
-```python
-@dataclass
-class VideoFrame:
-    data: bytes           # Raw frame data
-    width: int            # Frame width in pixels
-    height: int           # Frame height in pixels
-    timestamp: float      # Frame timestamp
-    format: str           # Pixel format (default: "rgb24")
-
-    def to_ndarray(self) -> np.ndarray:
-        """Convert to numpy array (H, W, 3) in RGB format."""
-```
 
 
 ## Examples
@@ -183,8 +165,7 @@ audio_writer = wave.open("output.wav", "wb")
 @client.on(AnamEvent.VIDEO_FRAME)
 async def save_video(frame):
     # Convert RGB to BGR for OpenCV VideoWriter
-    rgb_frame = frame.to_ndarray()
-    bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+    bgr_frame = frame.to_ndarray(format="bgr24")
     video_writer.write(bgr_frame)
 
 @client.on(AnamEvent.AUDIO_FRAME)
@@ -213,9 +194,8 @@ latest_frame = None
 @client.on(AnamEvent.VIDEO_FRAME)
 async def update_frame(frame):
     global latest_frame
-    # Convert RGB to BGR for OpenCV display
-    rgb_frame = frame.to_ndarray()
-    latest_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+    # Read frame as BGR for OpenCV display
+    bgr_frame = frame.to_ndarray(format="bgr24")
 
 # Run display in main thread
 async with client.connect() as session:

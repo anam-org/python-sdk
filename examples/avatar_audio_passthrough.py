@@ -24,7 +24,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from av.audio.frame import AudioFrame
-from anam import AnamClient, AnamEvent, ClientOptions, VideoFrame
+from av.video.frame import VideoFrame
+
+from anam import AnamClient, AnamEvent, ClientOptions
 from anam.types import AgentAudioInputConfig, PersonaConfig
 
 # Add parent directory to path to allow importing from examples

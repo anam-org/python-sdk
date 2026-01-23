@@ -18,7 +18,8 @@ Example:
     @client.on(AnamEvent.VIDEO_FRAME)
     async def handle_video(frame):
         # Process video frame
-        img = frame.to_ndarray()  # numpy array (H, W, 3) RGB format
+        # frame is a PyAV VideoFrame - access all PyAV properties directly
+        img = frame.to_ndarray(format="rgb24")  # numpy array (H, W, 3) RGB format
 
     @client.on(AnamEvent.AUDIO_FRAME)
     async def handle_audio(frame):
@@ -45,6 +46,8 @@ from .errors import (
     ErrorCode,
     SessionError,
 )
+from av.video.frame import VideoFrame
+
 from .types import (
     AgentAudioInputConfig,
     AnamEvent,
@@ -53,7 +56,6 @@ from .types import (
     Message,
     MessageRole,
     PersonaConfig,
-    VideoFrame,
 )
 
 __all__ = [

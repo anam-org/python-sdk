@@ -7,6 +7,7 @@ import logging
 from typing import Any, Awaitable, Callable, TypeVar
 
 from av.audio.frame import AudioFrame
+from av.video.frame import VideoFrame
 
 from ._api import CoreApiClient
 from ._agent_audio_input_stream import AgentAudioInputStream
@@ -20,7 +21,6 @@ from .types import (
     MessageRole,
     PersonaConfig,
     SessionInfo,
-    VideoFrame,
 )
 
 logger = logging.getLogger(__name__)
