@@ -19,7 +19,6 @@ import wave
 from pathlib import Path
 
 import cv2
-import numpy as np
 from av.audio.frame import AudioFrame
 from dotenv import load_dotenv
 
