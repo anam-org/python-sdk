@@ -422,7 +422,7 @@ class StreamingClient:
         while True:
             try:
                 # Receive audio frame from WebRTC and forward to the on_audio subscriber.
-                # incoming audio is PCM, i.e. decoded WebRTC OPUS: 16 bit 48kHz stereo.
+                # incoming audio are decoded (PCM) WebRTC OPUS: 16 bit 48kHz stereo samples.
                 frame = await track.recv()
                 frame_count += 1
 
@@ -434,13 +434,7 @@ class StreamingClient:
                     logger.debug(f"Audio frame format: {frame.format}")
                     logger.debug(f"Audio frame samples: {frame.format.name}")
 
-                audio_frame = AudioFrame(
-                    data=frame.to_ndarray().astype(np.int16).tobytes(),
-                    sample_rate=frame.sample_rate,
-                    channels=2 if frame.layout.name == "stereo" else 1,
-                    timestamp=frame.time if hasattr(frame, "time") else 0.0,
-                    format=frame.format.name,
-                )
+                audio_frame = AudioFrame(frame)
 
                 if self._on_audio_frame:
                     await self._on_audio_frame(audio_frame)

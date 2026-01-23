@@ -35,15 +35,15 @@ _ = load_dotenv()
 
 # Configure logging - reduced verbosity
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.INFO,
     format="%(name)s - %(levelname)s - %(message)s",  # Simplified format
 )
 logger = logging.getLogger(__name__)
 
 # Suppress verbose logging from dependencies
-logging.getLogger("anam").setLevel(logging.WARNING)
-logging.getLogger("websockets").setLevel(logging.WARNING)
-logging.getLogger("aiohttp").setLevel(logging.WARNING)
+logging.getLogger("anam").setLevel(logging.INFO)
+logging.getLogger("websockets").setLevel(logging.INFO)
+logging.getLogger("aiohttp").setLevel(logging.INFO)
 
 
 async def interactive_loop(session, display: VideoDisplay) -> None:

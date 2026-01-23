@@ -151,34 +151,71 @@ class VideoFrame:
         return arr.reshape((self.height, self.width, 3))
 
 
-@dataclass
 class AudioFrame:
     """An audio frame received from the avatar.
 
+    This wraps a pyav AudioFrame from aiortc and provides access to all its
+    properties while adding a channels field.
+
     Attributes:
-        data: Raw audio data bytes.
-        sample_rate: Audio sample rate in Hz.
-        channels: Number of audio channels.
-        timestamp: Frame timestamp in seconds.
-        format: Sample format (e.g., 's16' for interleaved signed 16-bit).
+        channels: Number of audio channels (1 for mono, 2 for stereo).
+            Determined from the frame's layout.
     """
 
-    data: bytes
-    sample_rate: int
-    channels: int
-    timestamp: float
-    format: str = "s16"
+    def __init__(self, frame: Any) -> None:
+        """Initialize AudioFrame wrapper around a pyav AudioFrame.
+
+        Args:
+            frame: A pyav AudioFrame instance from aiortc.
+        """
+        self._frame = frame
+
+    @property
+    def channels(self) -> int:
+        """Number of audio channels (1 for mono, 2 for stereo).
+
+        Determined from the frame's layout name or number of channels.
+        """
+        if hasattr(self._frame.layout, "nb_channels"):
+            return self._frame.layout.nb_channels
+
+        # Fallback to layout name
+        if hasattr(self._frame.layout, "name"):
+            layout_name = self._frame.layout.name
+            if layout_name == "mono":
+                return 1
+
+        # default aiortc webrtc output is stereo
+        return 2
+
+    @property
+    def timestamp(self) -> float:
+        """Timestamp of the audio frame in seconds."""
+        return self._frame.timestamp if hasattr(self._frame, "timestamp") else 0.0
+
+    @property
+    def data(self) -> bytes:
+        """Raw audio data bytes."""
+        return self._frame.to_ndarray().tobytes()
+
+    @property
+    def format(self) -> str:
+        """Sample format name (e.g., 's16' for interleaved signed 16-bit)."""
+        return self._frame.format.name if hasattr(self._frame.format, "name") else "s16"
 
     def to_ndarray(self) -> NDArray[np.int16]:
         """Convert to numpy array of audio samples.
 
+        Preserves PyAV's native structure and cast values to int16.
+
         Returns:
-            NumPy array of shape (samples,) for mono or (samples, channels) for stereo.
+            int16 NumPy array with shape matching PyAV's format
         """
-        arr = np.frombuffer(self.data, dtype=np.int16)
-        if self.channels > 1:
-            arr = arr.reshape((-1, self.channels))
-        return arr
+        return self._frame.to_ndarray().astype(np.int16)
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate attribute access to the underlying pyav AudioFrame."""
+        return getattr(self._frame, name)
 
 
 @dataclass
