@@ -123,15 +123,7 @@ async def stream_session(
 ) -> None:
     """Run the streaming session."""
 
-    # These functions are registered via decorators and called by the client
-    @client.on(AnamEvent.VIDEO_FRAME)
-    async def on_video(frame: VideoFrame) -> None:
-        display.update(frame)
-
-    @client.on(AnamEvent.AUDIO_FRAME)
-    async def on_audio(frame: AudioFrame) -> None:
-        audio_player.add_frame(frame)
-
+    # Register connection event handlers
     @client.on(AnamEvent.CONNECTION_ESTABLISHED)
     async def on_connected() -> None:
         print("✅ Connected!")
@@ -140,9 +132,29 @@ async def stream_session(
     async def on_closed(code: str, reason: str | None) -> None:
         print(f"Connection closed: {code} - {reason or 'No reason'}")
 
+    async def consume_video_frames(session) -> None:
+        """Consume video frames from iterator."""
+        try:
+            async for frame in session.video_frames():
+                display.update(frame)
+        except Exception as e:
+            logger.error(f"Error consuming video frames: {e}")
+
+    async def consume_audio_frames(session) -> None:
+        """Consume audio frames from iterator."""
+        try:
+            async for frame in session.audio_frames():
+                audio_player.add_frame(frame)
+        except Exception as e:
+            logger.error(f"Error consuming audio frames: {e}")
+
     async with client.connect() as session:
         print(f"Session: {session.session_id}")
         print("Type 'q' in CLI to quit")
+
+        # Start consuming video and audio frames
+        video_task = asyncio.create_task(consume_video_frames(session))
+        audio_task = asyncio.create_task(consume_audio_frames(session))
 
         # Start interactive loop
         interactive_task = asyncio.create_task(interactive_loop(session, display))
@@ -155,13 +167,20 @@ async def stream_session(
                 break
             await asyncio.sleep(0.1)
 
-        # Cancel interactive task if still running
+        # Cancel all tasks
+        video_task.cancel()
+        audio_task.cancel()
         if not interactive_task.done():
             interactive_task.cancel()
+
+        # Wait for tasks to complete cancellation
+        for task in [video_task, audio_task, interactive_task]:
             try:
-                await interactive_task
+                await task
             except asyncio.CancelledError:
                 pass
+            except Exception as e:
+                logger.error(f"Error in task: {e}")
 
 
 def main() -> None:

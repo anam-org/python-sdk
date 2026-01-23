@@ -90,8 +90,8 @@ class TestAnamClientEvents:
         async def handler() -> None:
             pass
 
-        client.add_listener(AnamEvent.VIDEO_FRAME, handler)
-        assert handler in client._event_callbacks[AnamEvent.VIDEO_FRAME]
+        client.add_listener(AnamEvent.CONNECTION_ESTABLISHED, handler)
+        assert handler in client._event_callbacks[AnamEvent.CONNECTION_ESTABLISHED]
 
     def test_remove_listener(self) -> None:
         """Test remove_listener method."""
@@ -100,9 +100,9 @@ class TestAnamClientEvents:
         async def handler() -> None:
             pass
 
-        client.add_listener(AnamEvent.VIDEO_FRAME, handler)
-        client.remove_listener(AnamEvent.VIDEO_FRAME, handler)
-        assert handler not in client._event_callbacks[AnamEvent.VIDEO_FRAME]
+        client.add_listener(AnamEvent.CONNECTION_ESTABLISHED, handler)
+        client.remove_listener(AnamEvent.CONNECTION_ESTABLISHED, handler)
+        assert handler not in client._event_callbacks[AnamEvent.CONNECTION_ESTABLISHED]
 
 
 class TestPersonaConfig:

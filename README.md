@@ -23,8 +23,9 @@ pip install anam-ai[display]
 
 ```python
 import asyncio
-import cv2
-from anam import AnamClient, AnamEvent, VideoFrame, AudioFrame
+from anam import AnamClient
+from av.video.frame import VideoFrame
+from av.audio.frame import AudioFrame
 
 async def main():
     # Create client with your API key and persona
@@ -33,36 +34,39 @@ async def main():
         persona_id="your-persona-id",
     )
 
-    # Handle video frames
-    @client.on(AnamEvent.VIDEO_FRAME)
-    async def on_video(frame: VideoFrame):
-        # frame.to_ndarray(format="rgb24") returns numpy array (H, W, 3) in RGB format - use "bgr24" for OpenCV
-        img = frame.to_ndarray(format="rgb24")
-        print(f"Video frame: {frame.width}x{frame.height}")
-
-    # Handle audio frames
-    @client.on(AnamEvent.AUDIO_FRAME)
-    async def on_audio(frame: AudioFrame):
-        # frame.to_ndarray() returns numpy array of int16 samples
-        samples = frame.to_ndarray()
-        print(f"Audio frame: {len(samples)} samples at {frame.sample_rate}Hz")
-
     # Connect and stream
     async with client.connect() as session:
         print(f"Connected! Session: {session.session_id}")
         
-        # Keep streaming for 60 seconds
-        await asyncio.sleep(60)
+        # Consume video frames using async iterator
+        async def consume_video():
+            async for frame in session.video_frames():
+                # frame.to_ndarray(format="rgb24") returns numpy array (H, W, 3) in RGB format - use "bgr24" for OpenCV
+                img = frame.to_ndarray(format="rgb24")
+                print(f"Video frame: {frame.width}x{frame.height}")
+        
+        # Consume audio frames using async iterator
+        async def consume_audio():
+            async for frame in session.audio_frames():
+                # frame.to_ndarray() returns numpy array of int16 samples
+                samples = frame.to_ndarray()
+                print(f"Audio frame: {len(samples)} samples at {frame.sample_rate}Hz")
+        
+        # Run both consumers concurrently
+        await asyncio.gather(
+            consume_video(),
+            consume_audio(),
+        )
 
 asyncio.run(main())
 ```
 
 ## Features
 
-- 🎥 **Real-time video streaming** - Receive avatar video frames as numpy arrays
-- 🔊 **Real-time audio streaming** - Receive avatar audio as numpy arrays
+- 🎥 **Real-time video streaming** - Receive avatar video frames as numpy arrays via async iterators
+- 🔊 **Real-time audio streaming** - Receive avatar audio as numpy arrays via async iterators
 - 💬 **Two-way communication** - Send text messages and receive responses
-- 🎯 **Event-driven API** - Simple decorator-based event handlers
+- 🎯 **Async iterator API** - Clean, Pythonic async/await patterns
 - 📝 **Fully typed** - Complete type hints for IDE support
 - 🔒 **Server-side ready** - Designed for server-side Python applications
 
@@ -97,22 +101,29 @@ client = AnamClient(
 )
 ```
 
+### Video and Audio Frames
+
+Use async iterators to consume video and audio frames:
+
+```python
+async with client.connect() as session:
+    # Consume video frames
+    async for frame in session.video_frames():
+        img = frame.to_ndarray(format="rgb24")
+        # Process video frame...
+    
+    # Consume audio frames
+    async for frame in session.audio_frames():
+        samples = frame.to_ndarray()
+        # Process audio frame...
+```
+
 ### Events
 
-Register event handlers using the `@client.on()` decorator:
+Register event handlers for connection and message events using the `@client.on()` decorator:
 
 ```python
 from anam import AnamEvent
-
-@client.on(AnamEvent.VIDEO_FRAME)
-async def on_video(frame: VideoFrame):
-    """Called for each video frame received."""
-    pass
-
-@client.on(AnamEvent.AUDIO_FRAME)
-async def on_audio(frame: AudioFrame):
-    """Called for each audio frame received."""
-    pass
 
 @client.on(AnamEvent.MESSAGE_RECEIVED)
 async def on_message(message: Message):
@@ -155,47 +166,54 @@ async with client.connect() as session:
 ```python
 import cv2
 import wave
-from anam import AnamClient, AnamEvent
+import asyncio
+from anam import AnamClient
 
 client = AnamClient(api_key="...", persona_id="...")
 
 video_writer = cv2.VideoWriter("output.mp4", ...)
 audio_writer = wave.open("output.wav", "wb")
 
-@client.on(AnamEvent.VIDEO_FRAME)
-async def save_video(frame):
-    # Convert RGB to BGR for OpenCV VideoWriter
-    bgr_frame = frame.to_ndarray(format="bgr24")
-    video_writer.write(bgr_frame)
+async def save_video(session):
+    async for frame in session.video_frames():
+        # Convert RGB to BGR for OpenCV VideoWriter
+        bgr_frame = frame.to_ndarray(format="bgr24")
+        video_writer.write(bgr_frame)
 
-@client.on(AnamEvent.AUDIO_FRAME)
-async def save_audio(frame):
-    # Initialize writer on first frame
-    if audio_writer.getnframes() == 0:
-        audio_writer.setnchannels(frame.layout.nb_channels)
-        audio_writer.setsampwidth(2)  # 16-bit
-        audio_writer.setframerate(frame.sample_rate)
-    # Write audio data (convert to int16 and get bytes)
-    audio_writer.writeframes(frame.to_ndarray().tobytes())
+async def save_audio(session):
+    async for frame in session.audio_frames():
+        # Initialize writer on first frame
+        if audio_writer.getnframes() == 0:
+            audio_writer.setnchannels(frame.layout.nb_channels)
+            audio_writer.setsampwidth(2)  # 16-bit
+            audio_writer.setframerate(frame.sample_rate)
+        # Write audio data (convert to int16 and get bytes)
+        audio_writer.writeframes(frame.to_ndarray().tobytes())
 
 async with client.connect() as session:
-    await asyncio.sleep(30)  # Record for 30 seconds
+    # Run both consumers concurrently
+    await asyncio.gather(
+        save_video(session),
+        save_audio(session),
+        asyncio.sleep(30),  # Record for 30 seconds
+    )
 ```
 
 ### Display Video with OpenCV
 
 ```python
 import cv2
-from anam import AnamClient, AnamEvent
+import asyncio
+from anam import AnamClient
 
 client = AnamClient(api_key="...", persona_id="...")
 latest_frame = None
 
-@client.on(AnamEvent.VIDEO_FRAME)
-async def update_frame(frame):
+async def update_frame(session):
     global latest_frame
-    # Read frame as BGR for OpenCV display
-    bgr_frame = frame.to_ndarray(format="bgr24")
+    async for frame in session.video_frames():
+        # Read frame as BGR for OpenCV display
+        bgr_frame = frame.to_ndarray(format="bgr24")
 
 # Run display in main thread
 async with client.connect() as session:

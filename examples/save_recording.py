@@ -137,27 +137,52 @@ async def main() -> None:
         options=ClientOptions(disable_input_audio=True, api_base_url=api_base_url),
     )
 
-    # These functions are registered via decorators and called by the client
-    # They appear unused to static analysis but are actually used at runtime
-    @client.on(AnamEvent.VIDEO_FRAME)
-    async def on_video(frame: VideoFrame) -> None:
-        video_recorder.add_frame(frame)
-
-    @client.on(AnamEvent.AUDIO_FRAME)
-    async def on_audio(frame: AudioFrame) -> None:
-        audio_recorder.add_frame(frame)
-
+    # Register connection event handler
     @client.on(AnamEvent.CONNECTION_ESTABLISHED)
     async def on_connected() -> None:
         logger.info("✓ Connected - recording started")
+
+    async def consume_video_frames(session) -> None:
+        """Consume video frames from iterator."""
+        try:
+            async for frame in session.video_frames():
+                video_recorder.add_frame(frame)
+        except Exception as e:
+            logger.error(f"Error consuming video frames: {e}")
+
+    async def consume_audio_frames(session) -> None:
+        """Consume audio frames from iterator."""
+        try:
+            async for frame in session.audio_frames():
+                audio_recorder.add_frame(frame)
+        except Exception as e:
+            logger.error(f"Error consuming audio frames: {e}")
 
     # Record for specified duration
     duration_seconds = 30
     logger.info("Recording for %d seconds...", duration_seconds)
 
     try:
-        async with client.connect() as _session:
+        async with client.connect() as session:
+            # Start consuming video and audio frames
+            video_task = asyncio.create_task(consume_video_frames(session))
+            audio_task = asyncio.create_task(consume_audio_frames(session))
+
             await asyncio.sleep(duration_seconds)
+
+            # Cancel frame consumption tasks
+            video_task.cancel()
+            audio_task.cancel()
+
+            # Wait for tasks to complete cancellation
+            for task in [video_task, audio_task]:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Error in task: {e}")
+
     except KeyboardInterrupt:
         logger.info("Recording interrupted")
     finally:

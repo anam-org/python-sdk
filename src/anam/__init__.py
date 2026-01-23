@@ -15,21 +15,25 @@ Example:
         persona_id="your-persona-id",
     )
 
-    @client.on(AnamEvent.VIDEO_FRAME)
-    async def handle_video(frame):
-        # Process video frame
-        # frame is a PyAV VideoFrame - access all PyAV properties directly
-        img = frame.to_ndarray(format="rgb24")  # numpy array (H, W, 3) RGB format
-
-    @client.on(AnamEvent.AUDIO_FRAME)
-    async def handle_audio(frame):
-        # Process audio frame
-        # frame is a PyAV AudioFrame - access all PyAV properties directly
-        samples = frame.to_ndarray()
-
     async with client.connect() as session:
-        await session.talk("Hello! How can I help you?")
-        await session.wait_until_closed()
+        # Consume video frames using async iterator
+        async def consume_video():
+            async for frame in session.video_frames():
+                # yields a PyAV VideoFrame
+                img = frame.to_ndarray(format="rgb24")  # numpy array (H, W, 3) RGB format
+        
+        # Consume audio frames using async iterator
+        async def consume_audio():
+            async for frame in session.audio_frames():
+                # yields a PyAV AudioFrame
+                samples = frame.to_ndarray()
+        
+        # Run both consumers concurrently
+        import asyncio
+        await asyncio.gather(
+            consume_video(),
+            consume_audio(),
+        )
     ```
 
 For more information, see https://docs.anam.ai
