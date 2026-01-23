@@ -165,7 +165,7 @@ audio_writer = wave.open("output.wav", "wb")
 @client.on(AnamEvent.VIDEO_FRAME)
 async def save_video(frame):
     # Convert RGB to BGR for OpenCV VideoWriter
-    bgr_frame = frame.to_ndarray(format="bgr24")
+    latest_frame = frame.to_ndarray(format="bgr24")
     video_writer.write(bgr_frame)
 
 @client.on(AnamEvent.AUDIO_FRAME)
