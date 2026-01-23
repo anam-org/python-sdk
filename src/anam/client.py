@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable, TypeVar
 
 from av.audio.frame import AudioFrame
@@ -35,25 +36,27 @@ class AnamClient:
 
     The AnamClient provides a simple interface for connecting to Anam's
     AI avatar streaming service. It handles session management, WebRTC
-    connections, and provides callbacks for video/audio frames and messages.
+    connections (with callbacks), and provides async iterators for video/audio frames.
 
     Example:
         ```python
-        from anam import AnamClient, AnamEvent
+        from anam import AnamClient
 
         client = AnamClient(
             api_key="your-api-key",
             persona_id="your-persona-id",
         )
 
-        @client.on(AnamEvent.VIDEO_FRAME)
-        async def handle_video(frame):
-            # Process video frame
-            pass
-
         async with client.connect() as session:
-            await session.talk("Hello!")
-            await session.wait_until_closed()
+            # Consume video frames
+            async for frame in session.video_frames():
+                # Process video frame
+                image = frame.to_ndarray(format="rgb24")
+            
+            # Consume audio frames
+            async for frame in session.audio_frames():
+                # Process audio frame
+                samples = frame.to_ndarray()
         ```
     """
 
@@ -143,10 +146,9 @@ class AnamClient:
 
         Example:
             ```python
-            @client.on(AnamEvent.VIDEO_FRAME)
-            async def handle_video(frame: VideoFrame):
-                img = frame.to_ndarray()
-                # Process the frame...
+            @client.on(AnamEvent.CONNECTION_ESTABLISHED)
+            async def handle_connection():
+                print("Connected!")
             ```
         """
 
@@ -241,8 +243,6 @@ class AnamClient:
         # Create streaming client with callbacks
         self._streaming_client = StreamingClient(
             session_info=self._session_info,
-            on_video_frame=self._handle_video_frame,
-            on_audio_frame=self._handle_audio_frame,
             on_message=self._handle_data_message,
             on_connection_established=self._handle_connection_established,
             on_connection_closed=self._handle_connection_closed,
@@ -255,14 +255,6 @@ class AnamClient:
         self._is_streaming = True
 
         return Session(self)
-
-    async def _handle_video_frame(self, frame: VideoFrame) -> None:
-        """Handle incoming video frame."""
-        await self._emit(AnamEvent.VIDEO_FRAME, frame)
-
-    async def _handle_audio_frame(self, frame: AudioFrame) -> None:
-        """Handle incoming audio frame."""
-        await self._emit(AnamEvent.AUDIO_FRAME, frame)
 
     async def _handle_data_message(self, data: dict[str, Any]) -> None:
         """Handle data channel message."""
@@ -461,6 +453,47 @@ class Session:
         if not self._client._streaming_client:
             raise SessionError("Not connected")
         return self._client._streaming_client.create_agent_audio_input_stream(config)
+
+    def video_frames(self) -> AsyncIterator[VideoFrame]:
+        """Get video frames as an async iterator.
+
+        Yields:
+            VideoFrame: PyAV VideoFrame objects from the WebRTC stream.
+
+        Raises:
+            SessionError: If not connected.
+
+        Example:
+            ```python
+            async for frame in session.video_frames():
+                # Process video frame
+                image = frame.to_ndarray(format="rgb24")
+            ```
+        """
+        if not self._client._streaming_client:
+            raise SessionError("Not connected")
+        return self._client._streaming_client.video_frames()
+
+    def audio_frames(self) -> AsyncIterator[AudioFrame]:
+        """Get audio frames as an async iterator.
+
+        Yields:
+            AudioFrame: PyAV AudioFrame objects from the WebRTC stream.
+            Audio frames are decoded PCM: 16-bit, 48kHz, stereo samples.
+
+        Raises:
+            SessionError: If not connected.
+
+        Example:
+            ```python
+            async for frame in session.audio_frames():
+                # Process audio frame
+                samples = frame.to_ndarray()
+            ```
+        """
+        if not self._client._streaming_client:
+            raise SessionError("Not connected")
+        return self._client._streaming_client.audio_frames()
 
     def mute_input(self) -> None:
         """Mute microphone input (if enabled)."""

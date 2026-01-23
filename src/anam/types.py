@@ -13,13 +13,6 @@ class AnamEvent(str, Enum):
     CONNECTION_CLOSED = "connection_closed"
     SESSION_READY = "session_ready"
 
-    # Stream events
-    VIDEO_FRAME = "video_frame"
-    AUDIO_FRAME = "audio_frame"
-    VIDEO_STREAM_STARTED = "video_stream_started"
-    AUDIO_STREAM_STARTED = "audio_stream_started"
-    INPUT_AUDIO_STREAM_STARTED = "input_audio_stream_started"
-
     # Message events
     MESSAGE_RECEIVED = "message_received"
     MESSAGE_HISTORY_UPDATED = "message_history_updated"

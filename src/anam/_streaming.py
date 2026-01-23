@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable
 
 from aiortc import (
@@ -35,8 +36,6 @@ class StreamingClient:
     def __init__(
         self,
         session_info: SessionInfo,
-        on_video_frame: Callable[[VideoFrame], Awaitable[None]] | None = None,
-        on_audio_frame: Callable[[AudioFrame], Awaitable[None]] | None = None,
         on_message: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         on_connection_established: Callable[[], Awaitable[None]] | None = None,
         on_connection_closed: Callable[[str, str | None], Awaitable[None]] | None = None,
@@ -47,8 +46,6 @@ class StreamingClient:
 
         Args:
             session_info: Session information from API.
-            on_video_frame: Callback for video frames.
-            on_audio_frame: Callback for audio frames.
             on_message: Callback for data channel messages.
             on_connection_established: Callback when connected.
             on_connection_closed: Callback when disconnected.
@@ -58,9 +55,7 @@ class StreamingClient:
         self._session_info = session_info
         self._session_id = session_info.session_id
 
-        # Callbacks
-        self._on_video_frame = on_video_frame
-        self._on_audio_frame = on_audio_frame
+        # Callbacks (only for connection events and messages)
         self._on_message = on_message
         self._on_connection_established = on_connection_established
         self._on_connection_closed = on_connection_closed
@@ -79,10 +74,6 @@ class StreamingClient:
         self._audio_track: MediaStreamTrack | None = None
         self._is_connected = False
         self._agent_audio_input_stream: AgentAudioInputStream | None = None
-
-        # Tasks
-        self._video_task: asyncio.Task[None] | None = None
-        self._audio_task: asyncio.Task[None] | None = None
 
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
@@ -320,12 +311,8 @@ class StreamingClient:
             logger.info("Received %s track", track.kind)
             if track.kind == "video":
                 self._video_track = track
-                if self._on_video_frame:
-                    self._video_task = asyncio.create_task(self._process_video_track(track))
             elif track.kind == "audio":
                 self._audio_track = track
-                if self._on_audio_frame:
-                    self._audio_task = asyncio.create_task(self._process_audio_track(track))
 
         # Set up data channel
         await self._setup_data_channel()
@@ -375,14 +362,31 @@ class StreamingClient:
 
         self._data_channel_open = False
 
-    async def _process_video_track(self, track: MediaStreamTrack) -> None:
-        """Process incoming video frames."""
-        logger.debug("Starting video track processing")
+    async def video_frames(self) -> AsyncIterator[VideoFrame]:
+        """Get video frames as an async iterator.
+
+        Yields:
+            VideoFrame: PyAV VideoFrame objects from the WebRTC stream.
+
+        Raises:
+            RuntimeError: If video track is not available.
+
+        Example:
+            ```python
+            async for frame in streaming_client.video_frames():
+                # Process video frame
+                image = frame.to_ndarray(format="rgb24")
+            ```
+        """
+        if not self._video_track:
+            raise RuntimeError("Video track not available. Wait for connection to be established.")
+
+        logger.debug("Starting video frame iterator")
         frame_count = 0
 
         while True:
             try:
-                frame = await track.recv()
+                frame = await self._video_track.recv()
                 frame_count += 1
 
                 if frame_count == 1:
@@ -395,46 +399,68 @@ class StreamingClient:
                         if self._on_connection_established:
                             asyncio.create_task(self._on_connection_established())
 
-                # Pass pyAV VideoFrame directly
-                if self._on_video_frame:
-                    await self._on_video_frame(frame)
+                yield frame
 
             except Exception as e:
                 if "MediaStreamError" in str(type(e).__name__):
                     logger.debug("Video track ended after %d frames", frame_count)
                     break
-                logger.error("Error processing video frame: %s", e)
-                break
+                logger.error("Error receiving video frame: %s", e)
+                raise
 
-    async def _process_audio_track(self, track: MediaStreamTrack) -> None:
-        """Process incoming audio frames."""
-        logger.debug("Starting audio track processing")
+    async def audio_frames(self) -> AsyncIterator[AudioFrame]:
+        """Get audio frames as an async iterator.
+
+        Yields:
+            AudioFrame: PyAV AudioFrame objects from the WebRTC stream.
+            Audio frames are decoded PCM: 16-bit, 48kHz, stereo samples.
+
+        Raises:
+            RuntimeError: If audio track is not available.
+
+        Example:
+            ```python
+            async for frame in streaming_client.audio_frames():
+                # Process audio frame
+                samples = frame.to_ndarray()
+            ```
+        """
+        if not self._audio_track:
+            raise RuntimeError("Audio track not available. Wait for connection to be established.")
+
+        logger.debug("Starting audio frame iterator")
         frame_count = 0
 
         while True:
             try:
-                # Receive audio frame from WebRTC and forward to the on_audio subscriber.
-                # incoming audio are decoded (PCM) WebRTC OPUS: 16 bit 48kHz stereo samples.
-                frame = await track.recv()
+                # Receive audio frame from WebRTC
+                # Incoming audio are decoded (PCM) WebRTC OPUS: 16 bit 48kHz stereo samples.
+                frame = await self._audio_track.recv()
                 frame_count += 1
 
                 if frame_count == 1:
-                    logger.debug(f"First audio frame received: {frame.sample_rate}Hz.")
-                    logger.debug(f"Audio frame layout: {frame.layout}")
-                    logger.debug(f"Audio frame channels: {frame.layout.nb_channels}")
-                    logger.debug(f"Audio frame layout name: {frame.layout.name}")
-                    logger.debug(f"Audio frame format: {frame.format.name}")
-                    logger.debug(f"Audio frame samples: {frame.samples}")
+                    logger.debug("First audio frame received: %dHz", frame.sample_rate)
+                    logger.debug("Audio frame layout: %s", frame.layout)
+                    logger.debug("Audio frame channels: %d", frame.layout.nb_channels)
+                    logger.debug("Audio frame layout name: %s", frame.layout.name)
+                    logger.debug("Audio frame format: %s", frame.format.name)
+                    logger.debug("Audio frame samples: %d", frame.samples)
+                    # Signal connection established on first audio frame if video hasn't yet
+                    if not self._is_connected:
+                        self._is_connected = True
+                        if hasattr(self, "_connection_ready"):
+                            self._connection_ready.set()
+                        if self._on_connection_established:
+                            asyncio.create_task(self._on_connection_established())
 
-                if self._on_audio_frame:
-                    await self._on_audio_frame(frame)
+                yield frame
 
             except Exception as e:
                 if "MediaStreamError" in str(type(e).__name__):
                     logger.debug("Audio track ended after %d frames", frame_count)
                     break
-                logger.error("Error processing audio frame: %s", e)
-                break
+                logger.error("Error receiving audio frame: %s", e)
+                raise
 
     async def _create_and_send_offer(self) -> None:
         """Create and send WebRTC offer."""
@@ -563,21 +589,6 @@ class StreamingClient:
     async def close(self) -> None:
         """Close the streaming connection and clean up resources."""
         logger.debug("Closing streaming client")
-
-        # Cancel track processing tasks
-        if self._video_task:
-            self._video_task.cancel()
-            try:
-                await self._video_task
-            except asyncio.CancelledError:
-                pass
-
-        if self._audio_task:
-            self._audio_task.cancel()
-            try:
-                await self._audio_task
-            except asyncio.CancelledError:
-                pass
 
         # Close signalling
         if self._signalling_client:
