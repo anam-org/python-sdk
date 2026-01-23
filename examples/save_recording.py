@@ -20,9 +20,10 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from av.audio.frame import AudioFrame
 from dotenv import load_dotenv
 
-from anam import AnamClient, AnamEvent, AudioFrame, ClientOptions, VideoFrame
+from anam import AnamClient, AnamEvent, ClientOptions, VideoFrame
 
 # Load environment variables from .env
 _ = load_dotenv()
@@ -97,7 +98,7 @@ class AudioRecorder:
             self.writer.setframerate(frame.sample_rate)
             logger.info("Recording audio to: %s", self.output_path)
 
-        audio_data = frame.to_ndarray().astype(np.int16)
+        audio_data = frame.to_ndarray()
         self.writer.writeframes(audio_data.tobytes())
         self.frame_count += 1
 

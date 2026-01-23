@@ -165,10 +165,6 @@ class VideoFrame:
         """Convert to numpy array (H, W, 3) in RGB format."""
 ```
 
-#### AudioFrame
-
-`AudioFrame` is a PyAV's `AudioFrame`. 
-
 
 ## Examples
 
@@ -199,7 +195,7 @@ async def save_audio(frame):
         audio_writer.setsampwidth(2)  # 16-bit
         audio_writer.setframerate(frame.sample_rate)
     # Write audio data (convert to int16 and get bytes)
-    audio_writer.writeframes(frame.to_ndarray().astype(np.int16).tobytes())
+    audio_writer.writeframes(frame.to_ndarray().tobytes())
 
 async with client.connect() as session:
     await asyncio.sleep(30)  # Record for 30 seconds

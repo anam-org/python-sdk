@@ -151,21 +151,6 @@ class VideoFrame:
         return arr.reshape((self.height, self.width, 3))
 
 
-# AudioFrame is now a direct re-export of PyAV's AudioFrame
-# Users can access all PyAV AudioFrame properties and methods directly:
-# - frame.layout.nb_channels (number of channels)
-# - frame.sample_rate or frame.rate (sample rate)
-# - frame.timestamp (timestamp in seconds)
-# - frame.format.name (format string like 's16')
-# - frame.to_ndarray() (numpy array, may need .astype(np.int16) for int16)
-# - frame.planes, frame.samples, etc. (all PyAV features)
-#
-# For convenience, common patterns:
-# - Channels: frame.layout.nb_channels
-# - Raw bytes: frame.to_ndarray().tobytes()
-# - int16 array: frame.to_ndarray().astype(np.int16)
-
-
 @dataclass
 class Message:
     """A message in the conversation.

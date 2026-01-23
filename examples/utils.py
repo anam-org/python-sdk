@@ -187,7 +187,7 @@ class AudioPlayer:
             return
 
         try:
-            # Convert int16 to float32 for sounddevice - reshape to (samples, channels) for stereo playback
+            # Convert int16 to float32 for sounddevice - reshape to (samples, channels) for stereo playback compatibility
             audio_data = frame.to_ndarray().reshape(-1, frame.layout.nb_channels).astype(np.float32) / 32768.0
             _ = self.stream.write(audio_data)
         except Exception as e:

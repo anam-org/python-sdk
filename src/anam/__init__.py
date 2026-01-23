@@ -24,7 +24,7 @@ Example:
     async def handle_audio(frame):
         # Process audio frame
         # frame is a PyAV AudioFrame - access all PyAV properties directly
-        samples = frame.to_ndarray().astype(np.int16)  # numpy array of int16 samples
+        samples = frame.to_ndarray()
 
     async with client.connect() as session:
         await session.talk("Hello! How can I help you?")
