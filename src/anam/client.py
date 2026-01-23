@@ -6,6 +6,8 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable, TypeVar
 
+from av.audio.frame import AudioFrame
+
 from ._api import CoreApiClient
 from ._agent_audio_input_stream import AgentAudioInputStream
 from ._streaming import StreamingClient
@@ -13,7 +15,6 @@ from .errors import ConfigurationError, SessionError
 from .types import (
     AgentAudioInputConfig,
     AnamEvent,
-    AudioFrame,
     ClientOptions,
     Message,
     MessageRole,

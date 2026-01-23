@@ -152,36 +152,6 @@ class VideoFrame:
 
 
 @dataclass
-class AudioFrame:
-    """An audio frame received from the avatar.
-
-    Attributes:
-        data: Raw audio data bytes.
-        sample_rate: Audio sample rate in Hz.
-        channels: Number of audio channels.
-        timestamp: Frame timestamp in seconds.
-        format: Sample format (e.g., 's16' for interleaved signed 16-bit).
-    """
-
-    data: bytes
-    sample_rate: int
-    channels: int
-    timestamp: float
-    format: str = "s16"
-
-    def to_ndarray(self) -> NDArray[np.int16]:
-        """Convert to numpy array of audio samples.
-
-        Returns:
-            NumPy array of shape (samples,) for mono or (samples, channels) for stereo.
-        """
-        arr = np.frombuffer(self.data, dtype=np.int16)
-        if self.channels > 1:
-            arr = arr.reshape((-1, self.channels))
-        return arr
-
-
-@dataclass
 class Message:
     """A message in the conversation.
 

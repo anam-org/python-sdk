@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, Protocol
 import cv2
 import numpy as np
 
-from anam import AudioFrame, VideoFrame
+from av.audio.frame import AudioFrame
+from anam import VideoFrame
 from anam._agent_audio_input_stream import AgentAudioInputStream
 
 if TYPE_CHECKING:
@@ -186,8 +187,8 @@ class AudioPlayer:
             return
 
         try:
-            # Convert int16 to float32 for sounddevice
-            audio_data = frame.to_ndarray().astype(np.float32) / 32768.0
+            # Convert int16 to float32 for sounddevice - reshape to (samples, channels) for stereo playback compatibility
+            audio_data = frame.to_ndarray().reshape(-1, frame.layout.nb_channels).astype(np.float32) / 32768.0
             _ = self.stream.write(audio_data)
         except Exception as e:
             logger = logging.getLogger(__name__)

@@ -5,7 +5,6 @@ import json
 import logging
 from typing import Any, Awaitable, Callable
 
-import numpy as np
 from aiortc import (
     MediaStreamTrack,
     RTCConfiguration,
@@ -15,10 +14,11 @@ from aiortc import (
     RTCPeerConnection,
     RTCSessionDescription,
 )
+from av.audio.frame import AudioFrame
 
 from ._agent_audio_input_stream import AgentAudioInputStream
 from ._signalling import SignalAction, SignallingClient
-from .types import AgentAudioInputConfig, AudioFrame, SessionInfo, VideoFrame
+from .types import AgentAudioInputConfig, SessionInfo, VideoFrame
 
 logger = logging.getLogger(__name__)
 
@@ -422,28 +422,20 @@ class StreamingClient:
         while True:
             try:
                 # Receive audio frame from WebRTC and forward to the on_audio subscriber.
-                # incoming audio is PCM, i.e. decoded WebRTC OPUS: 16 bit 48kHz stereo.
+                # incoming audio are decoded (PCM) WebRTC OPUS: 16 bit 48kHz stereo samples.
                 frame = await track.recv()
                 frame_count += 1
 
                 if frame_count == 1:
                     logger.debug(f"First audio frame received: {frame.sample_rate}Hz.")
                     logger.debug(f"Audio frame layout: {frame.layout}")
-                    logger.debug(f"Audio frame channels: {frame.layout.channels}")
+                    logger.debug(f"Audio frame channels: {frame.layout.nb_channels}")
                     logger.debug(f"Audio frame layout name: {frame.layout.name}")
-                    logger.debug(f"Audio frame format: {frame.format}")
-                    logger.debug(f"Audio frame samples: {frame.format.name}")
-
-                audio_frame = AudioFrame(
-                    data=frame.to_ndarray().astype(np.int16).tobytes(),
-                    sample_rate=frame.sample_rate,
-                    channels=2 if frame.layout.name == "stereo" else 1,
-                    timestamp=frame.time if hasattr(frame, "time") else 0.0,
-                    format=frame.format.name,
-                )
+                    logger.debug(f"Audio frame format: {frame.format.name}")
+                    logger.debug(f"Audio frame samples: {frame.samples}")
 
                 if self._on_audio_frame:
-                    await self._on_audio_frame(audio_frame)
+                    await self._on_audio_frame(frame)
 
             except Exception as e:
                 if "MediaStreamError" in str(type(e).__name__):

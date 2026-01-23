@@ -23,7 +23,8 @@ Example:
     @client.on(AnamEvent.AUDIO_FRAME)
     async def handle_audio(frame):
         # Process audio frame
-        samples = frame.to_ndarray()  # numpy array of int16 samples
+        # frame is a PyAV AudioFrame - access all PyAV properties directly
+        samples = frame.to_ndarray()
 
     async with client.connect() as session:
         await session.talk("Hello! How can I help you?")
@@ -47,7 +48,6 @@ from .errors import (
 from .types import (
     AgentAudioInputConfig,
     AnamEvent,
-    AudioFrame,
     ClientOptions,
     ConnectionClosedCode,
     Message,
@@ -64,7 +64,6 @@ __all__ = [
     "AgentAudioInputConfig",
     "AgentAudioInputStream",
     "AnamEvent",
-    "AudioFrame",
     "ClientOptions",
     "ConnectionClosedCode",
     "Message",
