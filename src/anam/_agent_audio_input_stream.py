@@ -50,9 +50,7 @@ class AgentAudioInputStream:
         self._signalling_client = signalling_client
         self._sequence_number = 0
 
-    async def send_audio_chunk(
-        self, audio_data: Union[bytes, bytearray, str]
-    ) -> None:
+    async def send_audio_chunk(self, audio_data: Union[bytes, bytearray, str]) -> None:
         """Send PCM audio chunk to server.
 
         Args:
@@ -67,9 +65,7 @@ class AgentAudioInputStream:
         elif isinstance(audio_data, (bytes, bytearray)):
             base64_data = base64.b64encode(audio_data).decode("ascii")
         else:
-            raise ValueError(
-                f"audio_data must be bytes, bytearray, or str, got {type(audio_data)}"
-            )
+            raise ValueError(f"audio_data must be bytes, bytearray, or str, got {type(audio_data)}")
 
         payload = AgentAudioInputPayload(
             audio_data=base64_data,
