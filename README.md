@@ -38,25 +38,35 @@ async def main():
     async with client.connect() as session:
         print(f"Connected! Session: {session.session_id}")
         
-        # Consume video frames using async iterator
+        # Create tasks to consume video and audio frames concurrently
         async def consume_video():
+            """Consume video frames - runs indefinitely until session closes."""
             async for frame in session.video_frames():
                 # frame.to_ndarray(format="rgb24") returns numpy array (H, W, 3) in RGB format - use "bgr24" for OpenCV
                 img = frame.to_ndarray(format="rgb24")
                 print(f"Video frame: {frame.width}x{frame.height}")
         
-        # Consume audio frames using async iterator
         async def consume_audio():
+            """Consume audio frames - runs indefinitely until session closes."""
             async for frame in session.audio_frames():
                 # frame.to_ndarray() returns numpy array of int16 samples
                 samples = frame.to_ndarray()
                 print(f"Audio frame: {len(samples)} samples at {frame.sample_rate}Hz")
         
-        # Run both consumers concurrently
-        await asyncio.gather(
-            consume_video(),
-            consume_audio(),
-        )
+        # Run both consumers concurrently - both will process frames in parallel
+        # The session context manager will handle cleanup when done
+        video_task = asyncio.create_task(consume_video())
+        audio_task = asyncio.create_task(consume_audio())
+        
+        # Keep streaming for 60 seconds (or until session closes)
+        try:
+            await asyncio.sleep(60)
+        finally:
+            # Cancel tasks when done
+            video_task.cancel()
+            audio_task.cancel()
+            # Wait for cancellation to complete
+            await asyncio.gather(video_task, audio_task, return_exceptions=True)
 
 asyncio.run(main())
 ```
@@ -176,7 +186,7 @@ audio_writer = wave.open("output.wav", "wb")
 
 async def save_video(session):
     async for frame in session.video_frames():
-        # Convert RGB to BGR for OpenCV VideoWriter
+        # Read frame as BGR for OpenCV VideoWriter
         bgr_frame = frame.to_ndarray(format="bgr24")
         video_writer.write(bgr_frame)
 
@@ -213,7 +223,7 @@ async def update_frame(session):
     global latest_frame
     async for frame in session.video_frames():
         # Read frame as BGR for OpenCV display
-        bgr_frame = frame.to_ndarray(format="bgr24")
+        latest_frame = frame.to_ndarray(format="bgr24")
 
 # Run display in main thread
 async with client.connect() as session:
