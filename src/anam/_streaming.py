@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable
 
+import aiohttp
 from aiortc import (
     MediaStreamTrack,
     RTCConfiguration,
@@ -539,6 +540,44 @@ class StreamingClient:
             "timestamp": datetime.datetime.utcnow().isoformat(),
         }
         self.send_data_message(json.dumps(message))
+
+    async def send_talk(self, content: str) -> None:
+        """Send text for the avatar to speak directly (bypasses LLM).
+
+        This sends the talk command via REST API to the engine, which is the
+        correct method for simple talk commands. For streaming text, use the
+        signalling client's send_talk_stream_input method.
+
+        Args:
+            content: The text for the avatar to speak.
+
+        Raises:
+            RuntimeError: If session info is not available.
+            aiohttp.ClientError: If the HTTP request fails.
+        """
+        # Build engine URL from session info
+        # The engine_host includes the full path (e.g., connect-eu.anam.ai/v1/webrtc/engines/xxx)
+        protocol = self._session_info.engine_protocol
+        host = self._session_info.engine_host
+
+        engine_base_url = f"{protocol}://{host}"
+        url = f"{engine_base_url}/talk?session_id={self._session_id}"
+
+        logger.debug("Sending talk command to %s", url)
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                headers={"Content-Type": "application/json"},
+                json={"content": content},
+            ) as response:
+                if not response.ok:
+                    error_text = await response.text()
+                    logger.error("Talk command failed: %s %s", response.status, error_text)
+                    raise RuntimeError(
+                        f"Failed to send talk command: {response.status} {error_text}"
+                    )
+                logger.info("Talk command sent successfully to %s", url)
 
     def create_agent_audio_input_stream(
         self, config: AgentAudioInputConfig

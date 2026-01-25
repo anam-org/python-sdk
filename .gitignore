@@ -16,3 +16,6 @@ anam_python_sdk/scratch
 
 # Builds
 /dist*
+
+# Example outputs
+recordings/
