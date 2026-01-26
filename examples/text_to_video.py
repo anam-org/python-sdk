@@ -408,7 +408,7 @@ async def main() -> None:
     if len(sys.argv) > 1:
         text = " ".join(sys.argv[1:])
     else:
-        text = "Hello! This is a test of the text to video function."
+        text = "Hello there stranger! Welcome to Anam AI. We hope you have fun building your project with us!"
 
     # Create output directory
     output_dir = Path("recordings")

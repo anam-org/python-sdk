@@ -53,7 +53,8 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
     print("=" * 60)
     print("Available commands:")
     print("  f [filename]  - Send audio file (defaults to input.wav)")
-    print("  t <text>      - Send text message")
+    print("  m <message>   - Send text message (user input for the conversation.)")
+    print("  t <text>      - Send talk command text (bypasses LLM and sends text directly to TTS.)")
     print("  i             - Interrupt current audio")
     print("  q             - Quit and stop session")
     print("=" * 60 + "\n")
@@ -87,10 +88,10 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                 else:
                     print(f"❌ File not found: {wav_file}")
 
-            elif command == "t":
+            elif command == "m":
                 # Get the rest of the input as the message text
                 if len(parts) < 2:
-                    print("❌ Please provide text to send. Usage: t <your message>")
+                    print("❌ Please provide text to send. Usage: m <message to the engine>")
                     continue
                 message_text = " ".join(parts[1:])
                 try:
@@ -98,6 +99,18 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                     print(f"✅ Sent message: {message_text}")
                 except Exception as e:
                     print(f"❌ Error sending message: {e}")
+
+            elif command == "t":
+                # Get the rest of the input as the message text
+                if len(parts) < 2:
+                    print("❌ Please provide talk command. Usage: t <text to be spoken>")
+                    continue
+                message_text = " ".join(parts[1:])
+                try:
+                    await session.talk(message_text)
+                    print(f"✅ Sent talk command: {message_text}")
+                except Exception as e:
+                    print(f"❌ Error sending talk command: {e}")
 
             elif command == "i":
                 session.interrupt()
