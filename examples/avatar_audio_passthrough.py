@@ -87,8 +87,11 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                     print(f"❌ File not found: {wav_file}")
 
             elif command == "i":
-                session.interrupt()
-                print("✅ Interrupt sent")
+                try:
+                    await session.interrupt()
+                    print("✅ Interrupt sent")
+                except Exception as e:
+                    print(f"❌ Error sending interrupt: {e}")
 
             else:
                 print(f"❌ Unknown command: {command}")

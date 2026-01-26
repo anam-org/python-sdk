@@ -422,7 +422,7 @@ class Session:
 
         streaming.send_user_message(content)
 
-    def interrupt(self) -> None:
+    async def interrupt(self) -> None:
         """Interrupt the avatar if it's speaking.
 
         Raises:
@@ -431,7 +431,14 @@ class Session:
         if not self._client._streaming_client:
             raise SessionError("Not connected")
 
-        self._client._streaming_client.send_interrupt()
+        # Wait for data channel to be ready (same as send_message)
+        streaming = self._client._streaming_client
+        if not getattr(streaming, "_data_channel_open", False):
+            logger.debug("Waiting for data channel to open...")
+            if not await streaming.wait_for_data_channel(timeout=10.0):
+                raise SessionError("Data channel did not open in time")
+
+        streaming.send_interrupt()
 
     def create_agent_audio_input_stream(
         self, config: AgentAudioInputConfig
