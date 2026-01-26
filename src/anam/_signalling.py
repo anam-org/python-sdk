@@ -330,6 +330,41 @@ class SignallingClient:
         }
         await self.send_message(message)
 
+    async def send_talk_stream_input(
+        self,
+        content: str,
+        start_of_speech: bool = True,
+        end_of_speech: bool = True,
+        correlation_id: str | None = None,
+    ) -> None:
+        """Send talk stream input to make the avatar speak text directly.
+
+        This bypasses the LLM and sends text directly to TTS.
+
+        Args:
+            content: The text for the avatar to speak.
+            start_of_speech: Whether this is the start of a speech sequence.
+            end_of_speech: Whether this is the end of a speech sequence.
+            correlation_id: Optional ID to correlate this message with interruptions.
+        """
+        import uuid
+
+        # Generate correlation ID if not provided
+        if correlation_id is None:
+            correlation_id = str(uuid.uuid4())
+
+        message = {
+            "actionType": SignalAction.TALK_STREAM_INPUT.value,
+            "sessionId": self._session_id,
+            "payload": {
+                "content": content,
+                "startOfSpeech": start_of_speech,
+                "endOfSpeech": end_of_speech,
+                "correlationId": correlation_id,
+            },
+        }
+        await self.send_message(message)
+
     async def close(self) -> None:
         """Close the WebSocket connection."""
         self._stop_signal = True

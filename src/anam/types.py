@@ -52,10 +52,12 @@ class PersonaConfig:
         persona_id: The ID of the persona to use.
         name: Display name for the persona (optional).
         avatar_id: The avatar to use for video (optional, uses persona default).
+        avatar_model: Avatar model version (e.g., 'cara-3') (optional).
         voice_id: The voice to use for audio (optional, uses persona default).
         system_prompt: Custom system prompt for the persona (optional).
         language_code: Language code (e.g., 'en', 'es') (optional).
-        llm_id: LLM model to use (optional).
+        llm_id: LLM model to use (optional). Set to 'CUSTOMER_CLIENT_V1' to disable
+            Anam's default brain for custom LLM integration.
         max_session_length_seconds: Maximum session duration (optional).
         enable_audio_passthrough: If True, enables audio passthrough mode where TTS audio
             is sent directly through the socket without transcription, LLM, or TTS processing.
@@ -65,6 +67,7 @@ class PersonaConfig:
     persona_id: str | None = None
     name: str | None = None
     avatar_id: str | None = None
+    avatar_model: str | None = None
     voice_id: str | None = None
     system_prompt: str | None = None
     language_code: str | None = None
@@ -81,6 +84,8 @@ class PersonaConfig:
             result["name"] = self.name
         if self.avatar_id is not None:
             result["avatarId"] = self.avatar_id
+        if self.avatar_model is not None:
+            result["avatarModel"] = self.avatar_model
         if self.voice_id is not None:
             result["voiceId"] = self.voice_id
         if self.system_prompt is not None:
@@ -105,12 +110,15 @@ class ClientOptions:
         api_version: API version to use.
         disable_input_audio: If True, don't capture/send microphone audio.
         ice_servers: Custom ICE servers for WebRTC (optional).
+        client_label: Custom label for session tracking (optional).
+            Defaults to 'python-sdk' if not specified.
     """
 
     api_base_url: str = "https://api.anam.ai"
     api_version: str = "v1"
     disable_input_audio: bool = False
     ice_servers: list[dict[str, Any]] | None = None
+    client_label: str | None = None
 
 
 @dataclass

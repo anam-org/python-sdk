@@ -121,11 +121,6 @@ class AnamClient:
         else:
             self._persona_config = PersonaConfig(persona_id=persona_id)  # type: ignore
 
-        if self._persona_config.avatar_id and not self._persona_config.enable_audio_passthrough:
-            raise ConfigurationError(
-                "enable_audio_passthrough must be True when avatar_id is provided"
-            )
-
         # Event callbacks
         self._event_callbacks: dict[AnamEvent, list[EventCallback]] = {
             event: [] for event in AnamEvent
@@ -376,7 +371,10 @@ class Session:
         self._close_event.set()
 
     async def talk(self, content: str) -> None:
-        """Make the avatar speak the given text.
+        """Make the avatar speak the given text directly.
+
+        This sends text directly to TTS, bypassing the LLM.
+        The avatar will speak exactly what you provide.
 
         Args:
             content: The text for the avatar to speak.
@@ -387,13 +385,8 @@ class Session:
         if not self._client._streaming_client:
             raise SessionError("Not connected")
 
-        # Use the engine API to send talk command
-        # For now, we'll use the data channel
         logger.debug("Talk: %s", content[:50] + "..." if len(content) > 50 else content)
-
-        # TODO: Implement talk via engine API
-        # For now, this could be implemented via the data channel
-        # or a REST call to the engine
+        await self._client._streaming_client.send_talk(content)
 
     async def send_message(self, content: str) -> None:
         """Send a text message as the user.
