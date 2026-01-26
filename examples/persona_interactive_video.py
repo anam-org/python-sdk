@@ -103,21 +103,22 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                 except Exception as e:
                     print(f"❌ Error sending message: {e}")
 
-            elif command == "t":
+            elif command == "t" or command == "ts":
                 # Get the rest of the input as the message text
                 if len(parts) < 2:
                     print("❌ Please provide talk command. Usage: t <text to be spoken>")
                     continue
                 message_text = " ".join(parts[1:])
                 try:
-                    # await session.talk(message_text)
-                    await session.send_talk_stream(
-                        message_text, start_of_speech=True, end_of_speech=True, correlation_id=None
-                    )
+                    if command == "t":
+                        await session.talk(message_text)
+                    elif command == "ts":
+                        await session.send_talk_stream(
+                            message_text, start_of_speech=True, end_of_speech=True, correlation_id=None
+                        )
                     print(f"✅ Sent talk command: {message_text}")
                 except Exception as e:
                     print(f"❌ Error sending talk command: {e}")
-
             elif command == "i":
                 await session.interrupt()
                 print("✅ Interrupt sent")
