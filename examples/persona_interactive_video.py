@@ -2,8 +2,11 @@
 
 This example shows how to display the avatar video stream
 in a window using OpenCV while providing CLI controls for
-interactive session management, where text messages mimic
+interactive session management, where talk commands will be
+spoken directly by the avatar, while text messages mimic
 the transcibed audio and wav files can be sent as TTS audio.
+
+The persona config has enable_audio_passthrough=True for the TTS audio.
 
 Requirements:
     uv sync --extra display
