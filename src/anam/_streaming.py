@@ -524,7 +524,7 @@ class StreamingClient:
 
         message = {
             "content": content,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat(),
             "session_id": self._session_id,
             "message_type": "speech",
         }
@@ -537,7 +537,7 @@ class StreamingClient:
         message = {
             "message_type": "interrupt",
             "session_id": self._session_id,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
         self.send_data_message(json.dumps(message))
 

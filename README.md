@@ -151,7 +151,7 @@ async with client.connect() as session:
     await session.send_message("Hello, how are you?")
     
     # Interrupt the avatar if speaking
-    session.interrupt()
+    await session.interrupt()
     
     # Wait until the session ends
     await session.wait_until_closed()
