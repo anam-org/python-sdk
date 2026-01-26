@@ -448,26 +448,26 @@ class Session:
         correlation_id: str | None = None,
     ) -> None:
         """Stream text directly to TTS via WebSocket signalling.
-        
+
         This sends text directly to TTS for streaming scenarios,
         bypassing the LLM. For simple talk commands, use talk() instead.
-        
+
         Args:
             content: The text for the avatar to speak.
             start_of_speech: Whether this is the start of a speech sequence.
             end_of_speech: Whether this is the end of a speech sequence.
             correlation_id: Optional ID to correlate with interruptions.
-            
+
         Raises:
             SessionError: If not connected.
         """
         if not self._client._streaming_client:
             raise SessionError("Not connected")
-        
+
         signalling_client = self._client._streaming_client._signalling_client
         if not signalling_client:
             raise SessionError("Signalling client not initialized")
-        
+
         # The send_talk_stream_input method will buffer the message if WebSocket isn't ready
         await signalling_client.send_talk_stream_input(
             content=content,
@@ -475,7 +475,7 @@ class Session:
             end_of_speech=end_of_speech,
             correlation_id=correlation_id,
         )
-        
+
     def create_agent_audio_input_stream(
         self, config: AgentAudioInputConfig
     ) -> AgentAudioInputStream:

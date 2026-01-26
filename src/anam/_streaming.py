@@ -524,7 +524,9 @@ class StreamingClient:
 
         message = {
             "content": content,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc)
+            .replace(tzinfo=None)
+            .isoformat(),
             "session_id": self._session_id,
             "message_type": "speech",
         }
