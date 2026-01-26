@@ -57,7 +57,7 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
     print("Available commands:")
     print("  f [filename]  - Send audio file (defaults to input.wav)")
     print("  m <message>   - Send text message (user input for the conversation.)")
-    print("  t <text>      - Send talk command text (bypasses LLM and sends text directly to TTS.)")
+    print("  t|ts <text>   - Send talk command (bypasses LLM and sends text directly to TTS). t: REST API, ts: WebSocket)")
     print("  i             - Interrupt current audio")
     print("  q             - Quit and stop session")
     print("=" * 60 + "\n")
@@ -103,14 +103,19 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                 except Exception as e:
                     print(f"❌ Error sending message: {e}")
 
-            elif command == "t":
+            elif command == "t" or command == "ts":
                 # Get the rest of the input as the message text
                 if len(parts) < 2:
                     print("❌ Please provide talk command. Usage: t <text to be spoken>")
                     continue
                 message_text = " ".join(parts[1:])
                 try:
-                    await session.talk(message_text)
+                    if command == "t":
+                        await session.talk(message_text)
+                    elif command == "ts":
+                        await session.send_talk_stream(
+                            message_text, start_of_speech=True, end_of_speech=True, correlation_id=None
+                        )
                     print(f"✅ Sent talk command: {message_text}")
                 except Exception as e:
                     print(f"❌ Error sending talk command: {e}")

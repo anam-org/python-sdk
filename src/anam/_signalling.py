@@ -25,8 +25,8 @@ class SignalAction(str, Enum):
     HEARTBEAT = "heartbeat"
     WARNING = "warning"
     SESSION_READY = "sessionready"
-    TALK_STREAM_INPUT = "talkstreaminput"
-    TALK_STREAM_INTERRUPTED = "talkstreaminterrupted"
+    TALK_STREAM_INPUT = "talkstream"
+    TALK_STREAM_INTERRUPTED = "talkinputstreaminterrupted"
     AGENT_AUDIO_INPUT = "agentaudioinput"
     AGENT_AUDIO_INPUT_END = "agentaudioinputend"
 
