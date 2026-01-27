@@ -9,11 +9,14 @@ Official Python SDK for [Anam AI](https://anam.ai) - Real-time AI avatar streami
 ## Installation
 
 ```bash
-# Using pip
-pip install anam-ai
-
 # Using uv (recommended)
 uv add anam-ai
+
+# With optional display utilities (for testing)
+uv add anam-ai --extra display
+
+# Using pip
+pip install anam-ai
 
 # With optional display utilities (for testing)
 pip install anam-ai[display]
