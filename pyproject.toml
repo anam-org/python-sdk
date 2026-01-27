@@ -1,0 +1,82 @@
+[project]
+name = "anam-ai"
+version = "1.0.0"
+description = "Official Python SDK for Anam AI - Real-time AI avatar streaming"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Anam AI", email = "support@anam.ai" }]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+keywords = ["anam", "ai", "avatar", "streaming", "webrtc", "real-time"]
+
+dependencies = [
+    "aiortc>=1.14.0",
+    "aiohttp>=3.9.0",
+    "websockets>=12.0",
+    "numpy>=1.26.0",
+    "python-dotenv>=1.2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+# Optional display utilities for testing
+display = [
+    "opencv-python>=4.9.0",
+    "sounddevice>=0.4.6",
+]
+
+[project.urls]
+Homepage = "https://www.anam.ai"
+Documentation = "https://docs.anam.ai"
+Repository = "https://github.com/anam-org/python-sdk"
+Issues = "https://github.com/anam-org/python-sdk/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/anam"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/README.md",
+    "/LICENSE",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
