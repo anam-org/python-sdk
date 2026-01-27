@@ -47,8 +47,8 @@ display = [
 [project.urls]
 Homepage = "https://www.anam.ai"
 Documentation = "https://docs.anam.ai"
-Repository = "https://github.com/anam-org/anam-python-sdk"
-Issues = "https://github.com/anam-org/anam-python-sdk/issues"
+Repository = "https://github.com/anam-org/python-sdk"
+Issues = "https://github.com/anam-org/python-sdk/issues"
 
 [build-system]
 requires = ["hatchling"]
