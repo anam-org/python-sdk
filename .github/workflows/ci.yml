@@ -19,6 +19,9 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      - name: Install dependencies
+        run: uv sync --extra dev
+
       - name: Run ruff
         run: uv run ruff check src/
 
@@ -43,5 +46,8 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Install dependencies
+        run: uv sync --python ${{ matrix.python-version }} --extra dev
+
       - name: Run tests
-        run: uv run --python ${{ matrix.python-version }} pytest -v
+        run: uv run pytest -v
