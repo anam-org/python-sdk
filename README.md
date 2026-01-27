@@ -65,12 +65,15 @@ asyncio.run(main())
 
 ## Features
 
-- 🎥 **Real-time video streaming** - Receive avatar video frames as PyAV VideoFrame objects via async iterators
-- 🔊 **Real-time audio streaming** - Receive avatar audio frames asPyAV AudioFrame objects via async iterators  
-- 💬 **Two-way communication** - Send text messages and receive responses
-- 🎯 **Async iterator API** - Clean, Pythonic async/await patterns
+- 🎥 **Real-time Audio/Video streaming** - Receive avatar audio/video frames as PyAV AudioFrame/VideoFrame objects via async iterators
+- 💬 **Two-way communication** - Send text messages (like transcribed user speech) and receive generated responses
+- 🎤 **Audio-passthrough** - Send TTS generated audio input and receive rendered synchronized audio/video avatar
+- 🗣️ **Direct text-to-speech** - Send text directly to TTS for immediate speech output (bypasses LLM processing)
+- 🎬 **Synchronisation by design** - Produces synchronized audio/video frames, ensuring the avatar's mouth and audio are in-sync
+- 🎯 **Async iterator API** - Clean, Pythonic async/await patterns for continuous stream of audio/video frames
+- 🎯 **Event-driven API** - Simple decorator-based event handlers for discrete events
 - 📝 **Fully typed** - Complete type hints for IDE support
-- 🔒 **Server-side ready** - Designed for server-side Python applications
+- 🔒 **Server-side ready** - Designed for server-side Python applications (e.g. for use in a web application)
 
 ## API Reference
 
@@ -311,4 +314,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [Anam AI Website](https://anam.ai)
 - [Documentation](https://docs.anam.ai)
-- [API Reference](https://docs.anam.ai/api)
+- [API Reference](https://docs.anam.ai/api-reference)
