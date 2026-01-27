@@ -65,11 +65,10 @@ asyncio.run(main())
 
 ## Features
 
-- 🎥 **Real-time Audio/Video streaming** - Receive avatar audio/video frames as PyAV AudioFrame/VideoFrame objects via async iterators
+- 🎥 **Real-time Audio/Video streaming** - Receive synchronized audio/video frames from the avatar (as PyAV AudioFrame/VideoFrame objects)
 - 💬 **Two-way communication** - Send text messages (like transcribed user speech) and receive generated responses
 - 🎤 **Audio-passthrough** - Send TTS generated audio input and receive rendered synchronized audio/video avatar
 - 🗣️ **Direct text-to-speech** - Send text directly to TTS for immediate speech output (bypasses LLM processing)
-- 🎬 **Synchronisation by design** - Produces synchronized audio/video frames, ensuring the avatar's mouth and audio are in-sync
 - 🎯 **Async iterator API** - Clean, Pythonic async/await patterns for continuous stream of audio/video frames
 - 🎯 **Event-driven API** - Simple decorator-based event handlers for discrete events
 - 📝 **Fully typed** - Complete type hints for IDE support
