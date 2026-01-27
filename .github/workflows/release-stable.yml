@@ -45,9 +45,6 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      - name: Install semantic-release
-        run: uv tool install python-semantic-release
-
       - name: Configure Git
         run: |
           git config user.name "anam-push-bot[bot]"
@@ -58,9 +55,9 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           if [ -n "${{ inputs.version_bump }}" ]; then
-            uv tool run semantic-release version --${{ inputs.version_bump }}
+            uv tool run --from python-semantic-release semantic-release version --${{ inputs.version_bump }}
           else
-            uv tool run semantic-release version
+            uv tool run --from python-semantic-release semantic-release version
           fi
 
       - name: Build package
