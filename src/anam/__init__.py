@@ -59,6 +59,7 @@ from .types import (
     ConnectionClosedCode,
     Message,
     MessageRole,
+    MessageStreamEvent,
     PersonaConfig,
 )
 
@@ -74,6 +75,7 @@ __all__ = [
     "ConnectionClosedCode",
     "Message",
     "MessageRole",
+    "MessageStreamEvent",
     "PersonaConfig",
     "VideoFrame",
     # Errors

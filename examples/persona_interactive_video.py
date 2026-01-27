@@ -27,7 +27,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from anam import AnamClient, AnamEvent, ClientOptions
-from anam.types import AgentAudioInputConfig, PersonaConfig
+from anam.types import AgentAudioInputConfig, MessageRole, PersonaConfig
 
 # Add parent directory to path to allow importing from examples
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -38,7 +38,7 @@ _ = load_dotenv()
 
 # Configure logging - reduced verbosity
 logging.basicConfig(
-    level=logging.WARNING,  # Reduced from INFO to WARNING
+    level=logging.INFO,  # Reduced from INFO to WARNING
     format="%(levelname)s: %(message)s",  # Simplified format
 )
 logger = logging.getLogger(__name__)
@@ -47,14 +47,22 @@ logger = logging.getLogger(__name__)
 logging.getLogger("anam").setLevel(logging.WARNING)
 logging.getLogger("websockets").setLevel(logging.WARNING)
 logging.getLogger("aiohttp").setLevel(logging.WARNING)
+logging.getLogger("aiortc").setLevel(logging.WARNING)
+logging.getLogger("aioice").setLevel(logging.WARNING)
+
+# Global state for captions toggle
+show_captions = False
 
 
 async def interactive_loop(session, display: VideoDisplay) -> None:
     """Interactive command loop."""
+    global show_captions
+
     print("\n" + "=" * 60)
     print("Interactive Session Started!")
     print("=" * 60)
     print("Available commands:")
+    print("  c             - Toggle captions / conversation history")
     print("  f [filename]  - Send audio file (defaults to input.wav)")
     print("  m <message>   - Send text message (user input for the conversation.)")
     print("  t|ts <text>   - Send talk command (bypasses LLM and sends text directly to TTS). t: REST API, ts: WebSocket)")
@@ -77,6 +85,10 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                 print("Exiting...")
                 display.stop()
                 break
+
+            elif command == "c":
+                show_captions = not show_captions
+                print(f"Captions {'enabled' if show_captions else 'disabled'}")
 
             elif command == "f":
                 # Default to input.wav if no filename provided
@@ -144,6 +156,7 @@ async def stream_session(
     audio_player: AudioPlayer,
 ) -> None:
     """Run the streaming session."""
+    global show_captions
 
     # Register connection event handlers
     @client.on(AnamEvent.CONNECTION_ESTABLISHED)
@@ -153,6 +166,31 @@ async def stream_session(
     @client.on(AnamEvent.CONNECTION_CLOSED)
     async def on_closed(code: str, reason: str | None) -> None:
         print(f"Connection closed: {code} - {reason or 'No reason'}")
+
+    # Register message stream event handlers
+    @client.on(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED)
+    async def on_message_stream_event(event) -> None:
+        """Handle incremental message stream events."""
+        global show_captions
+        if show_captions:
+            role_emoji = "👤" if event.role == MessageRole.USER else "🤖"
+            role_name = "USER" if event.role == MessageRole.USER else "PERSONA"
+
+            if event.content_index == 0:
+                # content_index 0 denotes the start of a new message
+                print(f"{role_emoji} {role_name}: ", end="", flush=True)
+            elif event.end_of_speech:
+                # end_of_speech is fired when the message is complete
+                status = "✓" if not event.interrupted else "✗ INTERRUPTED"
+                print(f"{status}\n")
+            else:
+                # Show incremental updates (you can customize this)
+                print(f"{event.content}", end="", flush=True)
+
+    @client.on(AnamEvent.MESSAGE_HISTORY_UPDATED)
+    async def on_message_history_updated(messages) -> None:
+        """Handle message history updates."""
+        logger.info(f"\n📝 Message history updated: {len(messages)} messages total")
 
     async def consume_video_frames(session) -> None:
         """Consume video frames from iterator."""

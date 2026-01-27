@@ -315,7 +315,7 @@ class StreamingClient:
             elif track.kind == "audio":
                 self._audio_track = track
 
-        # Set up data channel
+        # Set up data channel (client creates it)
         await self._setup_data_channel()
 
         # Set up transceivers
@@ -341,6 +341,10 @@ class StreamingClient:
             ordered=True,
         )
 
+        # Check if channel is already open
+        if self._data_channel.readyState == "open":
+            self._data_channel_open = True
+
         @self._data_channel.on("open")
         def on_open() -> None:
             logger.info("Data channel opened")
@@ -355,13 +359,10 @@ class StreamingClient:
         async def on_message(message: str) -> None:
             try:
                 data = json.loads(message)
-                logger.debug("Data channel message: %s", data.get("messageType", "unknown"))
                 if self._on_message:
                     await self._on_message(data)
             except json.JSONDecodeError as e:
                 logger.error("Failed to parse data channel message: %s", e)
-
-        self._data_channel_open = False
 
     async def video_frames(self) -> AsyncIterator[VideoFrame]:
         """Get video frames as an async iterator.

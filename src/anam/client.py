@@ -20,6 +20,7 @@ from .types import (
     ClientOptions,
     Message,
     MessageRole,
+    MessageStreamEvent,
     PersonaConfig,
     SessionInfo,
 )
@@ -131,6 +132,7 @@ class AnamClient:
         self._session_info: SessionInfo | None = None
         self._streaming_client: StreamingClient | None = None
         self._is_streaming = False
+        self._message_history: list[Message] = []
 
     def on(self, event: AnamEvent) -> Callable[[T], T]:
         """Decorator to register an event handler.
@@ -257,15 +259,93 @@ class AnamClient:
         """Handle data channel message."""
         message_type = data.get("messageType", "")
 
-        if message_type == "speech_text":
-            # Convert to Message object
+        if message_type == "speechText":
+            # Convert to MessageStreamEvent for incremental updates
             msg_data = data.get("data", {})
-            message = Message(
-                role=MessageRole(msg_data.get("role", "assistant")),
-                content=msg_data.get("content", ""),
-                timestamp=msg_data.get("timestamp", ""),
+            message_id = msg_data.get("message_id", "")
+            role_str = msg_data.get("role", "assistant")
+            content = msg_data.get("content", "")
+            content_index = msg_data.get("content_index", 0)
+            end_of_speech = msg_data.get("end_of_speech", False)
+            interrupted = msg_data.get("interrupted", False)
+            timestamp = msg_data.get("timestamp", "")
+
+            # Create message ID similar to JS SDK: "{role}::{message_id}"
+            stream_event_id = f"{role_str}::{message_id}"
+
+            # Determine role
+            if role_str.lower() == "user":
+                role = MessageRole.USER
+            elif role_str.lower() == "persona":
+                role = MessageRole.ASSISTANT
+            else:
+                role = MessageRole.ASSISTANT
+
+            # Emit incremental stream event
+            stream_event = MessageStreamEvent(
+                id=stream_event_id,
+                content=content,
+                role=role,
+                content_index=content_index,
+                end_of_speech=end_of_speech,
+                interrupted=interrupted,
             )
-            await self._emit(AnamEvent.MESSAGE_RECEIVED, message)
+            await self._emit(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, stream_event)
+
+            # Update message history
+            self._process_message_stream_event(stream_event, timestamp)
+
+            # Emit final message when speech ends (for backward compatibility)
+            if end_of_speech:
+                # Find the complete message in history
+                complete_message = next(
+                    (msg for msg in self._message_history if msg.id == stream_event_id),
+                    None,
+                )
+                if complete_message:
+                    await self._emit(AnamEvent.MESSAGE_RECEIVED, complete_message)
+                    await self._emit(AnamEvent.MESSAGE_HISTORY_UPDATED, self._message_history.copy())
+
+    def _process_message_stream_event(
+        self, event: MessageStreamEvent, timestamp: str
+    ) -> None:
+        """Process a message stream event and update message history."""
+        if event.role == MessageRole.USER:
+            # User messages are added directly (can't be interrupted)
+            user_message = Message(
+                id=event.id,
+                role=event.role,
+                content=event.content,
+                timestamp=timestamp,
+                interrupted=False,
+            )
+            self._message_history.append(user_message)
+        elif event.role == MessageRole.ASSISTANT:
+            # Persona messages can be updated incrementally
+            existing_index = next(
+                (i for i, msg in enumerate(self._message_history) if msg.id == event.id),
+                None,
+            )
+            if existing_index is not None:
+                # Update existing message
+                existing = self._message_history[existing_index]
+                self._message_history[existing_index] = Message(
+                    id=existing.id,
+                    role=existing.role,
+                    content=existing.content + event.content,
+                    timestamp=existing.timestamp or timestamp,
+                    interrupted=existing.interrupted or event.interrupted,
+                )
+            else:
+                # Add new persona message
+                persona_message = Message(
+                    id=event.id,
+                    role=event.role,
+                    content=event.content,
+                    timestamp=timestamp,
+                    interrupted=event.interrupted,
+                )
+                self._message_history.append(persona_message)
 
     async def _handle_connection_established(self) -> None:
         """Handle connection established."""
@@ -315,6 +395,14 @@ class AnamClient:
     def session_id(self) -> str | None:
         """Get the current session ID."""
         return self._session_info.session_id if self._session_info else None
+
+    def get_message_history(self) -> list[Message]:
+        """Get the current message history.
+
+        Returns:
+            A list of messages in the conversation history.
+        """
+        return self._message_history.copy()
 
     def set_persona_config(self, persona_config: PersonaConfig) -> None:
         """Set the persona configuration.
