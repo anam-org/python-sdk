@@ -9,11 +9,14 @@ Official Python SDK for [Anam AI](https://anam.ai) - Real-time AI avatar streami
 ## Installation
 
 ```bash
-# Using pip
-pip install anam-ai
-
 # Using uv (recommended)
 uv add anam-ai
+
+# With optional display utilities (for testing)
+uv add anam-ai --extra display
+
+# Using pip
+pip install anam-ai
 
 # With optional display utilities (for testing)
 pip install anam-ai[display]
@@ -46,8 +49,10 @@ async def main():
         
         async def consume_audio():
             async for frame in session.audio_frames():
-                samples = frame.to_ndarray()  # int16 samples
-                print(f"Audio: {len(samples)} samples @ {frame.sample_rate}Hz")
+                samples = frame.to_ndarray()  # int16 samples (1D array, interleaved for stereo)
+                # Determine mono/stereo from frame layout
+                channel_type = "mono" if frame.layout.nb_channels == 1 else "stereo"
+                print(f"Audio: {samples.size} samples ({channel_type}) @ {frame.sample_rate}Hz")
         
         # Run both streams concurrently until session closes
         await asyncio.gather(

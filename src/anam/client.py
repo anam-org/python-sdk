@@ -316,6 +316,22 @@ class AnamClient:
         """Get the current session ID."""
         return self._session_info.session_id if self._session_info else None
 
+    def set_persona_config(self, persona_config: PersonaConfig) -> None:
+        """Set the persona configuration.
+
+        Args:
+            persona_config: The persona configuration to set.
+        """
+        self._persona_config = persona_config
+
+    def get_persona_config(self) -> PersonaConfig | None:
+        """Get the current persona configuration.
+
+        Returns:
+            The current persona configuration, or None if not set.
+        """
+        return self._persona_config
+
 
 class _SessionContextManager:
     """Async context manager for AnamClient.connect()."""
