@@ -36,9 +36,6 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      - name: Install semantic-release
-        run: uv tool install python-semantic-release
-
       - name: Configure Git
         run: |
           git config user.name "anam-push-bot[bot]"
@@ -48,7 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          uv tool run semantic-release version --as-prerelease --prerelease-token alpha
+          uv tool run --from python-semantic-release semantic-release version --as-prerelease --prerelease-token alpha
 
       - name: Build package
         run: uv build
