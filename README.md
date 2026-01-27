@@ -107,7 +107,7 @@ client = AnamClient(
 
 ### Video and Audio Frames
 
-Frames are PyAV objects (VideoFrame/AudioFrame) delivered via async iterators. **Run both iterators concurrently** using `asyncio.gather()`:
+Frames are **PyAV objects** (VideoFrame/AudioFrame) containing synchronized **decoded audio (PCM) and video (RGB) samples** from the avatar, delivered over WebRTC and extracted by aiortc. All PyAV frame attributes are accessible (samples, format, layout, etc.). Access the frames via **async iterators** and **run both iterators concurrently**, e.g. using `asyncio.gather()`:
 
 ```python
 async with client.connect() as session:
