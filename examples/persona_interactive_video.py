@@ -67,10 +67,10 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
     print("  m <message>  - Send text message (user input for the conversation.)")
     print("  t <text>     - Send talk command (bypasses LLM and sends text to TTS) usingREST API)")
     print("  ts <text>    - Send talk stream (bypasses LLM and sends text to TTS) using WebSocket)")
-    print("  i             - Interrupt current audio")
-    print("  c             - Toggle live captions. Default: disabled")
-    print("  h             - Toggle conversation history at session end. Default: disabled.")
-    print("  q             - Quit and stop session")
+    print("  i            - Interrupt current audio")
+    print("  c            - Toggle live captions. Default: disabled")
+    print("  h            - Toggle conversation history at session end. Default: disabled.")
+    print("  q            - Quit and stop session")
     print("=" * 60 + "\n")
 
     while True:
