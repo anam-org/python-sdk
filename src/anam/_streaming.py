@@ -337,7 +337,8 @@ class StreamingClient:
                 self._peer_connection.addTrack(self._audio_input_track)
                 logger.info("Added audio input track to peer connection")
             else:
-                # Set up transceiver for potential future audio input
+                # Set up a bidirectional audio transceiver to receive audio now
+                # and allow attaching a local audio input track in the future
                 self._peer_connection.addTransceiver("audio", direction="sendrecv")
 
         logger.debug("Peer connection initialized")
