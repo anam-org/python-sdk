@@ -315,7 +315,7 @@ class StreamingClient:
             elif track.kind == "audio":
                 self._audio_track = track
 
-        # Set up data channel (client creates it)
+        # Set up data channel
         await self._setup_data_channel()
 
         # Set up transceivers

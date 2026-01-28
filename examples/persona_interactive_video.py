@@ -38,7 +38,7 @@ _ = load_dotenv()
 
 # Configure logging - reduced verbosity
 logging.basicConfig(
-    level=logging.INFO,  # Reduced from INFO to WARNING
+    level=logging.WARNING,
     format="%(levelname)s: %(message)s",  # Simplified format
 )
 logger = logging.getLogger(__name__)
