@@ -270,7 +270,6 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nInterrupted")
     finally:
-        # Ensure display and audio are stopped
         display.stop()
         audio_player.stop()
 
