@@ -39,6 +39,8 @@ Example:
 For more information, see https://docs.anam.ai
 """
 
+from aiortc import AudioStreamTrack
+from av.audio.frame import AudioFrame
 from av.video.frame import VideoFrame
 
 from ._agent_audio_input_stream import AgentAudioInputStream
@@ -70,6 +72,8 @@ __all__ = [
     "AgentAudioInputConfig",
     "AgentAudioInputStream",
     "AnamEvent",
+    "AudioFrame",
+    "AudioStreamTrack",
     "ClientOptions",
     "ConnectionClosedCode",
     "Message",

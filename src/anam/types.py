@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from aiortc import AudioStreamTrack
+
 
 class AnamEvent(str, Enum):
     """Events emitted by the Anam client."""
@@ -112,6 +114,10 @@ class ClientOptions:
         ice_servers: Custom ICE servers for WebRTC (optional).
         client_label: Custom label for session tracking (optional).
             Defaults to 'python-sdk' if not specified.
+        audio_input_track: Custom audio track for microphone input (optional).
+            Provide an aiortc AudioStreamTrack subclass to send audio to the
+            server for speech-to-text processing. The track should produce
+            audio frames at 48kHz (WebRTC standard) - aiortc handles encoding.
     """
 
     api_base_url: str = "https://api.anam.ai"
@@ -119,6 +125,7 @@ class ClientOptions:
     disable_input_audio: bool = False
     ice_servers: list[dict[str, Any]] | None = None
     client_label: str | None = None
+    audio_input_track: AudioStreamTrack | None = None
 
 
 @dataclass

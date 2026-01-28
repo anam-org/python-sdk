@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 
 import aiohttp
 from aiortc import (
+    AudioStreamTrack,
     MediaStreamTrack,
     RTCConfiguration,
     RTCDataChannel,
@@ -42,6 +43,7 @@ class StreamingClient:
         on_connection_closed: Callable[[str, str | None], Awaitable[None]] | None = None,
         disable_input_audio: bool = False,
         custom_ice_servers: list[dict[str, Any]] | None = None,
+        audio_input_track: AudioStreamTrack | None = None,
     ):
         """Initialize the streaming client.
 
@@ -52,6 +54,9 @@ class StreamingClient:
             on_connection_closed: Callback when disconnected.
             disable_input_audio: If True, don't send microphone audio.
             custom_ice_servers: Custom ICE servers (optional).
+            audio_input_track: Custom audio track for microphone input (optional).
+                If provided and disable_input_audio is False, this track will be
+                added to the WebRTC connection for sending audio to the server.
         """
         self._session_info = session_info
         self._session_id = session_info.session_id
@@ -64,6 +69,7 @@ class StreamingClient:
         # Configuration
         self._disable_input_audio = disable_input_audio
         self._ice_servers = custom_ice_servers or session_info.ice_servers
+        self._audio_input_track = audio_input_track
 
         # State
         self._peer_connection: RTCPeerConnection | None = None
@@ -326,8 +332,13 @@ class StreamingClient:
         if self._disable_input_audio:
             self._peer_connection.addTransceiver("audio", direction="recvonly")
         else:
-            self._peer_connection.addTransceiver("audio", direction="sendrecv")
-            # Note: Audio input track would be added here if needed
+            # If we have an audio input track, add it to enable sending audio
+            if self._audio_input_track:
+                self._peer_connection.addTrack(self._audio_input_track)
+                logger.info("Added audio input track to peer connection")
+            else:
+                # Set up transceiver for potential future audio input
+                self._peer_connection.addTransceiver("audio", direction="sendrecv")
 
         logger.debug("Peer connection initialized")
 
@@ -628,6 +639,11 @@ class StreamingClient:
     async def close(self) -> None:
         """Close the streaming connection and clean up resources."""
         logger.debug("Closing streaming client")
+
+        # Stop audio input track if present
+        if self._audio_input_track:
+            self._audio_input_track.stop()
+            self._audio_input_track = None
 
         # Close signalling
         if self._signalling_client:
