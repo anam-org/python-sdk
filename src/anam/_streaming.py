@@ -341,6 +341,9 @@ class StreamingClient:
             ordered=True,
         )
 
+        # Initialize to False in case there's a stale value from a previous session
+        self._data_channel_open = False
+
         # Check if channel is already open
         if self._data_channel.readyState == "open":
             self._data_channel_open = True

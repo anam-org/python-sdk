@@ -132,7 +132,7 @@ async with client.connect() as session:
 Register callbacks for connection and message events using the `@client.on()` decorator:
 
 ```python
-from anam import AnamEvent, MessageRole, MessageStreamEvent
+from anam import AnamEvent, Message,MessageRole, MessageStreamEvent
 
 @client.on(AnamEvent.CONNECTION_ESTABLISHED)
 async def on_connected():
