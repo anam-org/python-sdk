@@ -310,42 +310,32 @@ class AnamClient:
         self, event: MessageStreamEvent, timestamp: str
     ) -> None:
         """Process a message stream event and update message history."""
-        if event.role == MessageRole.USER:
-            # User messages are added directly (can't be interrupted)
-            user_message = Message(
+        # Find existing message with same ID (for both user and persona messages)
+        existing_index = next(
+            (i for i, msg in enumerate(self._message_history) if msg.id == event.id),
+            None,
+        )
+        
+        if existing_index is not None:
+            # Update existing message by appending new content
+            existing = self._message_history[existing_index]
+            self._message_history[existing_index] = Message(
+                id=existing.id,
+                role=existing.role,
+                content=existing.content + event.content,
+                timestamp=existing.timestamp or timestamp,
+                interrupted=existing.interrupted or event.interrupted,
+            )
+        else:
+            # Add new message (first chunk)
+            new_message = Message(
                 id=event.id,
                 role=event.role,
                 content=event.content,
                 timestamp=timestamp,
-                interrupted=False,
+                interrupted=event.interrupted,
             )
-            self._message_history.append(user_message)
-        elif event.role == MessageRole.ASSISTANT:
-            # Persona messages can be updated incrementally
-            existing_index = next(
-                (i for i, msg in enumerate(self._message_history) if msg.id == event.id),
-                None,
-            )
-            if existing_index is not None:
-                # Update existing message
-                existing = self._message_history[existing_index]
-                self._message_history[existing_index] = Message(
-                    id=existing.id,
-                    role=existing.role,
-                    content=existing.content + event.content,
-                    timestamp=existing.timestamp or timestamp,
-                    interrupted=existing.interrupted or event.interrupted,
-                )
-            else:
-                # Add new persona message
-                persona_message = Message(
-                    id=event.id,
-                    role=event.role,
-                    content=event.content,
-                    timestamp=timestamp,
-                    interrupted=event.interrupted,
-                )
-                self._message_history.append(persona_message)
+            self._message_history.append(new_message)
 
     async def _handle_connection_established(self) -> None:
         """Handle connection established."""
