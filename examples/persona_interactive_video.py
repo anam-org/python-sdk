@@ -27,7 +27,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from anam import AnamClient, AnamEvent, ClientOptions
-from anam.types import AgentAudioInputConfig, PersonaConfig
+from anam.types import AgentAudioInputConfig, MessageRole, PersonaConfig
 
 # Add parent directory to path to allow importing from examples
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -38,7 +38,7 @@ _ = load_dotenv()
 
 # Configure logging - reduced verbosity
 logging.basicConfig(
-    level=logging.WARNING,  # Reduced from INFO to WARNING
+    level=logging.WARNING,
     format="%(levelname)s: %(message)s",  # Simplified format
 )
 logger = logging.getLogger(__name__)
@@ -47,19 +47,30 @@ logger = logging.getLogger(__name__)
 logging.getLogger("anam").setLevel(logging.WARNING)
 logging.getLogger("websockets").setLevel(logging.WARNING)
 logging.getLogger("aiohttp").setLevel(logging.WARNING)
+logging.getLogger("aiortc").setLevel(logging.WARNING)
+logging.getLogger("aioice").setLevel(logging.WARNING)
+
+# Global state for captions toggle
+show_captions = False
+print_conversation_history = False
 
 
 async def interactive_loop(session, display: VideoDisplay) -> None:
     """Interactive command loop."""
+    global show_captions
+    global print_conversation_history
     print("\n" + "=" * 60)
     print("Interactive Session Started!")
     print("=" * 60)
     print("Available commands:")
-    print("  f [filename]  - Send audio file (defaults to input.wav)")
-    print("  m <message>   - Send text message (user input for the conversation.)")
-    print("  t|ts <text>   - Send talk command (bypasses LLM and sends text directly to TTS). t: REST API, ts: WebSocket)")
-    print("  i             - Interrupt current audio")
-    print("  q             - Quit and stop session")
+    print("  f [filename] - Send audio file (defaults to input.wav)")
+    print("  m <message>  - Send text message (user input for the conversation.)")
+    print("  t <text>     - Send talk command (bypasses LLM and sends text to TTS) usingREST API)")
+    print("  ts <text>    - Send talk stream (bypasses LLM and sends text to TTS) using WebSocket)")
+    print("  i            - Interrupt current audio")
+    print("  c            - Toggle live captions. Default: disabled")
+    print("  h            - Toggle conversation history at session end. Default: disabled.")
+    print("  q            - Quit and stop session")
     print("=" * 60 + "\n")
 
     while True:
@@ -79,6 +90,10 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                 display.stop()
                 break
 
+            elif command == "c":
+                show_captions = not show_captions
+                print(f"Captions {'enabled' if show_captions else 'disabled'}")
+
             elif command == "f":
                 # Default to input.wav if no filename provided
                 wav_file = parts[1] if len(parts) > 1 else "input.wav"
@@ -91,6 +106,12 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                     await send_audio_file_chunked(agent, wav_path)
                 else:
                     print(f"❌ File not found: {wav_file}")
+
+            elif command == "h":
+                print_conversation_history = not print_conversation_history
+                print(
+                    f"Conversation history {'enabled' if print_conversation_history else 'disabled'}"
+                )
 
             elif command == "m":
                 # Get the rest of the input as the message text
@@ -115,7 +136,10 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                         await session.talk(message_text)
                     elif command == "ts":
                         await session.send_talk_stream(
-                            message_text, start_of_speech=True, end_of_speech=True, correlation_id=None
+                            message_text,
+                            start_of_speech=True,
+                            end_of_speech=True,
+                            correlation_id=None,
                         )
                     print(f"✅ Sent talk command: {message_text}")
                 except Exception as e:
@@ -145,6 +169,7 @@ async def stream_session(
     audio_player: AudioPlayer,
 ) -> None:
     """Run the streaming session."""
+    global show_captions
 
     # Register connection event handlers
     @client.on(AnamEvent.CONNECTION_ESTABLISHED)
@@ -153,7 +178,43 @@ async def stream_session(
 
     @client.on(AnamEvent.CONNECTION_CLOSED)
     async def on_closed(code: str, reason: str | None) -> None:
+        global print_conversation_history
+        if print_conversation_history:
+            print("Conversation transcript:")
+            print("=" * 24)
+            print(
+                "\n".join(
+                    [
+                        f"{m.role.value.capitalize()}: {m.content}"
+                        for m in client.get_message_history()
+                    ]
+                )
+            )
         print(f"Connection closed: {code} - {reason or 'User initiated'}")
+
+    # Register message stream event handlers
+    @client.on(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED)
+    async def on_message_stream_event(event) -> None:
+        """Handle incremental message stream events."""
+        global show_captions
+        if show_captions:
+            role_emoji = "👤" if event.role == MessageRole.USER else "🤖"
+            role_name = "USER" if event.role == MessageRole.USER else "PERSONA"
+
+            if event.content_index == 0:
+                # content_index 0 denotes the start of a new message
+                print(f"{role_emoji} {role_name}: ", end="", flush=True)
+            # Show incremental updates (you can customize this)
+            print(f"{event.content}", end="", flush=True)
+            if event.end_of_speech:
+                # end_of_speech is fired when the message is complete
+                status = "✓" if not event.interrupted else "✗ INTERRUPTED"
+                print(f"{status}\n")
+
+    @client.on(AnamEvent.MESSAGE_HISTORY_UPDATED)
+    async def on_message_history_updated(messages) -> None:
+        """Handle message history updates."""
+        logger.debug(f"\n📝 Message history updated: {len(messages)} messages total")
 
     async def consume_video_frames(session) -> None:
         """Consume video frames from iterator."""

@@ -17,6 +17,7 @@ class AnamEvent(str, Enum):
 
     # Message events
     MESSAGE_RECEIVED = "message_received"
+    MESSAGE_STREAM_EVENT_RECEIVED = "message_stream_event_received"
     MESSAGE_HISTORY_UPDATED = "message_history_updated"
 
     # Persona events
@@ -133,14 +134,42 @@ class Message:
     """A message in the conversation.
 
     Attributes:
+        id: Unique identifier for the message.
         role: Who sent the message (user, assistant, system).
         content: The text content of the message.
         timestamp: When the message was sent (ISO format).
+        interrupted: Whether the message was interrupted (for persona messages).
     """
 
+    id: str
     role: MessageRole
     content: str
-    timestamp: str
+    timestamp: str = ""
+    interrupted: bool = False
+
+
+@dataclass
+class MessageStreamEvent:
+    """A streaming message event for incremental updates.
+
+    This represents a chunk of a message that may be part of a larger message.
+    Similar to the JavaScript SDK's MessageStreamEvent.
+
+    Attributes:
+        id: Unique identifier for the message (same for all chunks of the same message).
+        content: The text content of this chunk.
+        role: Who sent the message (user or persona).
+        content_index: Index of this chunk in the message (0 = first chunk/start of speech).
+        end_of_speech: Whether this is the final chunk of the message.
+        interrupted: Whether the message was interrupted (for persona messages).
+    """
+
+    id: str
+    content: str
+    role: MessageRole
+    content_index: int
+    end_of_speech: bool
+    interrupted: bool = False
 
 
 @dataclass

@@ -67,6 +67,8 @@ asyncio.run(main())
 
 - 🎥 **Real-time Audio/Video streaming** - Receive synchronized audio/video frames from the avatar (as PyAV AudioFrame/VideoFrame objects)
 - 💬 **Two-way communication** - Send text messages (like transcribed user speech) and receive generated responses
+- 📝 **Real-time transcriptions** - Receive incremental message stream events for user and persona text as it's generated
+- 📚 **Message history tracking** - Automatic conversation history with incremental updates
 - 🎤 **Audio-passthrough** - Send TTS generated audio input and receive rendered synchronized audio/video avatar
 - 🗣️ **Direct text-to-speech** - Send text directly to TTS for immediate speech output (bypasses LLM processing)
 - 🎯 **Async iterator API** - Clean, Pythonic async/await patterns for continuous stream of audio/video frames
@@ -130,22 +132,59 @@ async with client.connect() as session:
 Register callbacks for connection and message events using the `@client.on()` decorator:
 
 ```python
-from anam import AnamEvent
-
-@client.on(AnamEvent.MESSAGE_RECEIVED)
-async def on_message(message: Message):
-    """Called when a chat message is received."""
-    print(f"{message.role}: {message.content}")
+from anam import AnamEvent, Message,MessageRole, MessageStreamEvent
 
 @client.on(AnamEvent.CONNECTION_ESTABLISHED)
 async def on_connected():
     """Called when the connection is established."""
-    pass
+    print("✅ Connected!")
 
 @client.on(AnamEvent.CONNECTION_CLOSED)
 async def on_closed(code: str, reason: str | None):
     """Called when the connection is closed."""
-    pass
+    print(f"Connection closed: {code} - {reason or 'No reason'}")
+
+@client.on(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED)
+async def on_message_stream_event(event: MessageStreamEvent):
+    """Called for each incremental chunk of transcribed text or persona response.
+    
+    This event fires for both user transcriptions and persona responses as they stream in.
+    This can be used for real-time captions or transcriptions.
+    """
+    if event.role == MessageRole.USER:
+        # User transcription (from their speech)
+        if event.content_index == 0:
+            print(f"👤 User: ", end="", flush=True)
+        print(event.content, end="", flush=True)
+        if event.end_of_speech:
+            print()  # New line when transcription completes
+    else:
+        # Persona response
+        if event.content_index == 0:
+            print(f"🤖 Persona: ", end="", flush=True)
+        print(event.content, end="", flush=True)
+        if event.end_of_speech:
+            status = "✓" if not event.interrupted else "✗ INTERRUPTED"
+            print(f" {status}")
+
+@client.on(AnamEvent.MESSAGE_RECEIVED)
+async def on_message(message: Message):
+    """Called when a complete message is received (after end_of_speech).
+    
+    This is fired after MESSAGE_STREAM_EVENT_RECEIVED with end_of_speech=True.
+    Useful for backward compatibility or when you only need complete messages.
+    """
+    print(f"{message.role}: {message.content}")
+
+@client.on(AnamEvent.MESSAGE_HISTORY_UPDATED)
+async def on_message_history_updated(messages: list[Message]):
+    """Called when the message history is updated (after a message completes).
+    
+    The messages list contains the complete conversation history.
+    """
+    print(f"📝 Conversation history: {len(messages)} messages")
+    for msg in messages:
+        print(f"  {msg.role}: {msg.content[:50]}...")
 ```
 
 ### Session
@@ -157,8 +196,28 @@ async with client.connect() as session:
     # Send a text message (simulates user speech)
     await session.send_message("Hello, how are you?")
     
+    # Send text directly to TTS (bypasses LLM)
+    await session.talk("This will be spoken immediately")
+    
+    # Stream text to TTS incrementally (for streaming scenarios)
+    await session.send_talk_stream(
+        content="Hello",
+        start_of_speech=True,
+        end_of_speech=False,
+    )
+    await session.send_talk_stream(
+        content=" world!",
+        start_of_speech=False,
+        end_of_speech=True,
+    )
+    
     # Interrupt the avatar if speaking
     await session.interrupt()
+    
+    # Get message history
+    history = client.get_message_history()
+    for msg in history:
+        print(f"{msg.role}: {msg.content}")
     
     # Wait until the session ends
     await session.wait_until_closed()
