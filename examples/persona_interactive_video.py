@@ -52,22 +52,22 @@ logging.getLogger("aioice").setLevel(logging.WARNING)
 
 # Global state for captions toggle
 show_captions = False
-
+print_conversation_history = False
 
 async def interactive_loop(session, display: VideoDisplay) -> None:
     """Interactive command loop."""
     global show_captions
-
+    global print_conversation_history
     print("\n" + "=" * 60)
     print("Interactive Session Started!")
     print("=" * 60)
     print("Available commands:")
-    print("  c             - Toggle captions / conversation history")
     print("  f [filename]  - Send audio file (defaults to input.wav)")
     print("  m <message>   - Send text message (user input for the conversation.)")
     print("  t|ts <text>   - Send talk command (bypasses LLM and sends text directly to TTS). t: REST API, ts: WebSocket)")
     print("  i             - Interrupt current audio")
-    print("  s             - Stop session and print message history")
+    print("  c             - Toggle live captions. Default: disabled")
+    print("  h             - Toggle conversation history. Default: disabled. Prints full transcript when stopped.")
     print("  q             - Quit and stop session")
     print("=" * 60 + "\n")
 
@@ -104,6 +104,10 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                     await send_audio_file_chunked(agent, wav_path)
                 else:
                     print(f"❌ File not found: {wav_file}")
+
+            elif command == "h":
+                print_conversation_history = not print_conversation_history
+                print(f"Conversation history {'enabled' if print_conversation_history else 'disabled'}")
 
             elif command == "m":
                 # Get the rest of the input as the message text
@@ -167,7 +171,11 @@ async def stream_session(
 
     @client.on(AnamEvent.CONNECTION_CLOSED)
     async def on_closed(code: str, reason: str | None) -> None:
-        print(f"Message history: {client.get_message_history()}")
+        global print_conversation_history
+        if print_conversation_history:
+            print("Conversation transcript:")
+            print("="*24)
+            print("\n".join([f"{m.role.value.capitalize()}: {m.content}" for m in client.get_message_history()]))
         print(f"Connection closed: {code} - {reason or 'User initiated'}")
 
     # Register message stream event handlers
@@ -182,19 +190,18 @@ async def stream_session(
             if event.content_index == 0:
                 # content_index 0 denotes the start of a new message
                 print(f"{role_emoji} {role_name}: ", end="", flush=True)
-            elif event.end_of_speech:
+            # Show incremental updates (you can customize this)
+            print(f"{event.content}", end="", flush=True)
+            if event.end_of_speech:
                 # end_of_speech is fired when the message is complete
                 status = "✓" if not event.interrupted else "✗ INTERRUPTED"
                 print(f"{status}\n")
-            else:
-                # Show incremental updates (you can customize this)
-                print(f"{event.content}", end="", flush=True)
 
     @client.on(AnamEvent.MESSAGE_HISTORY_UPDATED)
     async def on_message_history_updated(messages) -> None:
         """Handle message history updates."""
         logger.debug(f"\n📝 Message history updated: {len(messages)} messages total")
-        
+
     async def consume_video_frames(session) -> None:
         """Consume video frames from iterator."""
         try:
