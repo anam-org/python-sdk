@@ -170,6 +170,13 @@ async def stream_session(
             except Exception as e:
                 logger.error(f"Error in task: {e}")
 
+        # Explicitly close the session to ensure RTCPeerConnection.close() is properly awaited
+        if session.is_active:
+            try:
+                await session.close()
+            except Exception as e:
+                logger.error(f"Error closing session: {e}")
+
 
 def main() -> None:
     """Main entry point."""
@@ -234,14 +241,6 @@ def main() -> None:
         # Cancel the async task
         if not stream_task.done():
             stream_task.cancel()
-
-        # Stop the event loop gracefully from thread-safe context
-        if loop.is_running():
-
-            def stop_loop() -> None:
-                loop.stop()
-
-            _ = loop.call_soon_threadsafe(stop_loop)
 
         # Wait for thread to finish (with timeout)
         thread.join(timeout=2.0)

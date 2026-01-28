@@ -2,7 +2,7 @@
 
 Official Python SDK for [Anam AI](https://anam.ai) - Real-time AI avatar streaming.
 
-[![PyPI version](https://badge.fury.io/py/anam-ai.svg)](https://badge.fury.io/py/anam-ai)
+[![PyPI version](https://badge.fury.io/py/anam.svg)](https://badge.fury.io/py/anam)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -10,16 +10,16 @@ Official Python SDK for [Anam AI](https://anam.ai) - Real-time AI avatar streami
 
 ```bash
 # Using uv (recommended)
-uv add anam-ai
+uv add anam
 
 # With optional display utilities (for testing)
-uv add anam-ai --extra display
+uv add anam --extra display
 
 # Using pip
-pip install anam-ai
+pip install anam
 
 # With optional display utilities (for testing)
-pip install anam-ai[display]
+pip install anam[display]
 ```
 
 ## Quick Start
