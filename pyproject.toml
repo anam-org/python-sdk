@@ -1,5 +1,5 @@
 [project]
-name = "anam-ai"
+name = "anam"
 version = "1.0.0"
 description = "Official Python SDK for Anam AI - Real-time AI avatar streaming"
 readme = "README.md"
