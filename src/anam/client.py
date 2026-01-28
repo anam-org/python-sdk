@@ -315,7 +315,7 @@ class AnamClient:
             (i for i, msg in enumerate(self._message_history) if msg.id == event.id),
             None,
         )
-        
+
         if existing_index is not None:
             # Update existing message by appending new content
             existing = self._message_history[existing_index]

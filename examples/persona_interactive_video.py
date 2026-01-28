@@ -251,7 +251,7 @@ async def stream_session(
                 pass
             except Exception as e:
                 logger.error(f"Error in task: {e}")
-    
+
 
         # Explicitly close the session to ensure RTCPeerConnection.close() is properly awaited
         if session.is_active:
