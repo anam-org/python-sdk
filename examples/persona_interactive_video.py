@@ -67,6 +67,7 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
     print("  m <message>   - Send text message (user input for the conversation.)")
     print("  t|ts <text>   - Send talk command (bypasses LLM and sends text directly to TTS). t: REST API, ts: WebSocket)")
     print("  i             - Interrupt current audio")
+    print("  s             - Stop session and print message history")
     print("  q             - Quit and stop session")
     print("=" * 60 + "\n")
 
@@ -165,6 +166,7 @@ async def stream_session(
 
     @client.on(AnamEvent.CONNECTION_CLOSED)
     async def on_closed(code: str, reason: str | None) -> None:
+        print(f"Message history: {client.get_message_history()}")
         print(f"Connection closed: {code} - {reason or 'No reason'}")
 
     # Register message stream event handlers
@@ -190,8 +192,8 @@ async def stream_session(
     @client.on(AnamEvent.MESSAGE_HISTORY_UPDATED)
     async def on_message_history_updated(messages) -> None:
         """Handle message history updates."""
-        logger.info(f"\n📝 Message history updated: {len(messages)} messages total")
-
+        logger.debug(f"\n📝 Message history updated: {len(messages)} messages total")
+        
     async def consume_video_frames(session) -> None:
         """Consume video frames from iterator."""
         try:
@@ -241,6 +243,7 @@ async def stream_session(
                 pass
             except Exception as e:
                 logger.error(f"Error in task: {e}")
+    
 
 
 def main() -> None:
