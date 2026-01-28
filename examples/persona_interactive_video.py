@@ -75,6 +75,7 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
 
             if command == "q":
                 print("Exiting...")
+                # Stop display immediately
                 display.stop()
                 break
 
@@ -152,7 +153,7 @@ async def stream_session(
 
     @client.on(AnamEvent.CONNECTION_CLOSED)
     async def on_closed(code: str, reason: str | None) -> None:
-        print(f"Connection closed: {code} - {reason or 'No reason'}")
+        print(f"Connection closed: {code} - {reason or 'User initiated'}")
 
     async def consume_video_frames(session) -> None:
         """Consume video frames from iterator."""
@@ -203,6 +204,13 @@ async def stream_session(
                 pass
             except Exception as e:
                 logger.error(f"Error in task: {e}")
+
+        # Explicitly close the session to ensure RTCPeerConnection.close() is properly awaited
+        if session.is_active:
+            try:
+                await session.close()
+            except Exception as e:
+                logger.error(f"Error closing session: {e}")
 
 
 def main() -> None:
@@ -262,20 +270,13 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nInterrupted")
     finally:
+        # Ensure display and audio are stopped
         display.stop()
         audio_player.stop()
 
         # Cancel the async task
         if not stream_task.done():
             stream_task.cancel()
-
-        # Stop the event loop gracefully from thread-safe context
-        if loop.is_running():
-
-            def stop_loop() -> None:
-                loop.stop()
-
-            _ = loop.call_soon_threadsafe(stop_loop)
 
         # Wait for thread to finish (with timeout)
         thread.join(timeout=2.0)
