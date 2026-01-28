@@ -304,11 +304,11 @@ class AnamClient:
                 )
                 if complete_message:
                     await self._emit(AnamEvent.MESSAGE_RECEIVED, complete_message)
-                    await self._emit(AnamEvent.MESSAGE_HISTORY_UPDATED, self._message_history.copy())
+                    await self._emit(
+                        AnamEvent.MESSAGE_HISTORY_UPDATED, self._message_history.copy()
+                    )
 
-    def _process_message_stream_event(
-        self, event: MessageStreamEvent, timestamp: str
-    ) -> None:
+    def _process_message_stream_event(self, event: MessageStreamEvent, timestamp: str) -> None:
         """Process a message stream event and update message history."""
         # Find existing message with same ID (for both user and persona messages)
         existing_index = next(

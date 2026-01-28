@@ -54,6 +54,7 @@ logging.getLogger("aioice").setLevel(logging.WARNING)
 show_captions = False
 print_conversation_history = False
 
+
 async def interactive_loop(session, display: VideoDisplay) -> None:
     """Interactive command loop."""
     global show_captions
@@ -62,12 +63,13 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
     print("Interactive Session Started!")
     print("=" * 60)
     print("Available commands:")
-    print("  f [filename]  - Send audio file (defaults to input.wav)")
-    print("  m <message>   - Send text message (user input for the conversation.)")
-    print("  t|ts <text>   - Send talk command (bypasses LLM and sends text directly to TTS). t: REST API, ts: WebSocket)")
+    print("  f [filename] - Send audio file (defaults to input.wav)")
+    print("  m <message>  - Send text message (user input for the conversation.)")
+    print("  t <text>     - Send talk command (bypasses LLM and sends text to TTS) usingREST API)")
+    print("  ts <text>    - Send talk stream (bypasses LLM and sends text to TTS) using WebSocket)")
     print("  i             - Interrupt current audio")
     print("  c             - Toggle live captions. Default: disabled")
-    print("  h             - Toggle conversation history. Default: disabled. Prints full transcript when stopped.")
+    print("  h             - Toggle conversation history at session end. Default: disabled.")
     print("  q             - Quit and stop session")
     print("=" * 60 + "\n")
 
@@ -107,7 +109,9 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
 
             elif command == "h":
                 print_conversation_history = not print_conversation_history
-                print(f"Conversation history {'enabled' if print_conversation_history else 'disabled'}")
+                print(
+                    f"Conversation history {'enabled' if print_conversation_history else 'disabled'}"
+                )
 
             elif command == "m":
                 # Get the rest of the input as the message text
@@ -132,7 +136,10 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                         await session.talk(message_text)
                     elif command == "ts":
                         await session.send_talk_stream(
-                            message_text, start_of_speech=True, end_of_speech=True, correlation_id=None
+                            message_text,
+                            start_of_speech=True,
+                            end_of_speech=True,
+                            correlation_id=None,
                         )
                     print(f"✅ Sent talk command: {message_text}")
                 except Exception as e:
@@ -174,8 +181,15 @@ async def stream_session(
         global print_conversation_history
         if print_conversation_history:
             print("Conversation transcript:")
-            print("="*24)
-            print("\n".join([f"{m.role.value.capitalize()}: {m.content}" for m in client.get_message_history()]))
+            print("=" * 24)
+            print(
+                "\n".join(
+                    [
+                        f"{m.role.value.capitalize()}: {m.content}"
+                        for m in client.get_message_history()
+                    ]
+                )
+            )
         print(f"Connection closed: {code} - {reason or 'User initiated'}")
 
     # Register message stream event handlers
@@ -251,7 +265,6 @@ async def stream_session(
                 pass
             except Exception as e:
                 logger.error(f"Error in task: {e}")
-
 
         # Explicitly close the session to ensure RTCPeerConnection.close() is properly awaited
         if session.is_active:
