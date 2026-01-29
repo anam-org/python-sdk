@@ -733,37 +733,20 @@ class StreamingClient:
                 f"Creating user audio input track: sample_rate={sample_rate}Hz, "
                 f"channels={num_channels}"
             )
-            self._user_audio_input_track = UserAudioInputTrack()
-
-            # CRITICAL: Queue audio samples BEFORE adding track to transceiver
-            # This ensures WebRTC can't call recv() before we know the sample rate
-            self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)
+            self._user_audio_input_track = UserAudioInputTrack(sample_rate, num_channels)
 
             # Add track to transceiver (lazy track creation)
-            # Now that audio is queued, WebRTC can safely call recv() and will get the correct format
             if self._audio_transceiver and self._audio_transceiver.sender:
                 try:
                     self._audio_transceiver.sender.replaceTrack(self._user_audio_input_track)
-                    logger.info(
-                        "Added user audio track to transceiver - "
-                        "WebRTC will call recv() to get audio frames for encoding to Opus"
-                    )
+                    logger.info("Added user audio track to transceiver")
                 except Exception as e:
-                    logger.error(f"Failed to add user audio track to transceiver: {e}")
                     raise RuntimeError(f"Failed to add user audio track: {e}") from e
             else:
-                logger.error("Audio transceiver or sender not available")
                 raise RuntimeError("Audio transceiver not properly initialized")
 
-            # If connection is already established, flush any audio that was queued
-            # before the track was created (this handles the case where audio arrives
-            # before connection is established, then track is created after connection)
-            if self._is_connected:
-                logger.debug("Connection already established - flushing audio queue on track creation")
-                self._user_audio_input_track.flush()
-        else:
-            # Track already exists - just add audio samples
-            self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)
+        # Add audio samples to track buffer
+        self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)
 
     def __del__(self) -> None:
         """Cleanup on destruction to prevent warnings."""
