@@ -80,6 +80,20 @@ class StreamingClient:
         self._user_audio_input_track: UserAudioInputTrack | None = None
         self._audio_transceiver = None  # Store transceiver for lazy track creation
 
+    def _on_connection_established_internal(self) -> None:
+        """Internal callback that flushes audio buffer when connection is established.
+
+        This is called automatically before the user's on_connection_established callback.
+        """
+        # Flush buffered audio when connection is established
+        # This ensures we start with live audio instead of catching up on buffered audio
+        logger.debug("_on_connection_established_internal ready for duty, sir.")
+        if self._user_audio_input_track:
+            logger.debug("Flushing audio queue on connection established")
+            self._user_audio_input_track.flush()
+        else:
+            logger.debug("Cannot flush audio queue - track not created yet (will flush when track is created)")
+
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
 
@@ -292,6 +306,8 @@ class StreamingClient:
                     self._is_connected = True
                     if hasattr(self, "_connection_ready"):
                         self._connection_ready.set()
+                    # Call internal flush callback, then user's callback
+                    self._on_connection_established_internal()
                     if self._on_connection_established:
                         asyncio.create_task(self._on_connection_established())
             elif state == "failed":
@@ -415,6 +431,8 @@ class StreamingClient:
                         self._is_connected = True
                         if hasattr(self, "_connection_ready"):
                             self._connection_ready.set()
+                        # Call internal flush callback, then user's callback
+                        self._on_connection_established_internal()
                         if self._on_connection_established:
                             asyncio.create_task(self._on_connection_established())
 
@@ -469,6 +487,8 @@ class StreamingClient:
                         self._is_connected = True
                         if hasattr(self, "_connection_ready"):
                             self._connection_ready.set()
+                        # Call internal flush callback, then user's callback
+                        self._on_connection_established_internal()
                         if self._on_connection_established:
                             asyncio.create_task(self._on_connection_established())
 
@@ -656,6 +676,17 @@ class StreamingClient:
             finally:
                 self._signalling_client = None
 
+        # Close user audio input track before closing peer connection
+        # This clears the audio queue and prevents recv() from generating more frames
+        if self._user_audio_input_track:
+            try:
+                self._user_audio_input_track.close()
+                logger.debug("Closed user audio input track")
+            except Exception as e:
+                logger.warning("Error closing user audio input track: %s", e)
+            finally:
+                self._user_audio_input_track = None
+
         # Close peer connection
         if self._peer_connection:
             try:
@@ -702,10 +733,7 @@ class StreamingClient:
                 f"Creating user audio input track: sample_rate={sample_rate}Hz, "
                 f"channels={num_channels}"
             )
-            self._user_audio_input_track = UserAudioInputTrack(
-                expected_sample_rate=sample_rate,
-                expected_channels=num_channels,
-            )
+            self._user_audio_input_track = UserAudioInputTrack()
 
             # Add track to transceiver (lazy track creation)
             if self._audio_transceiver and self._audio_transceiver.sender:
@@ -721,6 +749,13 @@ class StreamingClient:
             else:
                 logger.error("Audio transceiver or sender not available")
                 raise RuntimeError("Audio transceiver not properly initialized")
+
+            # If connection is already established, flush any audio that was queued
+            # before the track was created (this handles the case where audio arrives
+            # before connection is established, then track is created after connection)
+            if self._is_connected:
+                logger.debug("Connection already established - flushing audio queue on track creation")
+                self._user_audio_input_track.flush()
 
         # Add audio samples to track buffer
         self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)

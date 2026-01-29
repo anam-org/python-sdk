@@ -14,7 +14,6 @@ from typing import Optional
 import numpy as np
 from aiortc.mediastreams import AudioStreamTrack
 from av.audio.frame import AudioFrame
-from av.audio.resampler import AudioResampler
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +33,12 @@ class UserAudioInputTrack(AudioStreamTrack):
     minimal processing is performed.
     """
 
-    def __init__(self, expected_sample_rate: Optional[int] = None, expected_channels: Optional[int] = None):
+    def __init__(self):
         """Initialize the user audio input track.
 
-        Args:
-            expected_sample_rate: Expected input sample rate (Hz). If None, will be
-                determined from first audio chunk. Defaults to None.
-            expected_channels: Expected number of channels. If None, will be determined
-                from first audio chunk. Defaults to None.
+        The track determines audio format (sample rate, channels) from the actual
+        audio data received via add_audio_samples(). No assumptions are made about
+        the input format.
         """
         super().__init__()
         self._output_sample_rate = WEBRTC_AUDIO_SAMPLE_RATE
@@ -50,21 +47,73 @@ class UserAudioInputTrack(AudioStreamTrack):
         self._timestamp = 0
         self._start = time.time()
 
-        # Expected input format (can be None initially)
-        self._expected_sample_rate = expected_sample_rate
-        self._expected_channels = expected_channels
-
         # Queue of (audio_bytes, sample_rate, num_channels) tuples
         # Audio is queued in 10ms chunks at input sample rate
         self._audio_queue: deque[tuple[bytes, int, int]] = deque()
 
-        # Resampler for converting input audio to 48kHz mono
-        # Created lazily when we know the input format
-        self._resampler: Optional[AudioResampler] = None
-        self._resampler_input_rate: Optional[int] = None
+        # Track current sample rate for timing calculations
+        # Set from actual audio data when first chunk is processed
+        self._current_sample_rate: Optional[int] = None
+
+        # Flag to indicate if connection is closed - prevents generating frames after disconnect
+        self._is_closed = False
+
+        # Flag to track if this is the first recv() call - flush buffer on first call
+        # This handles the case where audio arrives between connection established and WebRTC starting to pull
+        self._first_recv = True
+
+        # Maximum queue size for backpressure (approximately 1 second at 16kHz = 100 chunks)
+        # If queue exceeds this, we drop old audio to prevent unbounded growth
+        self._max_queue_size = 100
 
         # Lock for thread-safe operations
         self._lock = asyncio.Lock()
+
+    def flush(self) -> None:
+        """Flush the audio queue to discard any buffered audio.
+
+        This should be called when the WebRTC connection is established to ensure
+        we start with live audio immediately instead of catching up on buffered audio.
+
+        Preserves the last chunk(s) from the queue to maintain format information
+        (sample rate, channels) so we don't generate silence at wrong format.
+        """
+        queue_size = len(self._audio_queue)
+        if not self._audio_queue or queue_size == 0:
+            logger.debug("Audio queue is empty - nothing to flush")
+            return
+
+        # Preserve the last chunk to maintain format information
+        # This ensures we know the sample rate/channels before generating any silence
+        last_chunk = self._audio_queue[-1]
+
+        # Clear the queue
+        self._audio_queue.clear()
+
+        # Put the last chunk back if we have one
+        # This preserves format info while discarding old buffered audio
+        self._audio_queue.append(last_chunk)
+        # Update current sample rate from the preserved chunk
+        _, sample_rate, _ = last_chunk
+        self._current_sample_rate = sample_rate
+        logger.info(
+            f"Flushed audio queue: discarded {queue_size - 1} buffered audio chunks, "
+            f"preserved last chunk at {sample_rate}Hz to maintain format"
+        )
+
+    def close(self) -> None:
+        """Mark track as closed and clear audio queue to prevent further frame generation.
+
+        This method should be called when the connection is closing to stop WebRTC
+        from continuing to pull audio frames. After this is called, recv() will raise
+        MediaStreamError to signal WebRTC to stop calling it.
+        """
+        self._is_closed = True
+        # Clear the queue to prevent processing any remaining queued audio
+        # Note: We don't use the lock here because this is called during cleanup
+        # and we want to be sure the flag is set immediately
+        self._audio_queue.clear()
+        logger.debug("UserAudioInputTrack closed - cleared audio queue and marked as closed")
 
     def add_audio_samples(
         self,
@@ -75,26 +124,14 @@ class UserAudioInputTrack(AudioStreamTrack):
         """Add raw audio samples to the track buffer.
 
         This method accepts raw 16-bit PCM audio bytes and queues them for
-        transmission. The audio will be resampled/converted to WebRTC format
-        (48kHz mono) when recv() is called by WebRTC.
+        transmission. The audio format (sample rate, channels) is determined
+        from the actual audio data provided.
 
         Args:
             audio_bytes: Raw audio data (16-bit PCM).
             sample_rate: Sample rate of the input audio (Hz).
             num_channels: Number of channels in the input audio (1=mono, 2=stereo).
         """
-        # Validate input format matches expected (if set)
-        if self._expected_sample_rate is not None and sample_rate != self._expected_sample_rate:
-            logger.warning(
-                f"Sample rate mismatch: expected {self._expected_sample_rate}Hz, "
-                f"got {sample_rate}Hz. Resampling will occur."
-            )
-        if self._expected_channels is not None and num_channels != self._expected_channels:
-            logger.warning(
-                f"Channel count mismatch: expected {self._expected_channels}, "
-                f"got {num_channels}. Conversion will occur."
-            )
-
         # Convert to numpy array for processing
         samples = np.frombuffer(audio_bytes, dtype=np.int16)
 
@@ -104,7 +141,6 @@ class UserAudioInputTrack(AudioStreamTrack):
 
         # Calculate samples per 10ms at input sample rate
         samples_per_10ms_input = sample_rate * 10 // 1000
-        bytes_per_10ms_input = samples_per_10ms_input * 2  # 16-bit
 
         # Break into 10ms chunks at input sample rate for minimal buffering
         for i in range(0, len(samples), samples_per_10ms_input):
@@ -117,88 +153,108 @@ class UserAudioInputTrack(AudioStreamTrack):
                 chunk_samples = np.concatenate([chunk_samples, padding])
 
             chunk_bytes = chunk_samples.astype(np.int16).tobytes()
+
+            # Apply backpressure: if queue is too large, drop oldest audio
+            # This prevents unbounded memory growth when audio arrives faster than WebRTC can consume
+            if len(self._audio_queue) >= self._max_queue_size:
+                self._audio_queue.popleft()
+                logger.debug(
+                    f"Queue full ({len(self._audio_queue)} items) - dropping oldest chunk "
+                    f"to apply backpressure"
+                )
+
             self._audio_queue.append((chunk_bytes, sample_rate, 1))  # Always mono after conversion
 
     async def recv(self) -> AudioFrame:
         """Return the next audio frame for WebRTC transmission.
 
-        This method is called by WebRTC to get audio frames for encoding to Opus.
-        It returns AudioFrame objects at 48kHz mono, resampling/converting input
-        audio as necessary.
+        This method sends audio at its original sample rate. The Opus encoder
+        handles resampling internally.
 
         Returns:
-            An AudioFrame containing the next 10ms of audio data at 48kHz mono.
+            An AudioFrame containing the next 10ms of audio data at original sample rate.
+
+        Raises:
+            MediaStreamError: If the track has been closed.
         """
-        # Compute required wait time for synchronization
-        if self._timestamp > 0:
-            wait = self._start + (self._timestamp / self._output_sample_rate) - time.time()
-            if wait > 0:
-                await asyncio.sleep(wait)
+        # Check if track has been closed - raise error to stop WebRTC from calling recv()
+        if self._is_closed:
+            from aiortc.mediastreams import MediaStreamError
+            raise MediaStreamError("Track has been closed")
+
+        # Flush buffer on first recv() call to catch any audio that arrived between
+        # connection established and WebRTC starting to pull frames
+        if self._first_recv:
+            self._first_recv = False
+            self.flush()
 
         audio_data = None
+        current_sample_rate = None
+        samples_per_chunk = None
 
         async with self._lock:
+            # Double-check after acquiring lock (race condition protection)
+            if self._is_closed:
+                from aiortc.mediastreams import MediaStreamError
+                raise MediaStreamError("Track has been closed")
+
             if self._audio_queue:
+                # Process audio from queue - format is determined from actual audio data
                 audio_bytes, sample_rate, num_channels = self._audio_queue.popleft()
+                current_sample_rate = sample_rate
+                samples_per_chunk = sample_rate * 10 // 1000
 
                 # Convert bytes to numpy array (already mono, 16-bit PCM)
                 samples = np.frombuffer(audio_bytes, dtype=np.int16)
 
-                # If sample_rate is already 48kHz, no resampling needed
-                if sample_rate == self._output_sample_rate:
-                    # Audio is already at target sample rate (should be exactly 10ms)
-                    audio_data = samples[None, :]  # Shape: (1, num_samples)
-                else:
-                    # Create resampler lazily if needed
-                    if self._resampler is None or self._resampler_input_rate != sample_rate:
-                        self._resampler = AudioResampler("s16", "mono", self._output_sample_rate)
-                        self._resampler_input_rate = sample_rate
-                        logger.debug(
-                            f"Created resampler: {sample_rate}Hz -> {self._output_sample_rate}Hz"
-                        )
+                # Use audio at original sample rate - Opus encoder handles resampling internally
+                audio_data = samples[None, :]  # Shape: (1, num_samples)
 
-                    # Create AudioFrame from input sample rate for resampling
-                    input_frame = AudioFrame.from_ndarray(samples[None, :], layout="mono")
-                    input_frame.sample_rate = sample_rate
-                    input_frame.pts = 0
-                    input_frame.time_base = fractions.Fraction(1, sample_rate)
+                # Update current sample rate tracking
+                self._current_sample_rate = sample_rate
 
-                    # Resample to 48kHz
-                    resampled_frames = self._resampler.resample(input_frame)
-                    # Collect all resampled frames and concatenate
-                    resampled_arrays = []
-                    for resampled_frame in resampled_frames:
-                        resampled_arrays.append(resampled_frame.to_ndarray())
-                    if resampled_arrays:
-                        audio_data = np.concatenate(resampled_arrays, axis=1)
-                    else:
-                        audio_data = None
-
+        # Generate silence if no audio available, using known sample rate
         if audio_data is None:
-            # Generate silence if no audio available
-            audio_data = np.zeros((1, self._samples_per_10ms), dtype=np.int16)
+            if self._current_sample_rate is not None:
+                # We've seen audio before - generate silence at the same sample rate
+                current_sample_rate = self._current_sample_rate
+                samples_per_chunk = current_sample_rate * 10 // 1000
+                audio_data = np.zeros((1, samples_per_chunk), dtype=np.int16)
+            else:
+                # No audio format known yet - this shouldn't happen since track is created
+                # lazily when first audio arrives, but use default as fallback
+                logger.warning(
+                    "No audio format known - generating silence at default 48kHz. "
+                    "This may cause format mismatch if actual audio is different."
+                )
+                current_sample_rate = self._output_sample_rate
+                samples_per_chunk = self._samples_per_10ms
+                audio_data = np.zeros((1, samples_per_chunk), dtype=np.int16)
         else:
-            # Ensure we have exactly 10ms worth of samples at 48kHz
-            if audio_data.shape[1] < self._samples_per_10ms:
-                # Pad with silence if we have less than 10ms (shouldn't happen often)
-                padding = np.zeros((1, self._samples_per_10ms - audio_data.shape[1]), dtype=np.int16)
+            # Ensure we have exactly 10ms worth of samples at current sample rate
+            if audio_data.shape[1] < samples_per_chunk:
+                # Pad with silence if we have less than 10ms
+                padding = np.zeros((1, samples_per_chunk - audio_data.shape[1]), dtype=np.int16)
                 audio_data = np.concatenate([audio_data, padding], axis=1)
-            elif audio_data.shape[1] > self._samples_per_10ms:
-                # If resampling produced more than 10ms, take first 10ms and queue the rest
-                # This can happen due to resampling precision
-                remaining_samples = audio_data[:, self._samples_per_10ms:]
+            elif audio_data.shape[1] > samples_per_chunk:
+                # Queue the rest if we have more than 10ms
+                remaining_samples = audio_data[:, samples_per_chunk:]
                 remaining_bytes = remaining_samples.astype(np.int16).tobytes()
-                # Put remaining audio back in queue - already at 48kHz, mono
                 async with self._lock:
-                    self._audio_queue.appendleft((remaining_bytes, self._output_sample_rate, 1))
-                audio_data = audio_data[:, :self._samples_per_10ms]
+                    self._audio_queue.appendleft((remaining_bytes, current_sample_rate, 1))
+                audio_data = audio_data[:, :samples_per_chunk]
 
-        # Create AudioFrame for WebRTC
-        # WebRTC will automatically encode AudioFrame to Opus
-        # We provide mono 48kHz PCM - WebRTC handles encoding/transmission
+        # Compute required wait time for synchronization using current sample rate
+        if self._timestamp > 0:
+            wait = self._start + (self._timestamp / current_sample_rate) - time.time()
+            if wait > 0:
+                await asyncio.sleep(wait)
+
+        # Create AudioFrame for WebRTC at original sample rate
+        # Opus encoder handles resampling internally
         frame = AudioFrame.from_ndarray(audio_data, layout="mono")
-        frame.sample_rate = self._output_sample_rate
+        frame.sample_rate = current_sample_rate
         frame.pts = self._timestamp
-        frame.time_base = fractions.Fraction(1, self._output_sample_rate)
-        self._timestamp += self._samples_per_10ms
+        frame.time_base = fractions.Fraction(1, current_sample_rate)
+        self._timestamp += samples_per_chunk
         return frame
