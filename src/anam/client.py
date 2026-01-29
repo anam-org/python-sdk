@@ -247,7 +247,6 @@ class AnamClient:
             on_connection_closed=self._handle_connection_closed,
             disable_input_audio=self._options.disable_input_audio,
             custom_ice_servers=self._options.ice_servers,
-            audio_input_track=self._options.audio_input_track,
         )
 
         # Connect

@@ -8,7 +8,6 @@ from typing import Any, Awaitable, Callable
 
 import aiohttp
 from aiortc import (
-    AudioStreamTrack,
     MediaStreamTrack,
     RTCConfiguration,
     RTCDataChannel,
@@ -22,6 +21,7 @@ from av.video.frame import VideoFrame
 
 from ._agent_audio_input_stream import AgentAudioInputStream
 from ._signalling import SignalAction, SignallingClient
+from ._user_audio_input_track import UserAudioInputTrack
 from .types import AgentAudioInputConfig, SessionInfo
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,6 @@ class StreamingClient:
         on_connection_closed: Callable[[str, str | None], Awaitable[None]] | None = None,
         disable_input_audio: bool = False,
         custom_ice_servers: list[dict[str, Any]] | None = None,
-        audio_input_track: AudioStreamTrack | None = None,
     ):
         """Initialize the streaming client.
 
@@ -53,10 +52,8 @@ class StreamingClient:
             on_connection_established: Callback when connected.
             on_connection_closed: Callback when disconnected.
             disable_input_audio: If True, don't send microphone audio.
+                When False, audio can be sent via send_user_audio() method.
             custom_ice_servers: Custom ICE servers (optional).
-            audio_input_track: Custom audio track for microphone input (optional).
-                If provided and disable_input_audio is False, this track will be
-                added to the WebRTC connection for sending audio to the server.
         """
         self._session_info = session_info
         self._session_id = session_info.session_id
@@ -69,7 +66,6 @@ class StreamingClient:
         # Configuration
         self._disable_input_audio = disable_input_audio
         self._ice_servers = custom_ice_servers or session_info.ice_servers
-        self._audio_input_track = audio_input_track
 
         # State
         self._peer_connection: RTCPeerConnection | None = None
@@ -81,6 +77,8 @@ class StreamingClient:
         self._audio_track: MediaStreamTrack | None = None
         self._is_connected = False
         self._agent_audio_input_stream: AgentAudioInputStream | None = None
+        self._user_audio_input_track: UserAudioInputTrack | None = None
+        self._audio_transceiver = None  # Store transceiver for lazy track creation
 
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
@@ -332,14 +330,18 @@ class StreamingClient:
         if self._disable_input_audio:
             self._peer_connection.addTransceiver("audio", direction="recvonly")
         else:
-            # If we have an audio input track, add it to enable sending audio
-            if self._audio_input_track:
-                self._peer_connection.addTrack(self._audio_input_track)
-                logger.info("Added audio input track to peer connection")
-            else:
-                # Set up a bidirectional audio transceiver to receive audio now
-                # and allow attaching a local audio input track in the future
-                self._peer_connection.addTransceiver("audio", direction="sendrecv")
+            # Always add a transceiver first (like JavaScript SDK)
+            # This ensures proper WebRTC negotiation
+            # We add transceiver early but create track lazily when audio arrives
+            self._audio_transceiver = self._peer_connection.addTransceiver("audio", direction="sendrecv")
+            logger.info(
+                f"Added audio transceiver: direction={self._audio_transceiver.direction}, "
+                f"disable_input_audio={self._disable_input_audio}"
+            )
+            # Track will be created lazily when first audio arrives via send_user_audio()
+            logger.info(
+                "Audio input enabled - track will be created lazily when first audio arrives via send_user_audio()"
+            )
 
         logger.debug("Peer connection initialized")
 
@@ -645,11 +647,6 @@ class StreamingClient:
         """Close the streaming connection and clean up resources."""
         logger.debug("Closing streaming client")
 
-        # Stop audio input track if present
-        if self._audio_input_track:
-            self._audio_input_track.stop()
-            self._audio_input_track = None
-
         # Close signalling
         if self._signalling_client:
             try:
@@ -670,6 +667,63 @@ class StreamingClient:
 
         self._is_connected = False
         logger.info("Streaming client closed")
+
+    def send_user_audio(
+        self,
+        audio_bytes: bytes,
+        sample_rate: int,
+        num_channels: int,
+    ) -> None:
+        """Send raw user audio samples to Anam for processing.
+
+        This method accepts raw audio bytes (16-bit PCM) and queues them for transmission via WebRTC.
+        The audio track is created lazily when first audio arrives, minimizing
+        latency and avoiding unnecessary resource allocation.
+
+        Args:
+            audio_bytes: Raw audio data (16-bit PCM).
+            sample_rate: Sample rate of the input audio (Hz).
+            num_channels: Number of channels in the input audio (1=mono, 2=stereo).
+
+        Raises:
+            RuntimeError: If audio input is disabled or peer connection is not initialized.
+        """
+        if self._disable_input_audio:
+            raise RuntimeError(
+                "Audio input is disabled. Set disable_input_audio=False in ClientOptions."
+            )
+
+        if not self._peer_connection:
+            raise RuntimeError("Peer connection not initialized. Call connect() first.")
+
+        # Create track lazily when first audio arrives
+        if self._user_audio_input_track is None:
+            logger.info(
+                f"Creating user audio input track: sample_rate={sample_rate}Hz, "
+                f"channels={num_channels}"
+            )
+            self._user_audio_input_track = UserAudioInputTrack(
+                expected_sample_rate=sample_rate,
+                expected_channels=num_channels,
+            )
+
+            # Add track to transceiver (lazy track creation)
+            if self._audio_transceiver and self._audio_transceiver.sender:
+                try:
+                    self._audio_transceiver.sender.replaceTrack(self._user_audio_input_track)
+                    logger.info(
+                        "Added user audio track to transceiver - "
+                        "WebRTC will call recv() to get audio frames for encoding to Opus"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to add user audio track to transceiver: {e}")
+                    raise RuntimeError(f"Failed to add user audio track: {e}") from e
+            else:
+                logger.error("Audio transceiver or sender not available")
+                raise RuntimeError("Audio transceiver not properly initialized")
+
+        # Add audio samples to track buffer
+        self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)
 
     def __del__(self) -> None:
         """Cleanup on destruction to prevent warnings."""
