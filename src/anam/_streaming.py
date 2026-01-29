@@ -330,9 +330,7 @@ class StreamingClient:
         if self._disable_input_audio:
             self._peer_connection.addTransceiver("audio", direction="recvonly")
         else:
-            # Always add a transceiver first (like JavaScript SDK)
-            # This ensures proper WebRTC negotiation
-            # We add transceiver early but create track lazily when audio arrives
+            # Add a transceiver to ensure proper WebRTC negotiation
             self._audio_transceiver = self._peer_connection.addTransceiver("audio", direction="sendrecv")
             logger.info(
                 f"Added audio transceiver: direction={self._audio_transceiver.direction}, "
