@@ -9,9 +9,8 @@ import fractions
 import logging
 
 import numpy as np
-from aiortc.mediastreams import AudioStreamTrack, MediaStreamError, AUDIO_PTIME
+from aiortc.mediastreams import AUDIO_PTIME, AudioStreamTrack, MediaStreamError
 from av.audio.frame import AudioFrame
-
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +142,7 @@ class UserAudioInputTrack(AudioStreamTrack):
             async with self._lock:
                 if len(self._audio_buffer) > self._bytes_per_chunk:
                     # Keep only the last chunk
-                    self._audio_buffer = self._audio_buffer[-self._bytes_per_chunk:]
+                    self._audio_buffer = self._audio_buffer[-self._bytes_per_chunk :]
                     logger.debug("Flushed audio buffer on first recv to stay near live point")
             self._first_recv = False
 

@@ -5,7 +5,6 @@ from enum import Enum
 from typing import Any
 
 
-
 class AnamEvent(str, Enum):
     """Events emitted by the Anam client."""
 
