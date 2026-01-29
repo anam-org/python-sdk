@@ -80,20 +80,6 @@ class StreamingClient:
         self._user_audio_input_track: UserAudioInputTrack | None = None
         self._audio_transceiver = None  # Store transceiver for lazy track creation
 
-    def _on_connection_established_internal(self) -> None:
-        """Internal callback that flushes audio buffer when connection is established.
-
-        This is called automatically before the user's on_connection_established callback.
-        """
-        # Flush buffered audio when connection is established
-        # This ensures we start with live audio instead of catching up on buffered audio
-        logger.debug("_on_connection_established_internal ready for duty, sir.")
-        if self._user_audio_input_track:
-            logger.debug("Flushing audio queue on connection established")
-            self._user_audio_input_track.flush()
-        else:
-            logger.debug("Cannot flush audio queue - track not created yet (will flush when track is created)")
-
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
 
@@ -306,8 +292,6 @@ class StreamingClient:
                     self._is_connected = True
                     if hasattr(self, "_connection_ready"):
                         self._connection_ready.set()
-                    # Call internal flush callback, then user's callback
-                    self._on_connection_established_internal()
                     if self._on_connection_established:
                         asyncio.create_task(self._on_connection_established())
             elif state == "failed":
@@ -431,8 +415,6 @@ class StreamingClient:
                         self._is_connected = True
                         if hasattr(self, "_connection_ready"):
                             self._connection_ready.set()
-                        # Call internal flush callback, then user's callback
-                        self._on_connection_established_internal()
                         if self._on_connection_established:
                             asyncio.create_task(self._on_connection_established())
 
@@ -487,8 +469,6 @@ class StreamingClient:
                         self._is_connected = True
                         if hasattr(self, "_connection_ready"):
                             self._connection_ready.set()
-                        # Call internal flush callback, then user's callback
-                        self._on_connection_established_internal()
                         if self._on_connection_established:
                             asyncio.create_task(self._on_connection_established())
 
