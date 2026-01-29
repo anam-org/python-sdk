@@ -214,7 +214,7 @@ async def stream_session(
     @client.on(AnamEvent.MESSAGE_HISTORY_UPDATED)
     async def on_message_history_updated(messages) -> None:
         """Handle message history updates."""
-        print(f"\n📝 Message history updated: {len(messages)} messages total")
+        logger.debug(f"\n📝 Message history updated: {len(messages)} messages total")
 
     async def consume_video_frames(session) -> None:
         """Consume video frames from iterator."""
