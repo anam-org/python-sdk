@@ -221,15 +221,8 @@ class UserAudioInputTrack(AudioStreamTrack):
                 samples_per_chunk = current_sample_rate * 10 // 1000
                 audio_data = np.zeros((1, samples_per_chunk), dtype=np.int16)
             else:
-                # No audio format known yet - this shouldn't happen since track is created
-                # lazily when first audio arrives, but use default as fallback
-                logger.warning(
-                    "No audio format known - generating silence at default 48kHz. "
-                    "This may cause format mismatch if actual audio is different."
-                )
-                current_sample_rate = self._output_sample_rate
-                samples_per_chunk = self._samples_per_10ms
-                audio_data = np.zeros((1, samples_per_chunk), dtype=np.int16)
+                from aiortc.mediastreams import MediaStreamError
+                raise MediaStreamError("aiortc called recv() but no samples have been queued.")
         else:
             # Ensure we have exactly 10ms worth of samples at current sample rate
             if audio_data.shape[1] < samples_per_chunk:

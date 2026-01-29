@@ -735,7 +735,12 @@ class StreamingClient:
             )
             self._user_audio_input_track = UserAudioInputTrack()
 
+            # CRITICAL: Queue audio samples BEFORE adding track to transceiver
+            # This ensures WebRTC can't call recv() before we know the sample rate
+            self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)
+
             # Add track to transceiver (lazy track creation)
+            # Now that audio is queued, WebRTC can safely call recv() and will get the correct format
             if self._audio_transceiver and self._audio_transceiver.sender:
                 try:
                     self._audio_transceiver.sender.replaceTrack(self._user_audio_input_track)
@@ -756,9 +761,9 @@ class StreamingClient:
             if self._is_connected:
                 logger.debug("Connection already established - flushing audio queue on track creation")
                 self._user_audio_input_track.flush()
-
-        # Add audio samples to track buffer
-        self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)
+        else:
+            # Track already exists - just add audio samples
+            self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)
 
     def __del__(self) -> None:
         """Cleanup on destruction to prevent warnings."""
