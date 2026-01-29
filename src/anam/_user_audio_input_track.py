@@ -49,20 +49,20 @@ class UserAudioInputTrack(AudioStreamTrack):
         self._bytes_per_10ms = self._samples_per_10ms * 2  # 16-bit (2 bytes per sample)
         self._timestamp = 0
         self._start = time.time()
-        
+
         # Expected input format (can be None initially)
         self._expected_sample_rate = expected_sample_rate
         self._expected_channels = expected_channels
-        
+
         # Queue of (audio_bytes, sample_rate, num_channels) tuples
         # Audio is queued in 10ms chunks at input sample rate
         self._audio_queue: deque[tuple[bytes, int, int]] = deque()
-        
+
         # Resampler for converting input audio to 48kHz mono
         # Created lazily when we know the input format
         self._resampler: Optional[AudioResampler] = None
         self._resampler_input_rate: Optional[int] = None
-        
+
         # Lock for thread-safe operations
         self._lock = asyncio.Lock()
 
@@ -97,25 +97,25 @@ class UserAudioInputTrack(AudioStreamTrack):
 
         # Convert to numpy array for processing
         samples = np.frombuffer(audio_bytes, dtype=np.int16)
-        
+
         # Handle multi-channel audio (convert to mono if needed)
         if num_channels > 1:
             samples = samples.reshape(-1, num_channels).mean(axis=1).astype(np.int16)
-        
+
         # Calculate samples per 10ms at input sample rate
         samples_per_10ms_input = sample_rate * 10 // 1000
         bytes_per_10ms_input = samples_per_10ms_input * 2  # 16-bit
-        
+
         # Break into 10ms chunks at input sample rate for minimal buffering
         for i in range(0, len(samples), samples_per_10ms_input):
             chunk_samples = samples[i:i + samples_per_10ms_input]
-            
+
             # Pad last chunk if needed to make it exactly 10ms
             if len(chunk_samples) < samples_per_10ms_input:
                 padding_samples = samples_per_10ms_input - len(chunk_samples)
                 padding = np.zeros(padding_samples, dtype=np.int16)
                 chunk_samples = np.concatenate([chunk_samples, padding])
-            
+
             chunk_bytes = chunk_samples.astype(np.int16).tobytes()
             self._audio_queue.append((chunk_bytes, sample_rate, 1))  # Always mono after conversion
 
@@ -136,20 +136,19 @@ class UserAudioInputTrack(AudioStreamTrack):
                 await asyncio.sleep(wait)
 
         audio_data = None
-        
+
         async with self._lock:
             if self._audio_queue:
                 audio_bytes, sample_rate, num_channels = self._audio_queue.popleft()
-                
+
                 # Convert bytes to numpy array (already mono, 16-bit PCM)
                 samples = np.frombuffer(audio_bytes, dtype=np.int16)
-                
+
                 # If sample_rate is already 48kHz, no resampling needed
                 if sample_rate == self._output_sample_rate:
                     # Audio is already at target sample rate (should be exactly 10ms)
                     audio_data = samples[None, :]  # Shape: (1, num_samples)
                 else:
-                    # Need to resample to 48kHz
                     # Create resampler lazily if needed
                     if self._resampler is None or self._resampler_input_rate != sample_rate:
                         self._resampler = AudioResampler("s16", "mono", self._output_sample_rate)
@@ -157,13 +156,13 @@ class UserAudioInputTrack(AudioStreamTrack):
                         logger.debug(
                             f"Created resampler: {sample_rate}Hz -> {self._output_sample_rate}Hz"
                         )
-                    
+
                     # Create AudioFrame from input sample rate for resampling
                     input_frame = AudioFrame.from_ndarray(samples[None, :], layout="mono")
                     input_frame.sample_rate = sample_rate
                     input_frame.pts = 0
                     input_frame.time_base = fractions.Fraction(1, sample_rate)
-                    
+
                     # Resample to 48kHz
                     resampled_frames = self._resampler.resample(input_frame)
                     # Collect all resampled frames and concatenate
@@ -202,5 +201,4 @@ class UserAudioInputTrack(AudioStreamTrack):
         frame.pts = self._timestamp
         frame.time_base = fractions.Fraction(1, self._output_sample_rate)
         self._timestamp += self._samples_per_10ms
-        
         return frame
