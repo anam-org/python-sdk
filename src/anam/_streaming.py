@@ -702,7 +702,7 @@ class StreamingClient:
             )
             if (
                 sample_rate < 16000
-                or sample_rate > 4800
+                or sample_rate > 48000
                 or sample_rate not in [16000, 24000, 32000, 44100, 48000]
             ):
                 logger.warning(
