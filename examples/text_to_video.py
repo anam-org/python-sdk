@@ -268,7 +268,7 @@ async def text_to_video(
     client = AnamClient(
         api_key=api_key,
         persona_config=persona_config,
-        options=ClientOptions(disable_input_audio=True, api_base_url=api_base_url),
+        options=ClientOptions(api_base_url=api_base_url),
     )
 
     # Temp files for video and audio (keep extensions for format detection)

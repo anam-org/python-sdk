@@ -55,7 +55,6 @@ class TestAnamClientInit:
         """Test initialization with ClientOptions."""
         options = ClientOptions(
             api_base_url="https://custom.api.com",
-            disable_input_audio=True,
         )
         client = AnamClient(
             api_key="test-key",
@@ -63,7 +62,6 @@ class TestAnamClientInit:
             options=options,
         )
         assert client._options.api_base_url == "https://custom.api.com"
-        assert client._options.disable_input_audio is True
 
 
 class TestAnamClientEvents:
