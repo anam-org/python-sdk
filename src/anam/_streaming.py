@@ -311,6 +311,7 @@ class StreamingClient:
             state = self._peer_connection.connectionState
             logger.debug("Connection state: %s", state)
 
+
         @self._peer_connection.on("track")
         def on_track(track: MediaStreamTrack) -> None:
             logger.info("Received %s track", track.kind)
