@@ -715,8 +715,14 @@ class StreamingClient:
                 f"Creating user audio input track: sample_rate={sample_rate}Hz, "
                 f"channels={num_channels}"
             )
-            if sample_rate < 16000 or sample_rate > 4800 or sample_rate not in [16000, 24000, 32000, 44100,48000]:
-                logger.warning(f"Unusual sample rate provided: {sample_rate}Hz. Performance might be detoriated. Verify your audio configuration.")
+            if (
+                sample_rate < 16000
+                or sample_rate > 4800
+                or sample_rate not in [16000, 24000, 32000, 44100, 48000]
+            ):
+                logger.warning(
+                    f"Unusual sample rate provided: {sample_rate}Hz. Performance might be detoriated. Verify your audio configuration."
+                )
 
             self._user_audio_input_track = UserAudioInputTrack(sample_rate, num_channels)
 
