@@ -326,12 +326,6 @@ class StreamingClient:
         self._audio_transceiver = self._peer_connection.addTransceiver(
             "audio", direction="sendrecv"
         )
-        logger.info(
-            f"Added audio transceiver: direction={self._audio_transceiver.direction}"
-        )
-        logger.info(
-            "Audio input enabled - track will be created lazily when first audio arrives via send_user_audio()"
-        )
 
         logger.debug("Peer connection initialized")
 
