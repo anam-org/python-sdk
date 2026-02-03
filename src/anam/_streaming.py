@@ -687,9 +687,9 @@ class StreamingClient:
     ) -> None:
         """Send raw user audio samples to Anam for processing.
 
-        This method accepts raw audio bytes (16-bit PCM) and queues them for transmission via WebRTC.
-        The audio track is created lazily when first audio arrives, minimizing
-        latency and avoiding unnecessary resource allocation.
+        This method accepts 16-bit PCM samples and adds them to the audio buffer for transmission via WebRTC.
+        The audio track is created lazily when first audio arrives.
+        Audio is only added to the buffer after the connection is established, to avoid accumulating stale audio.
 
         Args:
             audio_bytes: Raw audio data (16-bit PCM).
@@ -724,9 +724,9 @@ class StreamingClient:
                     raise RuntimeError(f"Failed to add user audio track: {e}") from e
             else:
                 raise RuntimeError("Audio transceiver not properly initialized")
-
-        # Add audio samples to track buffer
-        self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)
+        if self._peer_connection.connectionState == "connected":
+            # Avoid accumulating stale audio, only queue audio when connection is established.
+            self._user_audio_input_track.add_audio_samples(audio_bytes, sample_rate, num_channels)
 
     def __del__(self) -> None:
         """Cleanup on destruction to prevent warnings."""

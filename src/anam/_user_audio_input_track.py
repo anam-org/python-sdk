@@ -118,13 +118,11 @@ class UserAudioInputTrack(AudioStreamTrack):
             # Align to frame boundary
             excess = (excess // self._bytes_per_chunk) * self._bytes_per_chunk
             if excess > 0:
+                logger.warning(f"Dropping {excess} bytes of old audio due to buffer overflow")
                 self._audio_buffer = self._audio_buffer[excess:]
 
     async def recv(self) -> AudioFrame:
         """Return the next audio frame for WebRTC transmission.
-
-        On the first call, flushes the buffer to stay close to the live point,
-        keeping only the most recent chunk.
 
         Returns:
             An AudioFrame containing chunk of audio data.
@@ -134,17 +132,6 @@ class UserAudioInputTrack(AudioStreamTrack):
         """
         if self._is_closed:
             raise MediaStreamError("Track has been closed")
-
-        # On first recv, flush buffer to stay near live point
-        # This discards audio that accumulated during connection setup
-        if self._first_recv:
-            logger.debug("first recv called now.")
-            async with self._lock:
-                if len(self._audio_buffer) > self._bytes_per_chunk:
-                    # Keep only the last chunk
-                    self._audio_buffer = self._audio_buffer[-self._bytes_per_chunk :]
-                    logger.warning("Flushing audio buffer to keep up. This can hurt latency")
-            self._first_recv = False
 
         # Wait for enough data (chunk)
         while len(self._audio_buffer) < self._bytes_per_chunk:
