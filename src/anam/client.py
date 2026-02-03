@@ -245,7 +245,6 @@ class AnamClient:
             on_message=self._handle_data_message,
             on_connection_established=self._handle_connection_established,
             on_connection_closed=self._handle_connection_closed,
-            disable_input_audio=self._options.disable_input_audio,
             custom_ice_servers=self._options.ice_servers,
         )
 

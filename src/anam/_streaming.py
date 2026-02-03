@@ -41,7 +41,6 @@ class StreamingClient:
         on_message: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         on_connection_established: Callable[[], Awaitable[None]] | None = None,
         on_connection_closed: Callable[[str, str | None], Awaitable[None]] | None = None,
-        disable_input_audio: bool = False,
         custom_ice_servers: list[dict[str, Any]] | None = None,
     ):
         """Initialize the streaming client.
@@ -51,8 +50,6 @@ class StreamingClient:
             on_message: Callback for data channel messages.
             on_connection_established: Callback when connected.
             on_connection_closed: Callback when disconnected.
-            disable_input_audio: If True, don't send microphone audio.
-                When False, audio can be sent via send_user_audio() method.
             custom_ice_servers: Custom ICE servers (optional).
         """
         self._session_info = session_info
@@ -64,7 +61,6 @@ class StreamingClient:
         self._on_connection_closed = on_connection_closed
 
         # Configuration
-        self._disable_input_audio = disable_input_audio
         self._ice_servers = custom_ice_servers or session_info.ice_servers
 
         # State
@@ -326,22 +322,16 @@ class StreamingClient:
         # Video: receive only
         self._peer_connection.addTransceiver("video", direction="recvonly")
 
-        # Audio: send/receive or receive only
-        if self._disable_input_audio:
-            self._peer_connection.addTransceiver("audio", direction="recvonly")
-        else:
-            # Add a transceiver to ensure proper WebRTC negotiation
-            self._audio_transceiver = self._peer_connection.addTransceiver(
-                "audio", direction="sendrecv"
-            )
-            logger.info(
-                f"Added audio transceiver: direction={self._audio_transceiver.direction}, "
-                f"disable_input_audio={self._disable_input_audio}"
-            )
-            # Track will be created lazily when first audio arrives via send_user_audio()
-            logger.info(
-                "Audio input enabled - track will be created lazily when first audio arrives via send_user_audio()"
-            )
+        # Audio: send/receive (track created lazily when first audio arrives via send_user_audio())
+        self._audio_transceiver = self._peer_connection.addTransceiver(
+            "audio", direction="sendrecv"
+        )
+        logger.info(
+            f"Added audio transceiver: direction={self._audio_transceiver.direction}"
+        )
+        logger.info(
+            "Audio input enabled - track will be created lazily when first audio arrives via send_user_audio()"
+        )
 
         logger.debug("Peer connection initialized")
 
@@ -697,13 +687,8 @@ class StreamingClient:
             num_channels: Number of channels in the input audio (1=mono, 2=stereo).
 
         Raises:
-            RuntimeError: If audio input is disabled or peer connection is not initialized.
+            RuntimeError: If peer connection is not initialized.
         """
-        if self._disable_input_audio:
-            raise RuntimeError(
-                "Audio input is disabled. Set disable_input_audio=False in ClientOptions."
-            )
-
         if not self._peer_connection:
             raise RuntimeError("Peer connection not initialized. Call connect() first.")
         if num_channels != 1 and num_channels != 2:

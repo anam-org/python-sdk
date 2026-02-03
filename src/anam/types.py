@@ -109,8 +109,6 @@ class ClientOptions:
     Args:
         api_base_url: Base URL for the Anam API.
         api_version: API version to use.
-        disable_input_audio: If True, do not send audio to Anam's service.
-            When False, audio can be sent via send_user_audio() method.
         ice_servers: Custom ICE servers for WebRTC (optional).
         client_label: Custom label for session tracking (optional).
             Defaults to 'python-sdk' if not specified.
@@ -118,7 +116,6 @@ class ClientOptions:
 
     api_base_url: str = "https://api.anam.ai"
     api_version: str = "v1"
-    disable_input_audio: bool = False
     ice_servers: list[dict[str, Any]] | None = None
     client_label: str | None = None
 
