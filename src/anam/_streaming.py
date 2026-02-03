@@ -706,6 +706,8 @@ class StreamingClient:
 
         if not self._peer_connection:
             raise RuntimeError("Peer connection not initialized. Call connect() first.")
+        if num_channels != 1 and num_channels != 2:
+            raise RuntimeError("Invalid number of channels. Must be 1 or 2.")
 
         # Create track lazily when first audio arrives
         if self._user_audio_input_track is None:
@@ -713,6 +715,9 @@ class StreamingClient:
                 f"Creating user audio input track: sample_rate={sample_rate}Hz, "
                 f"channels={num_channels}"
             )
+            if sample_rate < 16000 or sample_rate > 4800 or sample_rate not in [16000, 24000, 32000, 44100,48000]:
+                logger.warning(f"Unusual sample rate provided: {sample_rate}Hz. Performance might be detoriated. Verify your audio configuration.")
+
             self._user_audio_input_track = UserAudioInputTrack(sample_rate, num_channels)
 
             # Add track to transceiver (lazy track creation)
