@@ -131,7 +131,7 @@ async def main() -> None:
     client = AnamClient(
         api_key=api_key,
         persona_id=persona_id,
-        options=ClientOptions(disable_input_audio=True, api_base_url=api_base_url),
+        options=ClientOptions(api_base_url=api_base_url),
     )
 
     # Register connection event handler

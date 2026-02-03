@@ -198,7 +198,7 @@ def main() -> None:
     client = AnamClient(
         api_key=api_key,
         persona_config=persona_config,
-        options=ClientOptions(disable_input_audio=True, api_base_url=api_base_url),
+        options=ClientOptions(api_base_url=api_base_url),
     )
 
     # Create display and audio player

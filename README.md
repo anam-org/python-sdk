@@ -101,9 +101,6 @@ client = AnamClient(
         voice_id="emma",
         language_code="en",
     ),
-    options=ClientOptions(
-        disable_input_audio=True,  # Don't capture microphone
-    ),
 )
 ```
 
@@ -313,7 +310,6 @@ from anam import ClientOptions
 options = ClientOptions(
     api_base_url="https://api.anam.ai",  # API base URL
     api_version="v1",                     # API version
-    disable_input_audio=False,            # Disable microphone input
     ice_servers=None,                     # Custom ICE servers
 )
 ```
