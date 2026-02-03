@@ -1,7 +1,8 @@
 """User audio input track for sending raw audio samples to Anam via WebRTC.
 
-This module provides a mechanism for accepting raw audio samples from Pipecat
-and converting them to WebRTC-compatible format for transmission.
+This module provides a mechanism for accepting raw audio samples and 
+converting them to WebRTC-compatible format for transmission.
+User audio is real time audio such as microphone audio.
 """
 
 import asyncio
