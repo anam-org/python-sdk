@@ -61,7 +61,7 @@ class PersonaConfig:
             Anam's default brain for custom LLM integration.
         max_session_length_seconds: Maximum session duration (optional).
         enable_audio_passthrough: If True, bypasses Anam's orchestration layer
-            and allows to ingest direct TTS audio through the socket.
+            and allows to ingest TTS audio directly through the socket.
     """
 
     persona_id: str | None = None
