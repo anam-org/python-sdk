@@ -587,6 +587,35 @@ class Session:
             raise SessionError("Not connected")
         return self._client._streaming_client.create_agent_audio_input_stream(config)
 
+    def send_user_audio(
+        self,
+        audio_bytes: bytes,
+        sample_rate: int,
+        num_channels: int,
+    ) -> None:
+        """Send raw user audio samples to Anam for processing.
+
+        This method accepts 16-bit PCM samples and adds them to the audio buffer
+        for transmission via WebRTC. The audio track is created lazily when first
+        audio arrives. Audio is only added to the buffer after the connection is
+        established, to avoid accumulating stale audio.
+
+        Args:
+            audio_bytes: Raw audio data (16-bit PCM).
+            sample_rate: Sample rate of the input audio (Hz).
+            num_channels: Number of channels in the input audio (1=mono, 2=stereo).
+
+        Raises:
+            SessionError: If not connected.
+        """
+        if not self._client._streaming_client:
+            raise SessionError("Not connected")
+        self._client._streaming_client.send_user_audio(
+            audio_bytes=audio_bytes,
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+        )
+
     def video_frames(self) -> AsyncIterator[VideoFrame]:
         """Get video frames as an async iterator.
 
