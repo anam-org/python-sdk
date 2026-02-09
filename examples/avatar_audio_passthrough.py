@@ -192,7 +192,6 @@ def main() -> None:
     persona_config = PersonaConfig(
         avatar_id=avatar_id,
         enable_audio_passthrough=True,
-        llm_id="CUSTOMER_CLIENT_V1",
     )
 
     # Create client
