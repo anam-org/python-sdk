@@ -60,9 +60,8 @@ class PersonaConfig:
         llm_id: LLM model to use (optional). Set to 'CUSTOMER_CLIENT_V1' to disable
             Anam's default brain for custom LLM integration.
         max_session_length_seconds: Maximum session duration (optional).
-        enable_audio_passthrough: If True, enables audio passthrough mode where TTS audio
-            is sent directly through the socket without transcription, LLM, or TTS processing.
-            For ephemeral personas, this must be set explicitly.
+        enable_audio_passthrough: If True, bypasses Anam's orchestration layer
+            and allows to ingest direct TTS audio through the socket.
     """
 
     persona_id: str | None = None
@@ -74,7 +73,7 @@ class PersonaConfig:
     language_code: str | None = None
     llm_id: str | None = None
     max_session_length_seconds: int | None = None
-    enable_audio_passthrough: bool | None = True
+    enable_audio_passthrough: bool | None = False
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API requests."""
