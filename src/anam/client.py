@@ -379,6 +379,7 @@ class AnamClient:
         if not self._streaming_client:
             self._session_info = None
             self._is_streaming = False
+            self._message_history.clear()
             return
         if close_code is not None:
             await self._handle_connection_closed(close_code, None)
@@ -388,6 +389,7 @@ class AnamClient:
             logger.info("Client closed")
         self._session_info = None
         self._is_streaming = False
+        self._message_history.clear()
 
     @property
     def is_streaming(self) -> bool:
