@@ -679,6 +679,8 @@ class Session:
 
     async def close(self) -> None:
         """Close the session."""
+        self._closed = True
+        self._close_event.set()
         await self._client.close()
 
     @property
