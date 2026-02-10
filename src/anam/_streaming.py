@@ -75,7 +75,9 @@ class StreamingClient:
         self._agent_audio_input_stream: AgentAudioInputStream | None = None
         self._user_audio_input_track: UserAudioInputTrack | None = None
         self._audio_transceiver = None  # Store transceiver for lazy track creation
-        self._closing = False  # True when client initiated close (avoid duplicate/error notification)
+        self._closing = (
+            False  # True when client initiated close (avoid duplicate/error notification)
+        )
 
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
@@ -300,9 +302,7 @@ class StreamingClient:
             elif state == "closed":
                 if not self._closing and self._on_connection_closed:
                     asyncio.create_task(
-                        self._on_connection_closed(
-                            ConnectionClosedCode.WEBRTC_FAILURE.value, None
-                        )
+                        self._on_connection_closed(ConnectionClosedCode.WEBRTC_FAILURE.value, None)
                     )
 
         @self._peer_connection.on("connectionstatechange")
