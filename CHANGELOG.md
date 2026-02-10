@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.2.0-alpha.2 (2026-02-10)
+
+### Bug Fixes
+
+- Expose send_user_audio publicly
+  ([`308b50e`](https://github.com/anam-org/python-sdk/commit/308b50e321a27c0a065a11c41951717297302cb2))
+
+
 ## v0.2.0-alpha.1 (2026-02-06)
 
 ### Chores
