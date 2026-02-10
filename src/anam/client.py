@@ -18,6 +18,7 @@ from .types import (
     AgentAudioInputConfig,
     AnamEvent,
     ClientOptions,
+    ConnectionClosedCode,
     Message,
     MessageRole,
     MessageStreamEvent,
@@ -343,7 +344,7 @@ class AnamClient:
 
     async def _handle_connection_closed(self, code: str, reason: str | None) -> None:
         """Handle connection closed."""
-        logger.info("Connection closed: %s %s", code, reason)
+        logger.debug("Connection closed")
         self._is_streaming = False
         await self._emit(AnamEvent.CONNECTION_CLOSED, code, reason)
 
@@ -365,15 +366,28 @@ class AnamClient:
             raise SessionError("Failed to create agent audio input stream: session is not started")
         return self._streaming_client.create_agent_audio_input_stream(config)
 
-    async def close(self) -> None:
-        """Close the connection and clean up resources."""
+    async def close(
+        self,
+        close_code: str | None = ConnectionClosedCode.NORMAL.value,
+    ) -> None:
+        """Close the connection and clean up resources.
+
+        When close_code is set, emit CONNECTION_CLOSED before tearing down.
+        When close_code is None (listener cleaning up after already being notified),
+        only tear down to avoid recursion.
+        """
+        if not self._streaming_client:
+            self._session_info = None
+            self._is_streaming = False
+            return
+        if close_code is not None:
+            await self._handle_connection_closed(close_code, None)
         if self._streaming_client:
             await self._streaming_client.close()
             self._streaming_client = None
-
+            logger.info("Client closed")
         self._session_info = None
         self._is_streaming = False
-        logger.info("Client closed")
 
     @property
     def is_streaming(self) -> bool:
@@ -532,6 +546,7 @@ class Session:
                 raise SessionError("Data channel did not open in time")
 
         streaming.send_interrupt()
+        streaming._agent_audio_input_stream.end_sequence()
 
     async def send_talk_stream(
         self,
@@ -675,9 +690,16 @@ class Session:
         """
         await self._close_event.wait()
 
-    async def close(self) -> None:
-        """Close the session."""
-        await self._client.close()
+    async def close(
+        self,
+        close_code: str | None = ConnectionClosedCode.NORMAL.value,
+    ) -> None:
+        """Close the session.
+
+        Pass close_code=None when the connection was already notified (e.g.
+        listener cleaning up after CONNECTION_CLOSED) to avoid double-notify.
+        """
+        await self._client.close(close_code=close_code)
         self._closed = True
         self._close_event.set()
 
