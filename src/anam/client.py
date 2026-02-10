@@ -548,7 +548,6 @@ class Session:
                 raise SessionError("Data channel did not open in time")
 
         streaming.send_interrupt()
-        streaming._agent_audio_input_stream.end_sequence()
 
     async def send_talk_stream(
         self,
