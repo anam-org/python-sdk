@@ -313,9 +313,7 @@ class StreamingClient:
                 # Only emit CONNECTION_CLOSED when the connection was lost (e.g. network)
                 if not self._closing and self._on_connection_closed:
                     asyncio.create_task(
-                        self._on_connection_closed(
-                            ConnectionClosedCode.WEBRTC_FAILURE.value, None
-                        )
+                        self._on_connection_closed(ConnectionClosedCode.WEBRTC_FAILURE.value, None)
                     )
 
         @self._peer_connection.on("track")
