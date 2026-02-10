@@ -110,7 +110,6 @@ class TestPersonaConfig:
         """Test to_dict with minimal config."""
         config = PersonaConfig(persona_id="test-id")
         result = config.to_dict()
-        # enableAudioPassthrough defaults to True, so it's included
         assert result == {"personaId": "test-id", "enableAudioPassthrough": False}
 
     def test_to_dict_full(self) -> None:
