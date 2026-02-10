@@ -225,7 +225,7 @@ class AnamClient:
             You must call session.close() when done.
             Prefer using `async with client.connect()` instead.
         """
-        if self._is_streaming:
+        if self.is_streaming:
             raise SessionError("Already connected. Call close() first.")
 
         logger.info("Connecting to Anam...")
@@ -368,7 +368,7 @@ class AnamClient:
 
     async def close(self) -> None:
         """Close the connection and clean up resources."""
-        if self._streaming_client and self._is_streaming:
+        if self._streaming_client and self.is_streaming:
             self._is_streaming = False
             await self._handle_connection_closed(ConnectionClosedCode.NORMAL.value, None)
             await self._streaming_client.close()

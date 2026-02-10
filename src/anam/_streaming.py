@@ -305,8 +305,7 @@ class StreamingClient:
             state = self._peer_connection.connectionState
             logger.debug("Connection state: %s", state)
             if state == "closed":
-                # Only emit CONNECTION_CLOSED when the connection was lost (e.g. network),
-                # not when we initiated close() (client calls on_connection_closed itself).
+                # Only emit CONNECTION_CLOSED when the connection was lost (e.g. network)
                 if not self._closing and self._on_connection_closed:
                     asyncio.create_task(
                         self._on_connection_closed(
