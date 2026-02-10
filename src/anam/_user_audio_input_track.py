@@ -53,10 +53,6 @@ class UserAudioInputTrack(AudioStreamTrack):
         # Flag to indicate if track is closed
         self._is_closed = False
 
-        # Flag to flush buffer on first recv() - handles audio that accumulated
-        # between track connection and WebRTC starting to pull frames
-        self._first_recv = True
-
         # Lock for thread-safe buffer access
         self._lock = asyncio.Lock()
 

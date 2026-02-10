@@ -225,7 +225,7 @@ class AnamClient:
             You must call session.close() when done.
             Prefer using `async with client.connect()` instead.
         """
-        if self._is_streaming:
+        if self.is_streaming:
             raise SessionError("Already connected. Call close() first.")
 
         logger.info("Connecting to Anam...")
@@ -371,30 +371,16 @@ class AnamClient:
             raise SessionError("Failed to create agent audio input stream: session is not started")
         return self._streaming_client.create_agent_audio_input_stream(config)
 
-    async def close(
-        self,
-        close_code: str | None = ConnectionClosedCode.NORMAL.value,
-    ) -> None:
-        """Close the connection and clean up resources.
-
-        When close_code is set, emit CONNECTION_CLOSED before tearing down.
-        When close_code is None (listener cleaning up after already being notified),
-        only tear down to avoid recursion.
-        """
-        if not self._streaming_client:
-            self._session_info = None
+    async def close(self) -> None:
+        """Close the connection and clean up resources."""
+        if self._streaming_client and self.is_streaming:
             self._is_streaming = False
-            self._message_history.clear()
-            return
-        if close_code is not None:
-            await self._handle_connection_closed(close_code, None)
-        if self._streaming_client:
+            await self._handle_connection_closed(ConnectionClosedCode.NORMAL.value, None)
             await self._streaming_client.close()
             self._streaming_client = None
+            self._session_info = None
+            self._message_history.clear()
             logger.info("Client closed")
-        self._session_info = None
-        self._is_streaming = False
-        self._message_history.clear()
 
     @property
     def is_streaming(self) -> bool:
@@ -696,18 +682,11 @@ class Session:
         """
         await self._close_event.wait()
 
-    async def close(
-        self,
-        close_code: str | None = ConnectionClosedCode.NORMAL.value,
-    ) -> None:
-        """Close the session.
-
-        Pass close_code=None when the connection was already notified (e.g.
-        listener cleaning up after CONNECTION_CLOSED) to avoid double-notify.
-        """
-        await self._client.close(close_code=close_code)
+    async def close(self) -> None:
+        """Close the session."""
         self._closed = True
         self._close_event.set()
+        await self._client.close()
 
     @property
     def is_active(self) -> bool:

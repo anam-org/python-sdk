@@ -78,9 +78,7 @@ class StreamingClient:
         self._agent_audio_input_stream: AgentAudioInputStream | None = None
         self._user_audio_input_track: UserAudioInputTrack | None = None
         self._audio_transceiver = None  # Store transceiver for lazy track creation
-        self._closing = (
-            False  # True when client initiated close (avoid duplicate/error notification)
-        )
+        self._closing = False
 
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
@@ -304,11 +302,6 @@ class StreamingClient:
                 )
                 if hasattr(self, "_connection_ready"):
                     self._connection_ready.set()
-            elif state == "closed":
-                if not self._closing and self._on_connection_closed:
-                    asyncio.create_task(
-                        self._on_connection_closed(ConnectionClosedCode.WEBRTC_FAILURE.value, None)
-                    )
 
         @self._peer_connection.on("connectionstatechange")
         def on_connection_state_change() -> None:
@@ -316,6 +309,14 @@ class StreamingClient:
                 return
             state = self._peer_connection.connectionState
             logger.debug("Connection state: %s", state)
+            if state == "closed":
+                # Only emit CONNECTION_CLOSED when the connection was lost (e.g. network)
+                if not self._closing and self._on_connection_closed:
+                    asyncio.create_task(
+                        self._on_connection_closed(
+                            ConnectionClosedCode.WEBRTC_FAILURE.value, None
+                        )
+                    )
 
         @self._peer_connection.on("track")
         def on_track(track: MediaStreamTrack) -> None:
@@ -641,10 +642,7 @@ class StreamingClient:
         """Close the streaming connection and clean up resources."""
         if self._closing:
             return
-        if self._peer_connection is None and self._signalling_client is None:
-            return
         self._closing = True
-        self._on_connection_closed = None
         logger.debug("Closing streaming client")
 
         # Close signalling
