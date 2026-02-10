@@ -75,9 +75,7 @@ class StreamingClient:
         self._agent_audio_input_stream: AgentAudioInputStream | None = None
         self._user_audio_input_track: UserAudioInputTrack | None = None
         self._audio_transceiver = None  # Store transceiver for lazy track creation
-        self._closing = (
-            False  # True when client initiated close (avoid duplicate/error notification)
-        )
+        self._closing = False
 
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
@@ -299,11 +297,6 @@ class StreamingClient:
                 )
                 if hasattr(self, "_connection_ready"):
                     self._connection_ready.set()
-            elif state == "closed":
-                if not self._closing and self._on_connection_closed:
-                    asyncio.create_task(
-                        self._on_connection_closed(ConnectionClosedCode.WEBRTC_FAILURE.value, None)
-                    )
 
         @self._peer_connection.on("connectionstatechange")
         def on_connection_state_change() -> None:
@@ -311,6 +304,15 @@ class StreamingClient:
                 return
             state = self._peer_connection.connectionState
             logger.debug("Connection state: %s", state)
+            if state == "closed":
+                # Only emit CONNECTION_CLOSED when the connection was lost (e.g. network),
+                # not when we initiated close() (client calls on_connection_closed itself).
+                if not self._closing and self._on_connection_closed:
+                    asyncio.create_task(
+                        self._on_connection_closed(
+                            ConnectionClosedCode.WEBRTC_FAILURE.value, None
+                        )
+                    )
 
         @self._peer_connection.on("track")
         def on_track(track: MediaStreamTrack) -> None:
@@ -636,10 +638,7 @@ class StreamingClient:
         """Close the streaming connection and clean up resources."""
         if self._closing:
             return
-        if self._peer_connection is None and self._signalling_client is None:
-            return
         self._closing = True
-        self._on_connection_closed = None
         logger.debug("Closing streaming client")
 
         # Close signalling
@@ -681,7 +680,20 @@ class StreamingClient:
         sample_rate: int,
         num_channels: int,
     ) -> None:
-        """Send raw user audio samples to Anam for processing."""
+        """Send raw user audio samples to Anam for processing.
+
+        This method accepts 16-bit PCM samples and adds them to the audio buffer for transmission via WebRTC.
+        The audio track is created lazily when first audio arrives.
+        Audio is only added to the buffer after the connection is established, to avoid accumulating stale audio.
+
+        Args:
+            audio_bytes: Raw audio data (16-bit PCM).
+            sample_rate: Sample rate of the input audio (Hz).
+            num_channels: Number of channels in the input audio (1=mono, 2=stereo).
+
+        Raises:
+            RuntimeError: If peer connection is not initialized.
+        """
         if not self._peer_connection:
             raise RuntimeError("Peer connection not initialized. Call connect() first.")
         if num_channels != 1 and num_channels != 2:
