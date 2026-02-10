@@ -246,6 +246,7 @@ class AnamClient:
             on_message=self._handle_data_message,
             on_connection_established=self._handle_connection_established,
             on_connection_closed=self._handle_connection_closed,
+            on_session_ready=self._handle_session_ready,
             custom_ice_servers=self._options.ice_servers,
         )
 
@@ -341,6 +342,10 @@ class AnamClient:
         """Handle connection established."""
         logger.info("Connection established")
         await self._emit(AnamEvent.CONNECTION_ESTABLISHED)
+
+    async def _handle_session_ready(self) -> None:
+        """Handle session ready (signalling: ready to receive TTS)."""
+        await self._emit(AnamEvent.SESSION_READY)
 
     async def _handle_connection_closed(self, code: str, reason: str | None) -> None:
         """Handle connection closed."""
