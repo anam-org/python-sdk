@@ -679,20 +679,7 @@ class StreamingClient:
         sample_rate: int,
         num_channels: int,
     ) -> None:
-        """Send raw user audio samples to Anam for processing.
-
-        This method accepts 16-bit PCM samples and adds them to the audio buffer for transmission via WebRTC.
-        The audio track is created lazily when first audio arrives.
-        Audio is only added to the buffer after the connection is established, to avoid accumulating stale audio.
-
-        Args:
-            audio_bytes: Raw audio data (16-bit PCM).
-            sample_rate: Sample rate of the input audio (Hz).
-            num_channels: Number of channels in the input audio (1=mono, 2=stereo).
-
-        Raises:
-            RuntimeError: If peer connection is not initialized.
-        """
+        """Send raw user audio samples to Anam for processing."""
         if not self._peer_connection:
             raise RuntimeError("Peer connection not initialized. Call connect() first.")
         if num_channels != 1 and num_channels != 2:
