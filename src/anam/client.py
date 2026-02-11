@@ -544,7 +544,7 @@ class Session:
         """Stream text directly to TTS via WebSocket signalling.
 
         Sends text directly to TTS, bypassing the LLM.
-        Ideal for streaming scenarios with continous text.
+        Ideal for streaming scenarios with continuous text.
         Lower latency than talk().
 
         Args:
