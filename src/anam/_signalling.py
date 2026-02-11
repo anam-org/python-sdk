@@ -106,7 +106,7 @@ class SignallingClient:
         """
         logger.debug("Connecting to signalling server: %s", self._ws_url)
         try:
-            self._ws = await websockets.asyncio.client.connect(self._ws_url)
+            self._ws = await websockets.asyncio.client.connect(self._ws_url, close_timeout=2.0)
             self._connection_attempts = 0
             logger.info("WebSocket connection established")
 

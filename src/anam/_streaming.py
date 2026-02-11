@@ -22,7 +22,7 @@ from av.video.frame import VideoFrame
 from ._agent_audio_input_stream import AgentAudioInputStream
 from ._signalling import SignalAction, SignallingClient
 from ._user_audio_input_track import UserAudioInputTrack
-from .types import AgentAudioInputConfig, SessionInfo
+from .types import AgentAudioInputConfig, ConnectionClosedCode, SessionInfo
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ class StreamingClient:
         self._agent_audio_input_stream: AgentAudioInputStream | None = None
         self._user_audio_input_track: UserAudioInputTrack | None = None
         self._audio_transceiver = None  # Store transceiver for lazy track creation
+        self._closing = False
 
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
@@ -136,7 +137,7 @@ class StreamingClient:
             reason = payload if isinstance(payload, str) else "Session ended by server"
             logger.info("Session ended by server: %s", reason)
             if self._on_connection_closed:
-                await self._on_connection_closed("server_closed", reason)
+                await self._on_connection_closed(ConnectionClosedCode.SERVER_CLOSED.value, reason)
             await self.close()
 
         elif action_type == SignalAction.WARNING.value:
@@ -282,7 +283,7 @@ class StreamingClient:
             if not self._peer_connection:
                 return
             state = self._peer_connection.iceConnectionState
-            logger.info("ICE connection state: %s", state)
+            logger.debug("ICE connection state: %s", state)
             if state in ("connected", "completed"):
                 if not self._is_connected:
                     self._is_connected = True
@@ -296,9 +297,6 @@ class StreamingClient:
                 )
                 if hasattr(self, "_connection_ready"):
                     self._connection_ready.set()
-            elif state == "closed":
-                if self._on_connection_closed:
-                    asyncio.create_task(self._on_connection_closed("connection_closed", None))
 
         @self._peer_connection.on("connectionstatechange")
         def on_connection_state_change() -> None:
@@ -306,6 +304,12 @@ class StreamingClient:
                 return
             state = self._peer_connection.connectionState
             logger.debug("Connection state: %s", state)
+            if state == "closed":
+                # Only emit CONNECTION_CLOSED when the connection was lost (e.g. network)
+                if not self._closing and self._on_connection_closed:
+                    asyncio.create_task(
+                        self._on_connection_closed(ConnectionClosedCode.WEBRTC_FAILURE.value, None)
+                    )
 
         @self._peer_connection.on("track")
         def on_track(track: MediaStreamTrack) -> None:
@@ -348,12 +352,12 @@ class StreamingClient:
 
         @self._data_channel.on("open")
         def on_open() -> None:
-            logger.info("Data channel opened")
+            logger.debug("Data channel opened")
             self._data_channel_open = True
 
         @self._data_channel.on("close")
         def on_close() -> None:
-            logger.info("Data channel closed")
+            logger.debug("Data channel closed")
             self._data_channel_open = False
 
         @self._data_channel.on("message")
@@ -629,6 +633,9 @@ class StreamingClient:
 
     async def close(self) -> None:
         """Close the streaming connection and clean up resources."""
+        if self._closing:
+            return
+        self._closing = True
         logger.debug("Closing streaming client")
 
         # Close signalling
@@ -660,8 +667,9 @@ class StreamingClient:
             finally:
                 self._peer_connection = None
 
+        self._closing = False
         self._is_connected = False
-        logger.info("Streaming client closed")
+        logger.debug("Streaming client closed")
 
     def send_user_audio(
         self,

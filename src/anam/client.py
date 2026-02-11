@@ -18,6 +18,7 @@ from .types import (
     AgentAudioInputConfig,
     AnamEvent,
     ClientOptions,
+    ConnectionClosedCode,
     Message,
     MessageRole,
     MessageStreamEvent,
@@ -224,7 +225,7 @@ class AnamClient:
             You must call session.close() when done.
             Prefer using `async with client.connect()` instead.
         """
-        if self._is_streaming:
+        if self.is_streaming:
             raise SessionError("Already connected. Call close() first.")
 
         logger.info("Connecting to Anam...")
@@ -343,7 +344,7 @@ class AnamClient:
 
     async def _handle_connection_closed(self, code: str, reason: str | None) -> None:
         """Handle connection closed."""
-        logger.info("Connection closed: %s %s", code, reason)
+        logger.debug("Connection closed")
         self._is_streaming = False
         await self._emit(AnamEvent.CONNECTION_CLOSED, code, reason)
 
@@ -367,13 +368,14 @@ class AnamClient:
 
     async def close(self) -> None:
         """Close the connection and clean up resources."""
-        if self._streaming_client:
+        if self._streaming_client and self.is_streaming:
+            self._is_streaming = False
+            await self._handle_connection_closed(ConnectionClosedCode.NORMAL.value, None)
             await self._streaming_client.close()
             self._streaming_client = None
-
-        self._session_info = None
-        self._is_streaming = False
-        logger.info("Client closed")
+            self._session_info = None
+            self._message_history.clear()
+            logger.info("Client closed")
 
     @property
     def is_streaming(self) -> bool:
@@ -677,9 +679,9 @@ class Session:
 
     async def close(self) -> None:
         """Close the session."""
-        await self._client.close()
         self._closed = True
         self._close_event.set()
+        await self._client.close()
 
     @property
     def is_active(self) -> bool:
