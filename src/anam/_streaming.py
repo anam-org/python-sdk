@@ -41,6 +41,7 @@ class StreamingClient:
         on_message: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         on_connection_established: Callable[[], Awaitable[None]] | None = None,
         on_connection_closed: Callable[[str, str | None], Awaitable[None]] | None = None,
+        on_session_ready: Callable[[], Awaitable[None]] | None = None,
         custom_ice_servers: list[dict[str, Any]] | None = None,
     ):
         """Initialize the streaming client.
@@ -50,6 +51,7 @@ class StreamingClient:
             on_message: Callback for data channel messages.
             on_connection_established: Callback when connected.
             on_connection_closed: Callback when disconnected.
+            on_session_ready: Callback when sessionready signal is received (ready to receive TTS).
             custom_ice_servers: Custom ICE servers (optional).
         """
         self._session_info = session_info
@@ -59,6 +61,7 @@ class StreamingClient:
         self._on_message = on_message
         self._on_connection_established = on_connection_established
         self._on_connection_closed = on_connection_closed
+        self._on_session_ready = on_session_ready
 
         # Configuration
         self._ice_servers = custom_ice_servers or session_info.ice_servers
@@ -145,6 +148,8 @@ class StreamingClient:
 
         elif action_type == SignalAction.SESSION_READY.value:
             logger.info("Session ready")
+            if self._on_session_ready:
+                await self._on_session_ready()
 
         elif action_type == SignalAction.TALK_STREAM_INTERRUPTED.value:
             correlation_id = payload.get("correlationId") if isinstance(payload, dict) else None
