@@ -17,8 +17,8 @@ Usage:
     export ANAM_API_KEY="your-api-key"
     export ANAM_AVATAR_ID="your-avatar-id"
     export ANAM_VOICE_ID="your-voice-id"
-    export ANAM_AVATAR_MODEL="model-name"     # optional, e.g. "cara-3"
-    export ANAM_LLM_ID="your-llm-id"     # optional, uses default Anam LLM
+    export ANAM_LLM_ID="your-llm-id"
+    export ANAM_AVATAR_MODEL="model-name"     # optional, e.g. "cara-3"    
     uv run --extra display python examples/persona_interactive_video.py
 """
 
@@ -296,7 +296,7 @@ def main() -> None:
     # Persona types:
     #   - Ephemeral (avatar_id + voice_id + ...): full control over components at startup.
     #   - Pre-defined (persona_id only): uses a persona from Lab; other params ignored except enable_audio_passthrough.
-    #     Simpler for demos; limited for production (source control, adaptivity). 
+    #     Simpler for demos; limited for production (source control, adaptivity).
     #
     # Component IDs:
     #   - avatar_id: the "face" (https://lab.anam.ai/avatars). Do not use persona_id as avatar_id.
