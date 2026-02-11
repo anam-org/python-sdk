@@ -1,9 +1,11 @@
 """Interactive video session example with CLI controls.
 
 This example shows how use Anam as an avatar provider where
-the avatar is rendered based on input TTS audio. The video
-and audio output are kept in sync. Video is displayed in
+the orchetration is bypassed and the avatar is rendered based on input TTS audio. 
+The videoand audio output are kept in sync. Video is displayed in
 a window using OpenCV, while audio is played through sounddevice.
+
+Interrupts can be used to stop the ongoing avatar animation and TTS audio.
 
 Requirements:
     uv sync --extra display
@@ -188,19 +190,15 @@ def main() -> None:
     if not api_key or not avatar_id:
         raise ValueError("Set ANAM_API_KEY and ANAM_AVATAR_ID environment variables")
 
-    # Create persona config
-    persona_config = PersonaConfig(
-        avatar_id=avatar_id,
-        enable_audio_passthrough=True,
-    )
-
-    # Create client
+    # Create client with audio passthrough enabled. This bypasses Anam's orchestration layer:
+    # TTS audio is sent directly to the avatar and is not added to context or message history.
+    # Warning: Do not use persona_id as this will enable the pre-defined LLM and intefere with your application.
     client = AnamClient(
         api_key=api_key,
-        persona_config=persona_config,
+        persona_id=avatar_id,
+        enable_audio_passthrough=True,
         options=ClientOptions(api_base_url=api_base_url),
     )
-
     # Create display and audio player
     display = VideoDisplay()
     audio_player = AudioPlayer()

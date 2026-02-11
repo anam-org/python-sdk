@@ -467,7 +467,8 @@ class Session:
         """Make the avatar speak the given text directly.
 
         This sends text directly to TTS, bypassing the LLM.
-        The avatar will speak exactly what you provide.
+        Unsuitable for streaming text. 
+        Simpler, but higher latency than send_talk_stream().
 
         Args:
             content: The text for the avatar to speak.
@@ -542,8 +543,9 @@ class Session:
     ) -> None:
         """Stream text directly to TTS via WebSocket signalling.
 
-        This sends text directly to TTS for streaming scenarios,
-        bypassing the LLM. For simple talk commands, use talk() instead.
+        Sends text directly to TTS, bypassing the LLM.
+        Ideal for streaming scenarios whith continous text.
+        Lower latency than talk().
 
         Args:
             content: The text for the avatar to speak.

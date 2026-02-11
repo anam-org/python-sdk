@@ -4,9 +4,10 @@ This example shows how to display the avatar video stream
 in a window using OpenCV while providing CLI controls for
 interactive session management, where talk commands will be
 spoken directly by the avatar, while text messages mimic
-the transcibed audio and wav files can be sent as TTS audio.
+the transcibed audio.
 
-The persona config has enable_audio_passthrough=True for the TTS audio.
+The persona config creates and ephemeral persona with enable_audio_passthrough=False to disable TTS ingest.
+The avatar will respond directly to text messages and talk commands will be spoken verbatim.
 
 Requirements:
     uv sync --extra display
@@ -14,7 +15,10 @@ Requirements:
 
 Usage:
     export ANAM_API_KEY="your-api-key"
-    export ANAM_PERSONA_ID="your-persona-id"
+    export ANAM_AVATAR_ID="your-avatar-id"
+    export ANAM_VOICE_ID="your-voice-id"
+    export ANAM_AVATAR_MODEL="model-name"     # optional, e.g. "cara-3"
+    export ANAM_LLM_ID="your-llm-id"     # optional, uses default Anam LLM
     uv run --extra display python examples/persona_interactive_video.py
 """
 
@@ -27,14 +31,24 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from anam import AnamClient, AnamEvent, ClientOptions
-from anam.types import AgentAudioInputConfig, MessageRole, PersonaConfig
+from anam.types import MessageRole, PersonaConfig
 
 # Add parent directory to path to allow importing from examples
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from examples.utils import AudioPlayer, VideoDisplay, async_input, send_audio_file_chunked
+from examples.utils import AudioPlayer, VideoDisplay, async_input
 
 # Load environment variables
 _ = load_dotenv()
+
+REQUIRED_ENV_VARS = [
+    "ANAM_API_KEY",
+    "ANAM_AVATAR_ID",
+    "ANAM_LLM_ID",
+    "ANAM_VOICE_ID",
+]
+missing = [v for v in REQUIRED_ENV_VARS if not os.getenv(v)]
+if missing:
+    raise EnvironmentError(f"Missing required environment variables: {', '.join(missing)}")
 
 # Configure logging - reduced verbosity
 logging.basicConfig(
@@ -63,10 +77,9 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
     print("Interactive Session Started!")
     print("=" * 60)
     print("Available commands:")
-    print("  f [filename] - Send audio file (defaults to input.wav)")
     print("  m <message>  - Send text message (user input for the conversation.)")
-    print("  t <text>     - Send talk command (bypasses LLM and sends text to TTS) usingREST API)")
-    print("  ts <text>    - Send talk stream (bypasses LLM and sends text to TTS) using WebSocket)")
+    print("  t <text>     - Send talk command (bypasses LLM and sends text to TTS) using REST API)")
+    print("  ts <text>    - Send talk stream (bypasses LLM and sends text to TTS) using WebSocket (lower latency)")
     print("  i            - Interrupt current audio")
     print("  c            - Toggle live captions. Default: disabled")
     print("  h            - Toggle conversation history at session end. Default: disabled.")
@@ -94,19 +107,6 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                 show_captions = not show_captions
                 print(f"Captions {'enabled' if show_captions else 'disabled'}")
 
-            elif command == "f":
-                # Default to input.wav if no filename provided
-                wav_file = parts[1] if len(parts) > 1 else "input.wav"
-                wav_path = Path(wav_file)
-                if wav_path.exists():
-                    print(f"Sending audio from {wav_file}...")
-                    agent = session.create_agent_audio_input_stream(
-                        AgentAudioInputConfig(encoding="pcm_s16le", sample_rate=24000, channels=1)
-                    )
-                    await send_audio_file_chunked(agent, wav_path)
-                else:
-                    print(f"❌ File not found: {wav_file}")
-
             elif command == "h":
                 print_conversation_history = not print_conversation_history
                 print(
@@ -126,9 +126,9 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                     print(f"❌ Error sending message: {e}")
 
             elif command == "t" or command == "ts":
-                # Get the rest of the input as the message text
+                # Get the rest of the input as the talk (stream) command
                 if len(parts) < 2:
-                    print("❌ Please provide talk command. Usage: t <text to be spoken>")
+                    print("❌ Please provide talk (stream) command. Usage: t|ts <text to be spoken>")
                     continue
                 message_text = " ".join(parts[1:])
                 try:
@@ -141,9 +141,9 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                             end_of_speech=True,
                             correlation_id=None,
                         )
-                    print(f"✅ Sent talk command: {message_text}")
+                    print(f"✅ Sent talk (stream) command: {message_text}")
                 except Exception as e:
-                    print(f"❌ Error sending talk command: {e}")
+                    print(f"❌ Error sending talk (stream) command: {e}")
 
             elif command == "i":
                 try:
@@ -278,18 +278,54 @@ def main() -> None:
     """Main entry point."""
     # Get configuration from environment variables (loaded from .env file)
     api_key = os.environ.get("ANAM_API_KEY", "").strip().strip('"')
-    persona_id = os.environ.get("ANAM_PERSONA_ID", "").strip().strip('"')
+    avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
+    voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
+    avatar_model = os.environ.get("ANAM_AVATAR_MODEL")
+    llm_id = os.environ.get("ANAM_LLM_ID","").strip().strip('"')
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
-    if not api_key or not persona_id:
-        raise ValueError("Set ANAM_API_KEY and ANAM_PERSONA_ID environment variables")
+    if not api_key or not avatar_id or not voice_id:
+        # These are required for an ephemeral persona configuration.
+        raise ValueError("Set ANAM_API_KEY, ANAM_AVATAR_ID, ANAM_LLM_ID and ANAM_VOICE_ID environment variables")
 
-    # Create persona config
+    system_prompt = "You are a helpful and creative assistant. Respond in a conversational tone with short sentences and do not use special characters or emojis. Start you first message with 'Hello developer, Welcome to Anam. What can I help you with today?'"
+
+    # Ephemeral persona configuration (using Anam's orchestration: STT, LLM, TTS).
+    # Configure components at https://lab.anam.ai (avatars, voices, LLMs).
+    #
+    # Persona types:
+    #   - Ephemeral (avatar_id + voice_id + ...): full control over components at startup.
+    #   - Pre-defined (persona_id only): uses a persona from Lab; other params ignored except enable_audio_passthrough.
+    #     Simpler for demos; limited for production (source control, adaptivity). 
+    #
+    # Component IDs:
+    #   - avatar_id: the "face" (https://lab.anam.ai/avatars). Do not use persona_id as avatar_id.
+    #   - voice_id: voice for TTS (https://lab.anam.ai/voices).
+    #   - llm_id: LLM for reasoning (https://lab.anam.ai/llms).
+    #   - avatar_model: video frame model (e.g. "cara-3").
+    #   - system_prompt: primes the LLM. See https://docs.anam.ai/concepts/prompting-guide
+    #
+    # enable_audio_passthrough:
+    #   - False (default): Anam renders TTS; bot audio is added to context and message history.
+    #   - True: TTS audio is passed through directly; not added to context/history.
+    #   Typically leave False when using Anam's orchestration.
+    #
+    # LLM options:
+    #   - Default LLMs: Anam-provided models when you do not run your own.
+    #   - Custom LLMs: Anam connects to your LLM server-to-server. Add LLM and test connection at https://lab.anam.ai/llms.
+    #   - CUSTOMER_CLIENT_V1: your LLM is not directly connected. Use MESSAGE_STREAM_EVENT_RECEIVED
+    #     to forward messages and send responses via talk stream (or enable_audio_passthrough=True for TTS).
+    #     Higher latency; not recommended for production.
+
     persona_config = PersonaConfig(
-        persona_id=persona_id,
-        enable_audio_passthrough=True,
+        avatar_id=avatar_id,
+        voice_id=voice_id,
+        llm_id=llm_id,
+        avatar_model=avatar_model,
+        system_prompt=system_prompt,
+        enable_audio_passthrough=False,
     )
-
+    print(f"Using personaConfig: {persona_config}")
     # Create client
     client = AnamClient(
         api_key=api_key,
