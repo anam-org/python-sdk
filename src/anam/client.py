@@ -344,7 +344,7 @@ class AnamClient:
         await self._emit(AnamEvent.CONNECTION_ESTABLISHED)
 
     async def _handle_session_ready(self) -> None:
-        """Handle session ready (signalling: ready to receive TTS)."""
+        """Handle session ready (signalling: ready to receive user audio or TTS)."""
         await self._emit(AnamEvent.SESSION_READY)
 
     async def _handle_connection_closed(self, code: str, reason: str | None) -> None:
