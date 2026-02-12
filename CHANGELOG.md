@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.2.0 (2026-02-12)
+
+### Chores
+
+- **deps**: Bump cryptography from 46.0.3 to 46.0.5
+  ([`9bc6ba8`](https://github.com/anam-org/python-sdk/commit/9bc6ba878ad5c7e773b0f24d716f14f66268add6))
+
+
 ## v0.2.0-alpha.2 (2026-02-10)
 
 ### Bug Fixes
