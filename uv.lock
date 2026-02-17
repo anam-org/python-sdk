@@ -188,7 +188,7 @@ wheels = [
 
 [[package]]
 name = "anam"
-version = "0.2.0a2"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
