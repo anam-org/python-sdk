@@ -18,7 +18,7 @@ Usage:
     export ANAM_AVATAR_ID="your-avatar-id"
     export ANAM_VOICE_ID="your-voice-id"
     export ANAM_LLM_ID="your-llm-id"
-    export ANAM_AVATAR_MODEL="model-name"     # optional, e.g. "cara-3"    
+    export ANAM_AVATAR_MODEL="model-name"     # optional, e.g. "cara-3"
     uv run --extra display python examples/persona_interactive_video.py
 """
 
@@ -79,7 +79,9 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
     print("Available commands:")
     print("  m <message>  - Send text message (user input for the conversation.)")
     print("  t <text>     - Send talk command (bypasses LLM and sends text to TTS) using REST API)")
-    print("  ts <text>    - Send talk stream (bypasses LLM and sends text to TTS) using WebSocket (lower latency)")
+    print(
+        "  ts <text>    - Send talk stream (bypasses LLM and sends text to TTS) using WebSocket (lower latency)"
+    )
     print("  i            - Interrupt current audio")
     print("  c            - Toggle live captions. Default: disabled")
     print("  h            - Toggle conversation history at session end. Default: disabled.")
@@ -128,7 +130,9 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
             elif command == "t" or command == "ts":
                 # Get the rest of the input as the talk (stream) command
                 if len(parts) < 2:
-                    print("❌ Please provide talk (stream) command. Usage: t|ts <text to be spoken>")
+                    print(
+                        "❌ Please provide talk (stream) command. Usage: t|ts <text to be spoken>"
+                    )
                     continue
                 message_text = " ".join(parts[1:])
                 try:
@@ -281,12 +285,14 @@ def main() -> None:
     avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
     voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
     avatar_model = os.environ.get("ANAM_AVATAR_MODEL")
-    llm_id = os.environ.get("ANAM_LLM_ID","").strip().strip('"')
+    llm_id = os.environ.get("ANAM_LLM_ID", "").strip().strip('"')
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
     if not api_key or not avatar_id or not voice_id:
         # These are required for an ephemeral persona configuration.
-        raise ValueError("Set ANAM_API_KEY, ANAM_AVATAR_ID, ANAM_LLM_ID and ANAM_VOICE_ID environment variables")
+        raise ValueError(
+            "Set ANAM_API_KEY, ANAM_AVATAR_ID, ANAM_LLM_ID and ANAM_VOICE_ID environment variables"
+        )
 
     system_prompt = "You are a helpful and creative assistant. Respond in a conversational tone with short sentences and do not use special characters or emojis. Start you first message with 'Hello developer, Welcome to Anam. What can I help you with today?'"
 
