@@ -24,6 +24,7 @@ from .types import (
     MessageStreamEvent,
     PersonaConfig,
     SessionInfo,
+    SessionOptions,
 )
 
 logger = logging.getLogger(__name__)
@@ -215,15 +216,17 @@ class AnamClient:
         """
         return _SessionContextManager(self)
 
-    async def connect_async(self) -> "Session":
+    async def connect_async(self, session_options: SessionOptions = SessionOptions()) -> "Session":
         """Connect to Anam and start streaming (without context manager).
+
+        Args:
+            session_options: Session options (default: SessionOptions(enable_session_replay=True)).
 
         Returns:
             A Session object for interacting with the avatar.
 
         Note:
             You must call session.close() when done.
-            Prefer using `async with client.connect()` instead.
         """
         if self.is_streaming:
             raise SessionError("Already connected. Call close() first.")
@@ -238,6 +241,7 @@ class AnamClient:
 
         self._session_info = await self._api_client.start_session(
             persona_config=self._persona_config,
+            session_options=session_options,
         )
 
         # Create streaming client with callbacks

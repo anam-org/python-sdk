@@ -7,7 +7,7 @@ import aiohttp
 
 from ._version import __version__
 from .errors import AnamError, AuthenticationError, ErrorCode, SessionError
-from .types import ClientOptions, PersonaConfig, SessionInfo
+from .types import ClientOptions, PersonaConfig, SessionInfo, SessionOptions
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +39,12 @@ class CoreApiClient:
         """Get the full API URL."""
         return f"{self._base_url}/{self._api_version}"
 
-    async def get_session_token(self, persona_config: PersonaConfig) -> str:
+    async def get_session_token(self, persona_config: PersonaConfig, session_options: SessionOptions) -> str:
         """Get a session token using the API key.
 
         Args:
             persona_config: The persona configuration to use.
-
+            session_options: Session options (optional).
         Returns:
             The session token string.
 
@@ -62,6 +62,7 @@ class CoreApiClient:
         body = {
             "clientLabel": client_label,
             "personaConfig": persona_config.to_dict(),
+            "sessionOptions": session_options.to_dict(),
         }
 
         logger.debug("Requesting session token from %s", url)
@@ -98,7 +99,7 @@ class CoreApiClient:
     async def start_session(
         self,
         persona_config: PersonaConfig,
-        session_options: dict[str, Any] | None = None,
+        session_options: SessionOptions,
     ) -> SessionInfo:
         """Start a new streaming session.
 
@@ -114,7 +115,7 @@ class CoreApiClient:
         """
         # Get session token if we don't have one
         if not self._session_token:
-            await self.get_session_token(persona_config)
+            await self.get_session_token(persona_config, session_options)
 
         url = f"{self._api_url}/engine/session"
         headers = {
@@ -122,11 +123,8 @@ class CoreApiClient:
             "Authorization": f"Bearer {self._session_token}",
         }
         body: dict[str, Any] = {
-            "personaConfig": persona_config.to_dict(),
             "clientMetadata": CLIENT_METADATA,
         }
-        if session_options:
-            body["sessionOptions"] = session_options
 
         logger.debug("Starting session at %s", url)
 
