@@ -62,6 +62,8 @@ from .types import (
     MessageRole,
     MessageStreamEvent,
     PersonaConfig,
+    SessionOptions,
+    SessionReplayOptions,
 )
 
 __all__ = [
@@ -79,6 +81,8 @@ __all__ = [
     "MessageRole",
     "MessageStreamEvent",
     "PersonaConfig",
+    "SessionOptions",
+    "SessionReplayOptions",
     "VideoFrame",
     # Errors
     "AnamError",

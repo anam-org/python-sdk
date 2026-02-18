@@ -102,6 +102,41 @@ class PersonaConfig:
 
 
 @dataclass
+class SessionReplayOptions:
+    """Session replay options. Maps to anam-lab sessionReplay schema.
+
+    Args:
+        enable_session_replay: If True (default), session is recorded. Set False to disable.
+    """
+
+    enable_session_replay: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"enableSessionReplay": self.enable_session_replay}
+
+
+@dataclass
+class SessionOptions:
+    """Configuration for an Anam session.
+
+    Args:
+        enable_session_replay: If True (default), session is recorded. Set False to disable.
+    """
+
+    enable_session_replay: bool = True
+
+    def __post_init__(self) -> None:
+        self._session_replay = SessionReplayOptions(
+            enable_session_replay=self.enable_session_replay
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        result["sessionReplay"] = self._session_replay.to_dict()
+        return result
+
+
+@dataclass
 class ClientOptions:
     """Optional configuration for AnamClient.
 
