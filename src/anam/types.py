@@ -100,6 +100,7 @@ class PersonaConfig:
             result["enableAudioPassthrough"] = self.enable_audio_passthrough
         return result
 
+
 @dataclass
 class SessionReplayOptions:
     """Session replay options. Maps to anam-lab sessionReplay schema.
@@ -133,6 +134,7 @@ class SessionOptions:
         result: dict[str, Any] = {}
         result["sessionReplay"] = self._session_replay.to_dict()
         return result
+
 
 @dataclass
 class ClientOptions:

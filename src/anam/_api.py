@@ -39,7 +39,9 @@ class CoreApiClient:
         """Get the full API URL."""
         return f"{self._base_url}/{self._api_version}"
 
-    async def get_session_token(self, persona_config: PersonaConfig, session_options: SessionOptions) -> str:
+    async def get_session_token(
+        self, persona_config: PersonaConfig, session_options: SessionOptions
+    ) -> str:
         """Get a session token using the API key.
 
         Args:
