@@ -288,7 +288,7 @@ def main() -> None:
     llm_id = os.environ.get("ANAM_LLM_ID", "").strip().strip('"')
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
-    if not api_key or not avatar_id or not voice_id:
+    if not api_key or not avatar_id or not llm_id or not voice_id:
         # These are required for an ephemeral persona configuration.
         raise ValueError(
             "Set ANAM_API_KEY, ANAM_AVATAR_ID, ANAM_LLM_ID and ANAM_VOICE_ID environment variables"
