@@ -85,6 +85,9 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                         AgentAudioInputConfig(encoding="pcm_s16le", sample_rate=24000, channels=1)
                     )
                     await send_audio_file_chunked(agent, wav_path)
+                    # When TTS audio is finished, signal end of sequence to the backend
+                    # to let the avatar go back to listening mode
+                    await agent.end_sequence()
                 else:
                     print(f"❌ File not found: {wav_file}")
 

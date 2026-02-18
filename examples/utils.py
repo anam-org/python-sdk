@@ -117,7 +117,6 @@ async def send_audio_file_chunked(
             # Small delay between chunks
             await asyncio.sleep(0.01)
 
-        await agent.end_sequence()
         print(f"✅ Sent {chunk_count} audio chunks from {wav_file_path.name}")
 
 
