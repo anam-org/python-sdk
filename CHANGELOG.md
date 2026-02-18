@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.3.0-alpha.1 (2026-02-18)
+
+### Features
+
+- Support session options
+  ([`530ca09`](https://github.com/anam-org/python-sdk/commit/530ca09b3c8004fa1135eee08e1efd87ed9ed6ba))
+
+
 ## v0.2.0 (2026-02-12)
 
 ### Chores
