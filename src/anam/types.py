@@ -233,10 +233,18 @@ class AgentAudioInputPayload:
 
 def _reorder_ice_server_urls(ice_servers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Reorder URLs to prioritize TURNS (TURN over TLS) as aiortc only uses the first TURN URI."""
+
     def _turns_first(u):
         return (0 if str(u).lower().startswith("turns:") else 1, u)
+
     return [
-        {**s, "urls": sorted([s["urls"]] if isinstance(s.get("urls"), str) else s.get("urls", []), key=_turns_first)}
+        {
+            **s,
+            "urls": sorted(
+                [s["urls"]] if isinstance(s.get("urls"), str) else s.get("urls", []),
+                key=_turns_first,
+            ),
+        }
         for s in ice_servers
     ]
 
