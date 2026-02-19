@@ -235,7 +235,7 @@ def _reorder_ice_server_urls(ice_servers: list[dict[str, Any]]) -> list[dict[str
     """Reorder URLs to prioritize TURNS (TURN over TLS) as aiortc only uses the first TURN URI."""
 
     def _turns_first(u):
-        return (0 if str(u).lower().startswith("turns:") else 1, u)
+        return 0 if str(u).lower().startswith("turns:") else 1
 
     return [
         {
