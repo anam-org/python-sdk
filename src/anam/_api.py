@@ -59,7 +59,6 @@ class CoreApiClient:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self._api_key}",
         }
-
         # Use custom client_label if provided, otherwise default to 'python-sdk'
         client_label = self._options.client_label or "python-sdk"
         body = {
