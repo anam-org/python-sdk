@@ -275,5 +275,5 @@ class SessionInfo:
             signalling_endpoint=data["signallingEndpoint"],
             heartbeat_interval_seconds=client_config.get("heartbeatIntervalSeconds", 5),
             max_reconnection_attempts=client_config.get("maxWsReconnectionAttempts", 5),
-            ice_servers=_reorder_ice_server_urls(client_config.get("iceServers", [])),
+            ice_servers=_reorder_ice_server_urls(client_config.get("iceServers") or []),
         )
