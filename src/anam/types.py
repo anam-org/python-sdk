@@ -231,6 +231,16 @@ class AgentAudioInputPayload:
     sequence_number: int
 
 
+def _reorder_ice_server_urls(ice_servers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reorder URLs to prioritize TURNS (TURN over TLS) as aiortc only uses the first TURN URI."""
+    def _turns_first(u):
+        return (0 if str(u).lower().startswith("turns:") else 1, u)
+    return [
+        {**s, "urls": sorted([s["urls"]] if isinstance(s.get("urls"), str) else s.get("urls", []), key=_turns_first)}
+        for s in ice_servers
+    ]
+
+
 @dataclass
 class SessionInfo:
     """Information about an active streaming session.
@@ -257,5 +267,5 @@ class SessionInfo:
             signalling_endpoint=data["signallingEndpoint"],
             heartbeat_interval_seconds=client_config.get("heartbeatIntervalSeconds", 5),
             max_reconnection_attempts=client_config.get("maxWsReconnectionAttempts", 5),
-            ice_servers=client_config.get("iceServers", []),
+            ice_servers=_reorder_ice_server_urls(client_config.get("iceServers", [])),
         )
