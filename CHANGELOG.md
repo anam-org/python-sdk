@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.4.0-alpha.1 (2026-02-26)
+
+### Features
+
+- Add TalkMessageStream support
+  ([`b93623a`](https://github.com/anam-org/python-sdk/commit/b93623aff48d15bcb3dea71c4c36813e5b0c8aa3))
+
+
 ## v0.3.0 (2026-02-18)
 
 
