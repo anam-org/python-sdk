@@ -42,6 +42,7 @@ class StreamingClient:
         on_connection_established: Callable[[], Awaitable[None]] | None = None,
         on_connection_closed: Callable[[str, str | None], Awaitable[None]] | None = None,
         on_session_ready: Callable[[], Awaitable[None]] | None = None,
+        on_talk_stream_interrupted: Callable[[str], Awaitable[None]] | None = None,
         custom_ice_servers: list[dict[str, Any]] | None = None,
     ):
         """Initialize the streaming client.
@@ -52,6 +53,7 @@ class StreamingClient:
             on_connection_established: Callback when connected.
             on_connection_closed: Callback when disconnected.
             on_session_ready: Callback when sessionready signal is received (ready to receive TTS).
+            on_talk_stream_interrupted: Callback(correlation_id) when talk stream is interrupted.
             custom_ice_servers: Custom ICE servers (optional).
         """
         self._session_info = session_info
@@ -62,6 +64,7 @@ class StreamingClient:
         self._on_connection_established = on_connection_established
         self._on_connection_closed = on_connection_closed
         self._on_session_ready = on_session_ready
+        self._on_talk_stream_interrupted = on_talk_stream_interrupted
 
         # Configuration
         self._ice_servers = custom_ice_servers or session_info.ice_servers
@@ -154,6 +157,8 @@ class StreamingClient:
         elif action_type == SignalAction.TALK_STREAM_INTERRUPTED.value:
             correlation_id = payload.get("correlationId") if isinstance(payload, dict) else None
             logger.debug("Talk stream interrupted: %s", correlation_id)
+            if self._on_talk_stream_interrupted and correlation_id:
+                await self._on_talk_stream_interrupted(correlation_id)
 
     async def _handle_answer(self, payload: dict[str, Any]) -> None:
         """Handle SDP answer from server."""
@@ -555,11 +560,11 @@ class StreamingClient:
         self.send_data_message(json.dumps(message))
 
     async def send_talk(self, content: str) -> None:
-        """Send text for the avatar to speak directly (bypasses LLM).
+        """Send a single text message directly to TTS via REST API.
 
-        This sends the talk command via REST API to the engine, which is the
-        correct method for simple talk commands. For streaming text, use the
-        signalling client's send_talk_stream_input method.
+        Convenience method for one-off messages. Sends text directly to TTS,
+        bypassing the LLM, but slightly higher latency than send_talk_stream().
+        For streaming multiple chunks, use create_talk_stream() to manage the stream.
 
         Args:
             content: The text for the avatar to speak.

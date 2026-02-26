@@ -333,9 +333,9 @@ class SignallingClient:
     async def send_talk_stream_input(
         self,
         content: str,
+        correlation_id: str,
         start_of_speech: bool = True,
         end_of_speech: bool = True,
-        correlation_id: str | None = None,
     ) -> None:
         """Send talk stream input to make the avatar speak text directly.
 
@@ -343,16 +343,11 @@ class SignallingClient:
 
         Args:
             content: The text for the avatar to speak.
+            correlation_id: ID to correlate this message with interruptions.
+                Callers should use TalkMessageStream which manages this.
             start_of_speech: Whether this is the start of a speech sequence.
             end_of_speech: Whether this is the end of a speech sequence.
-            correlation_id: Optional ID to correlate this message with interruptions.
         """
-        import uuid
-
-        # Generate correlation ID if not provided
-        if correlation_id is None:
-            correlation_id = str(uuid.uuid4())
-
         message = {
             "actionType": SignalAction.TALK_STREAM_INPUT.value,
             "sessionId": self._session_id,

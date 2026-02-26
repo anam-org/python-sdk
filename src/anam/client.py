@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable, TypeVar
 
@@ -13,6 +14,7 @@ from av.video.frame import VideoFrame
 from ._agent_audio_input_stream import AgentAudioInputStream
 from ._api import CoreApiClient
 from ._streaming import StreamingClient
+from ._talk_message_stream import TalkMessageStream
 from .errors import ConfigurationError, SessionError
 from .types import (
     AgentAudioInputConfig,
@@ -251,6 +253,7 @@ class AnamClient:
             on_connection_established=self._handle_connection_established,
             on_connection_closed=self._handle_connection_closed,
             on_session_ready=self._handle_session_ready,
+            on_talk_stream_interrupted=self._handle_talk_stream_interrupted,
             custom_ice_servers=self._options.ice_servers,
         )
 
@@ -350,6 +353,10 @@ class AnamClient:
     async def _handle_session_ready(self) -> None:
         """Handle session ready (signalling: ready to receive user audio or TTS)."""
         await self._emit(AnamEvent.SESSION_READY)
+
+    async def _handle_talk_stream_interrupted(self, correlation_id: str) -> None:
+        """Handle talk stream interrupted signal from server."""
+        await self._emit(AnamEvent.TALK_STREAM_INTERRUPTED, correlation_id)
 
     async def _handle_connection_closed(self, code: str, reason: str | None) -> None:
         """Handle connection closed."""
@@ -545,27 +552,28 @@ class Session:
 
         streaming.send_interrupt()
 
-    async def send_talk_stream(
-        self,
-        content: str,
-        start_of_speech: bool = True,
-        end_of_speech: bool = True,
-        correlation_id: str | None = None,
-    ) -> None:
-        """Stream text directly to TTS via WebSocket signalling.
+    def create_talk_stream(self, correlation_id: str | None = None) -> TalkMessageStream:
+        """Create a talk message stream for sending text chunks to TTS.
 
-        Sends text directly to TTS, bypassing the LLM.
-        Ideal for streaming scenarios with continuous text.
-        Lower latency than talk().
+        The stream manages correlation_id internally so you don't need to track
+        it across chunks. Use this for streaming LLM output. All chunks in the
+        same speech share one correlation_id for interruption handling.
 
         Args:
-            content: The text for the avatar to speak.
-            start_of_speech: Whether this is the start of a speech sequence.
-            end_of_speech: Whether this is the end of a speech sequence.
-            correlation_id: Optional ID to correlate with interruptions.
+            correlation_id: Optional ID. If not provided, a UUID is generated.
+
+        Returns:
+            TalkMessageStream with send() and end() methods.
 
         Raises:
             SessionError: If not connected.
+
+        Example:
+            ```python
+            stream = session.create_talk_stream()
+            for i, chunk in enumerate(llm_chunks):
+                await stream.send(chunk, end_of_speech=(i == len(llm_chunks) - 1))
+            ```
         """
         if not self._client._streaming_client:
             raise SessionError("Not connected")
@@ -574,13 +582,30 @@ class Session:
         if not signalling_client:
             raise SessionError("Signalling client not initialized")
 
-        # The send_talk_stream_input method will buffer the message if WebSocket isn't ready
-        await signalling_client.send_talk_stream_input(
-            content=content,
-            start_of_speech=start_of_speech,
-            end_of_speech=end_of_speech,
+        if correlation_id is None or correlation_id.strip() == "":
+            correlation_id = str(uuid.uuid4())
+
+        return TalkMessageStream(
             correlation_id=correlation_id,
+            signalling_client=signalling_client,
+            client=self._client,
         )
+
+    async def send_talk_stream(self, content: str) -> None:
+        """Send a single text message directly to TTS via WebSocket signalling.
+
+        Convenience method for one-off messages. Sends text directly to TTS,
+        bypassing the LLM. For streaming multiple chunks, use create_talk_stream()
+        instead to manage the stream.
+
+        Args:
+            content: The text for the avatar to speak.
+
+        Raises:
+            SessionError: If not connected.
+        """
+        stream = self.create_talk_stream()
+        await stream.send(content, end_of_speech=True)
 
     def create_agent_audio_input_stream(
         self, config: AgentAudioInputConfig
