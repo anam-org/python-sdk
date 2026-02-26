@@ -1,0 +1,154 @@
+"""Talk message stream for sending streaming text to TTS via WebSocket signalling."""
+
+import logging
+from enum import Enum
+from typing import TYPE_CHECKING
+
+from ._signalling import SignallingClient
+from .types import AnamEvent
+
+if TYPE_CHECKING:
+    from .client import AnamClient
+
+logger = logging.getLogger(__name__)
+
+
+class TalkMessageStreamState(str, Enum):
+    """State of a talk message stream."""
+
+    UNSTARTED = "unstarted"
+    STREAMING = "streaming"
+    INTERRUPTED = "interrupted"
+    ENDED = "ended"
+
+
+class TalkMessageStream:
+    """Stream for sending text chunks to TTS with a stable correlation ID.
+
+    Manages correlation_id internally so callers don't need to track it across
+    chunks. All chunks in the same speech sequence share the same correlation_id,
+    which is used for interruption correlation.
+
+    Example:
+        ```python
+        # Streaming multiple chunks
+        stream = session.create_talk_stream()
+        for i, chunk in enumerate(llm_chunks):
+            await stream.send(chunk, end_of_speech=(i == len(llm_chunks) - 1))
+
+        # Single message (or use session.send_talk_stream for convenience)
+        stream = session.create_talk_stream()
+        await stream.send("Hello!", end_of_speech=True)
+        ```
+    """
+
+    def __init__(
+        self,
+        correlation_id: str,
+        signalling_client: SignallingClient,
+        client: "AnamClient",
+    ):
+        """Initialize the talk message stream.
+
+        Args:
+            correlation_id: ID to correlate this stream with interruptions.
+            signalling_client: Signalling client for sending messages.
+            client: AnamClient for registering interrupt listener.
+        """
+        self._correlation_id = correlation_id
+        self._signalling_client = signalling_client
+        self._client = client
+        self._state = TalkMessageStreamState.UNSTARTED
+        self._interrupt_handler = self._on_talk_stream_interrupted
+        client.add_listener(AnamEvent.TALK_STREAM_INTERRUPTED, self._interrupt_handler)
+
+    def _on_talk_stream_interrupted(self, correlation_id: str) -> None:
+        """Handle TALK_STREAM_INTERRUPTED event if it matches this stream."""
+        if correlation_id == self._correlation_id:
+            self._state = TalkMessageStreamState.INTERRUPTED
+            self._deactivate()
+
+    @property
+    def correlation_id(self) -> str:
+        """The correlation ID for this stream (for interruption correlation)."""
+        return self._correlation_id
+
+    @property
+    def is_active(self) -> bool:
+        """Whether the stream can accept more data."""
+        return self._state in (
+            TalkMessageStreamState.UNSTARTED,
+            TalkMessageStreamState.STREAMING,
+        )
+
+    @property
+    def state(self) -> TalkMessageStreamState:
+        """Current state of the stream."""
+        return self._state
+
+    async def send(self, content: str, end_of_speech: bool = False) -> None:
+        """Send a text chunk to TTS.
+
+        Args:
+            content: The text chunk to speak.
+            end_of_speech: Whether this is the final chunk of the speech.
+
+        Raises:
+            RuntimeError: If the stream is not in an active state (already
+                ended or interrupted).
+        """
+        if self._state not in (
+            TalkMessageStreamState.UNSTARTED,
+            TalkMessageStreamState.STREAMING,
+        ):
+            raise RuntimeError(
+                f"Talk stream is not in an active state: {self._state}"
+            )
+
+        start_of_speech = self._state == TalkMessageStreamState.UNSTARTED
+
+        await self._signalling_client.send_talk_stream_input(
+            content=content,
+            correlation_id=self._correlation_id,
+            start_of_speech=start_of_speech,
+            end_of_speech=end_of_speech,
+        )
+
+        self._state = TalkMessageStreamState.STREAMING
+        if end_of_speech:
+            self._state = TalkMessageStreamState.ENDED
+            self._deactivate()
+
+    async def end(self) -> None:
+        """Signal end of speech with an empty chunk.
+
+        Use when you've sent all content chunks but need to explicitly end
+        the stream. No-op if the stream is already ended.
+        """
+        if self._state == TalkMessageStreamState.ENDED:
+            logger.debug(
+                "Talk stream is already ended via end of speech. "
+                "No need to call end()."
+            )
+            return
+
+        if self._state != TalkMessageStreamState.STREAMING:
+            logger.warning(
+                "Talk stream is not in streaming state: %s", self._state
+            )
+            return
+
+        await self._signalling_client.send_talk_stream_input(
+            content="",
+            correlation_id=self._correlation_id,
+            start_of_speech=False,
+            end_of_speech=True,
+        )
+        self._state = TalkMessageStreamState.ENDED
+        self._deactivate()
+
+    def _deactivate(self) -> None:
+        """Clean up listeners when stream ends or is interrupted."""
+        self._client.remove_listener(
+            AnamEvent.TALK_STREAM_INTERRUPTED, self._interrupt_handler
+        )
