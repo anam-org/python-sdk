@@ -556,7 +556,7 @@ class Session:
         """Create a talk message stream for sending text chunks to TTS.
 
         The stream manages correlation_id internally so you don't need to track
-        it across chunks. Use this for streaming LLM output—all chunks in the
+        it across chunks. Use this for streaming LLM output. All chunks in the
         same speech share one correlation_id for interruption handling.
 
         Args:
@@ -596,7 +596,7 @@ class Session:
 
         Convenience method for one-off messages. Sends text directly to TTS,
         bypassing the LLM. For streaming multiple chunks, use create_talk_stream()
-        instead so correlation_id is managed correctly.
+        instead to manage the stream.
 
         Args:
             content: The text for the avatar to speak.
