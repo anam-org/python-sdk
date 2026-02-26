@@ -212,16 +212,9 @@ async with client.connect() as session:
     await session.talk("This will be spoken immediately")
     
     # Stream text to TTS incrementally (for streaming scenarios)
-    await session.send_talk_stream(
-        content="Hello",
-        start_of_speech=True,
-        end_of_speech=False,
-    )
-    await session.send_talk_stream(
-        content=" world!",
-        start_of_speech=False,
-        end_of_speech=True,
-    )
+    talk_stream = session.create_talk_stream()
+    await talk_stream.send("Hello", end_of_speech=False)
+    await talk_stream.send(" world!", end_of_speech=True)
     
     # Interrupt the avatar if speaking
     await session.interrupt()

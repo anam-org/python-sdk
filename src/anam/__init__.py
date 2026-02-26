@@ -43,6 +43,7 @@ from av.audio.frame import AudioFrame
 from av.video.frame import VideoFrame
 
 from ._agent_audio_input_stream import AgentAudioInputStream
+from ._talk_message_stream import TalkMessageStream, TalkMessageStreamState
 from ._version import __version__
 from .client import AnamClient, Session
 from .errors import (
@@ -70,6 +71,8 @@ __all__ = [
     # Main client
     "AnamClient",
     "Session",
+    "TalkMessageStream",
+    "TalkMessageStreamState",
     # Types
     "AgentAudioInputConfig",
     "AgentAudioInputStream",
