@@ -1,9 +1,10 @@
 """Tests for TalkMessageStream."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from anam import AnamClient, AnamEvent
+import pytest
+
+from anam import AnamEvent
 from anam._talk_message_stream import TalkMessageStream, TalkMessageStreamState
 
 

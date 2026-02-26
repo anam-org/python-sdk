@@ -142,8 +142,8 @@ async def interactive_loop(session, display: VideoDisplay) -> None:
                         talk_stream = session.create_talk_stream()
                         # As demo, split the message into two chunks of equal word count
                         words = message_text.split()
-                        chunk1 = " ".join(words[:len(words)//2])
-                        chunk2 = " ".join(words[len(words)//2:])
+                        chunk1 = " ".join(words[: len(words) // 2])
+                        chunk2 = " ".join(words[len(words) // 2 :])
                         await talk_stream.send(chunk1, end_of_speech=False)
                         await talk_stream.send(chunk2, end_of_speech=True)
                     print(f"✅ Sent talk (stream) command: {message_text}")

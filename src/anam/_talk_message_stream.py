@@ -101,9 +101,7 @@ class TalkMessageStream:
             TalkMessageStreamState.UNSTARTED,
             TalkMessageStreamState.STREAMING,
         ):
-            raise RuntimeError(
-                f"Talk stream is not in an active state: {self._state}"
-            )
+            raise RuntimeError(f"Talk stream is not in an active state: {self._state}")
 
         start_of_speech = self._state == TalkMessageStreamState.UNSTARTED
 
@@ -126,16 +124,11 @@ class TalkMessageStream:
         the stream. No-op if the stream is already ended.
         """
         if self._state == TalkMessageStreamState.ENDED:
-            logger.debug(
-                "Talk stream is already ended via end of speech. "
-                "No need to call end()."
-            )
+            logger.debug("Talk stream is already ended via end of speech. No need to call end().")
             return
 
         if self._state != TalkMessageStreamState.STREAMING:
-            logger.warning(
-                "Talk stream is not in streaming state: %s", self._state
-            )
+            logger.warning("Talk stream is not in streaming state: %s", self._state)
             return
 
         await self._signalling_client.send_talk_stream_input(
@@ -149,6 +142,4 @@ class TalkMessageStream:
 
     def _deactivate(self) -> None:
         """Clean up listeners when stream ends or is interrupted."""
-        self._client.remove_listener(
-            AnamEvent.TALK_STREAM_INTERRUPTED, self._interrupt_handler
-        )
+        self._client.remove_listener(AnamEvent.TALK_STREAM_INTERRUPTED, self._interrupt_handler)
