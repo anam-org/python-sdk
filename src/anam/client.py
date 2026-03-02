@@ -15,6 +15,7 @@ from ._agent_audio_input_stream import AgentAudioInputStream
 from ._api import CoreApiClient
 from ._streaming import StreamingClient
 from ._talk_message_stream import TalkMessageStream
+from ._tool_call_manager import ToolCallManager
 from .errors import ConfigurationError, SessionError
 from .types import (
     AgentAudioInputConfig,
@@ -27,6 +28,7 @@ from .types import (
     PersonaConfig,
     SessionInfo,
     SessionOptions,
+    ToolCallHandler,
 )
 
 logger = logging.getLogger(__name__)
@@ -130,6 +132,9 @@ class AnamClient:
         self._event_callbacks: dict[AnamEvent, list[EventCallback]] = {
             event: [] for event in AnamEvent
         }
+
+        # Tool call manager
+        self._tool_call_manager = ToolCallManager(emit=self._emit)
 
         # Internal state
         self._api_client: CoreApiClient | None = None
@@ -316,6 +321,18 @@ class AnamClient:
                         AnamEvent.MESSAGE_HISTORY_UPDATED, self._message_history.copy()
                     )
 
+        elif message_type == "toolCallStarted":
+            event_data = data.get("data", data)
+            await self._tool_call_manager.process_started_event(event_data)
+
+        elif message_type == "toolCallCompleted":
+            event_data = data.get("data", data)
+            await self._tool_call_manager.process_completed_event(event_data)
+
+        elif message_type == "toolCallFailed":
+            event_data = data.get("data", data)
+            await self._tool_call_manager.process_failed_event(event_data)
+
     def _process_message_stream_event(self, event: MessageStreamEvent, timestamp: str) -> None:
         """Process a message stream event and update message history."""
         # Find existing message with same ID (for both user and persona messages)
@@ -364,6 +381,43 @@ class AnamClient:
         self._is_streaming = False
         await self._emit(AnamEvent.CONNECTION_CLOSED, code, reason)
 
+    def register_tool_call_handler(
+        self, tool_name: str, handler: ToolCallHandler
+    ) -> Callable[[], None]:
+        """Register a handler for tool call lifecycle events.
+
+        The handler receives callbacks when the named tool is started,
+        completed, or fails. For **client** tools, returning a string from
+        ``handler.on_start()`` automatically completes the call with that
+        result; raising an exception automatically fails it.
+
+        Args:
+            tool_name: The name of the tool to handle.
+            handler: An object implementing the ToolCallHandler protocol
+                (with ``on_start``, ``on_complete``, and/or ``on_fail`` methods).
+
+        Returns:
+            An unsubscribe function that removes the handler when called.
+
+        Example:
+            ```python
+            class RedirectHandler:
+                async def on_start(self, payload):
+                    print(f"Redirecting with args: {payload.arguments}")
+                    return "redirect_success"
+
+                async def on_complete(self, payload):
+                    print(f"Redirect completed in {payload.execution_time}ms")
+
+                async def on_fail(self, payload):
+                    print(f"Redirect failed: {payload.error_message}")
+
+            unsubscribe = client.register_tool_call_handler("redirect", RedirectHandler())
+            # Later: unsubscribe() to remove the handler
+            ```
+        """
+        return self._tool_call_manager.register_handler(tool_name, handler)
+
     def create_agent_audio_input_stream(
         self, config: AgentAudioInputConfig
     ) -> AgentAudioInputStream:
@@ -386,6 +440,7 @@ class AnamClient:
         """Close the connection and clean up resources."""
         if self._streaming_client and self.is_streaming:
             self._is_streaming = False
+            self._tool_call_manager.clear_pending_calls()
             await self._handle_connection_closed(ConnectionClosedCode.NORMAL.value, None)
             await self._streaming_client.close()
             self._streaming_client = None

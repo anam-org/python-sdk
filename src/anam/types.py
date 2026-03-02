@@ -1,8 +1,10 @@
 """Type definitions for the Anam SDK."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 
 class AnamEvent(str, Enum):
@@ -20,6 +22,11 @@ class AnamEvent(str, Enum):
 
     # Persona events
     TALK_STREAM_INTERRUPTED = "talk_stream_interrupted"
+
+    # Tool call events
+    TOOL_CALL_STARTED = "tool_call_started"
+    TOOL_CALL_COMPLETED = "tool_call_completed"
+    TOOL_CALL_FAILED = "tool_call_failed"
 
     # Error events
     ERROR = "error"
@@ -259,3 +266,113 @@ class SessionInfo:
             max_reconnection_attempts=client_config.get("maxWsReconnectionAttempts", 5),
             ice_servers=client_config.get("iceServers", []),
         )
+
+
+# --- Tool Call Types ---
+
+
+@dataclass
+class ToolCallStartedPayload:
+    """Payload emitted when a tool call starts.
+
+    Attributes:
+        event_uid: Unique event identifier.
+        tool_call_id: Unique ID from the LLM for this tool call.
+        tool_name: Name of the tool being called.
+        tool_type: Type of tool ("client" or "server").
+        tool_subtype: Subtype for server tools (e.g., "webhook", "rag").
+        arguments: Arguments passed to the tool.
+        timestamp: ISO timestamp of the event.
+    """
+
+    event_uid: str
+    tool_call_id: str
+    tool_name: str
+    tool_type: str
+    tool_subtype: str | None
+    arguments: dict[str, Any]
+    timestamp: str
+
+
+@dataclass
+class ToolCallCompletedPayload:
+    """Payload emitted when a tool call completes successfully.
+
+    Attributes:
+        event_uid: Unique event identifier.
+        tool_call_id: Unique ID from the LLM for this tool call.
+        tool_name: Name of the tool that was called.
+        tool_type: Type of tool ("client" or "server").
+        tool_subtype: Subtype for server tools (e.g., "webhook", "rag").
+        result: The result returned by the tool.
+        execution_time: Time in milliseconds between started and completed.
+        timestamp: ISO timestamp of the event.
+        documents_accessed: Documents accessed by RAG tools (if applicable).
+    """
+
+    event_uid: str
+    tool_call_id: str
+    tool_name: str
+    tool_type: str
+    tool_subtype: str | None
+    result: Any
+    execution_time: float
+    timestamp: str
+    documents_accessed: list[str] | None = None
+
+
+@dataclass
+class ToolCallFailedPayload:
+    """Payload emitted when a tool call fails.
+
+    Attributes:
+        event_uid: Unique event identifier.
+        tool_call_id: Unique ID from the LLM for this tool call.
+        tool_name: Name of the tool that failed.
+        tool_type: Type of tool ("client" or "server").
+        tool_subtype: Subtype for server tools (e.g., "webhook", "rag").
+        error_message: Description of the error.
+        execution_time: Time in milliseconds between started and failed.
+        timestamp: ISO timestamp of the event.
+    """
+
+    event_uid: str
+    tool_call_id: str
+    tool_name: str
+    tool_type: str
+    tool_subtype: str | None
+    error_message: str
+    execution_time: float
+    timestamp: str
+
+
+@runtime_checkable
+class ToolCallHandler(Protocol):
+    """Protocol for tool call lifecycle handlers.
+
+    Register handlers via ``AnamClient.register_tool_call_handler()`` to
+    respond to tool call lifecycle events for a specific tool name.
+
+    For **client** tools, returning a string from ``on_start`` automatically
+    sends the result back to the engine. Raising an exception in ``on_start``
+    automatically reports the failure.
+
+    For **server** tools, ``on_start`` is informational only — the engine
+    handles execution and sends completed/failed events.
+    """
+
+    async def on_start(self, payload: ToolCallStartedPayload) -> str | None:
+        """Called when a tool call starts.
+
+        For client tools, return a string to auto-complete the call with that
+        result. Return ``None`` to handle completion separately.
+        """
+        ...
+
+    async def on_complete(self, payload: ToolCallCompletedPayload) -> None:
+        """Called when a tool call completes successfully."""
+        ...
+
+    async def on_fail(self, payload: ToolCallFailedPayload) -> None:
+        """Called when a tool call fails."""
+        ...

@@ -65,6 +65,10 @@ from .types import (
     PersonaConfig,
     SessionOptions,
     SessionReplayOptions,
+    ToolCallCompletedPayload,
+    ToolCallFailedPayload,
+    ToolCallHandler,
+    ToolCallStartedPayload,
 )
 
 __all__ = [
@@ -86,6 +90,10 @@ __all__ = [
     "PersonaConfig",
     "SessionOptions",
     "SessionReplayOptions",
+    "ToolCallCompletedPayload",
+    "ToolCallFailedPayload",
+    "ToolCallHandler",
+    "ToolCallStartedPayload",
     "VideoFrame",
     # Errors
     "AnamError",
