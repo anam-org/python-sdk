@@ -26,6 +26,8 @@ from .types import (
     MessageRole,
     MessageStreamEvent,
     PersonaConfig,
+    ReasoningMessage,
+    ReasoningStreamEvent,
     SessionInfo,
     SessionOptions,
 )
@@ -138,6 +140,7 @@ class AnamClient:
         self._streaming_client: StreamingClient | None = None
         self._is_streaming = False
         self._message_history: list[Message] = []
+        self._reasoning_history: list[ReasoningMessage] = []
 
     def on(self, event: AnamEvent) -> Callable[[T], T]:
         """Decorator to register an event handler.
@@ -331,6 +334,54 @@ class AnamClient:
             )
             await self._emit(AnamEvent.CLIENT_TOOL_EVENT_RECEIVED, client_tool_event)
 
+        elif message_type == "reasoningText":
+            # Convert WebRTC format to ReasoningStreamEvent
+            reason_data = data.get("data", {})
+            message_id = reason_data.get("message_id", "")
+            role = reason_data.get("role", "persona")
+            content = reason_data.get("content", "")
+            end_of_thought = reason_data.get("end_of_thought", False)
+
+            stream_event_id = f"{role}::{message_id}"
+            stream_event = ReasoningStreamEvent(
+                id=stream_event_id,
+                content=content,
+                role=role,
+                end_of_thought=end_of_thought,
+            )
+            await self._emit(AnamEvent.REASONING_STREAM_EVENT_RECEIVED, stream_event)
+
+            self._process_reasoning_stream_event(stream_event)
+
+            if end_of_thought:
+                await self._emit(
+                    AnamEvent.REASONING_HISTORY_UPDATED,
+                    self._reasoning_history.copy(),
+                )
+
+    def _process_reasoning_stream_event(self, event: ReasoningStreamEvent) -> None:
+        """Process a reasoning stream event and update reasoning history."""
+        existing_index = next(
+            (i for i, msg in enumerate(self._reasoning_history) if msg.id == event.id),
+            None,
+        )
+
+        if existing_index is not None:
+            existing = self._reasoning_history[existing_index]
+            self._reasoning_history[existing_index] = ReasoningMessage(
+                id=existing.id,
+                content=existing.content + event.content,
+                role=existing.role,
+            )
+        else:
+            self._reasoning_history.append(
+                ReasoningMessage(
+                    id=event.id,
+                    content=event.content,
+                    role=event.role,
+                )
+            )
+
     def _process_message_stream_event(self, event: MessageStreamEvent, timestamp: str) -> None:
         """Process a message stream event and update message history."""
         # Find existing message with same ID (for both user and persona messages)
@@ -406,6 +457,7 @@ class AnamClient:
             self._streaming_client = None
             self._session_info = None
             self._message_history.clear()
+            self._reasoning_history.clear()
             logger.info("Client closed")
 
     @property
@@ -425,6 +477,14 @@ class AnamClient:
             A list of messages in the conversation history.
         """
         return self._message_history.copy()
+
+    def get_reasoning_history(self) -> list[ReasoningMessage]:
+        """Get the current reasoning/chain-of-thought history.
+
+        Returns:
+            A list of reasoning messages from the LLM.
+        """
+        return self._reasoning_history.copy()
 
     def set_persona_config(self, persona_config: PersonaConfig) -> None:
         """Set the persona configuration.

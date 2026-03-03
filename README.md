@@ -71,6 +71,7 @@ asyncio.run(main())
 - 🗣️ **Direct text-to-speech** - Send text directly to TTS for immediate speech output (bypasses LLM processing)
 - 🎤 **Real-time user audio input** - Send raw audio samples (e.g. from microphone) to Anam for processing (turnkey solution: STT → LLM → TTS → Avatar)
 - 🔧 **Client tool events** - Receive function/tool invocations from the LLM for custom client-side logic (function calling)
+- 🧠 **Reasoning stream events** - Receive LLM chain-of-thought/reasoning as it streams (REASONING_STREAM_EVENT_RECEIVED, REASONING_HISTORY_UPDATED)
 - 📡 **Async iterator API** - Clean, Pythonic async/await patterns for continuous stream of audio/video frames
 - 🎯 **Event-driven API** - Simple decorator-based event handlers for discrete events
 - 📝 **Fully typed** - Complete type hints for IDE support
@@ -145,7 +146,7 @@ For best performance, we suggest using 24kHz mono audio. The provided audio is r
 Register callbacks for connection and message events using the `@client.on()` decorator:
 
 ```python
-from anam import AnamEvent, ClientToolEvent, Message, MessageRole, MessageStreamEvent
+from anam import AnamEvent, ClientToolEvent, Message, MessageRole, MessageStreamEvent, ReasoningMessage, ReasoningStreamEvent
 
 @client.on(AnamEvent.CONNECTION_ESTABLISHED)
 async def on_connected():
@@ -209,6 +210,18 @@ async def on_client_tool_event(event: ClientToolEvent):
     if event.event_name == "redirect":
         url = event.event_data.get("url", "")
         print(f"🔧 Tool 'redirect' called with url={url}")
+
+@client.on(AnamEvent.REASONING_STREAM_EVENT_RECEIVED)
+async def on_reasoning_stream_event(event: ReasoningStreamEvent):
+    """Called for each chunk of the LLM's reasoning/chain-of-thought as it streams."""
+    print(event.content, end="", flush=True)
+    if event.end_of_thought:
+        print()  # New line when thought completes
+
+@client.on(AnamEvent.REASONING_HISTORY_UPDATED)
+async def on_reasoning_history_updated(messages: list[ReasoningMessage]):
+    """Called when the reasoning history is updated (after a thought completes)."""
+    print(f"🧠 Reasoning history: {len(messages)} thought(s)")
 ```
 
 ### Session
@@ -231,10 +244,12 @@ async with client.connect() as session:
     # Interrupt the avatar if speaking
     await session.interrupt()
     
-    # Get message history
+    # Get message history and reasoning history
     history = client.get_message_history()
     for msg in history:
         print(f"{msg.role}: {msg.content}")
+    for thought in client.get_reasoning_history():
+        print(f"  [reasoning] {thought.content[:50]}...")
     
     # Wait until the session ends
     await session.wait_until_closed()

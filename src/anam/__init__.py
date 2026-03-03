@@ -64,6 +64,8 @@ from .types import (
     MessageRole,
     MessageStreamEvent,
     PersonaConfig,
+    ReasoningMessage,
+    ReasoningStreamEvent,
     SessionOptions,
     SessionReplayOptions,
 )
@@ -86,6 +88,8 @@ __all__ = [
     "MessageRole",
     "MessageStreamEvent",
     "PersonaConfig",
+    "ReasoningMessage",
+    "ReasoningStreamEvent",
     "SessionOptions",
     "SessionReplayOptions",
     "VideoFrame",

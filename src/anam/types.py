@@ -24,6 +24,10 @@ class AnamEvent(str, Enum):
     # Tool events (function calling)
     CLIENT_TOOL_EVENT_RECEIVED = "client_tool_event_received"
 
+    # Reasoning events (LLM chain-of-thought)
+    REASONING_STREAM_EVENT_RECEIVED = "reasoning_stream_event_received"
+    REASONING_HISTORY_UPDATED = "reasoning_history_updated"
+
     # Error events
     ERROR = "error"
     SERVER_WARNING = "server_warning"
@@ -198,6 +202,44 @@ class MessageStreamEvent:
     content_index: int
     end_of_speech: bool
     interrupted: bool = False
+
+
+@dataclass
+class ReasoningStreamEvent:
+    """A streaming reasoning/chain-of-thought event from the LLM.
+
+    Emitted for each chunk of the LLM's reasoning as it streams. Use this
+    to display or log the model's internal reasoning process.
+
+    Attributes:
+        id: Unique identifier for the thought (same for all chunks).
+        content: The text content of this chunk.
+        role: Role of the reasoning (e.g., "persona").
+        end_of_thought: Whether this is the final chunk of the thought.
+    """
+
+    id: str
+    content: str
+    role: str
+    end_of_thought: bool
+
+
+@dataclass
+class ReasoningMessage:
+    """A complete reasoning/chain-of-thought message from the LLM.
+
+    Accumulated from ReasoningStreamEvent chunks. Emitted in
+    REASONING_HISTORY_UPDATED when end_of_thought is True.
+
+    Attributes:
+        id: Unique identifier for the thought.
+        content: The full text content of the thought.
+        role: Role of the reasoning (e.g., "persona").
+    """
+
+    id: str
+    content: str
+    role: str
 
 
 @dataclass

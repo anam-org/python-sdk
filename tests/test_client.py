@@ -2,7 +2,15 @@
 
 import pytest
 
-from anam import AnamClient, AnamEvent, ClientOptions, ClientToolEvent, PersonaConfig
+from anam import (
+    AnamClient,
+    AnamEvent,
+    ClientOptions,
+    ClientToolEvent,
+    PersonaConfig,
+    ReasoningMessage,
+    ReasoningStreamEvent,
+)
 from anam.errors import ConfigurationError
 
 
@@ -142,6 +150,87 @@ class TestClientToolEvent:
         assert event.timestamp == "2024-01-15T10:00:00Z"
         assert event.timestamp_user_action == "2024-01-15T09:59:59Z"
         assert event.user_action_correlation_id == "corr-789"
+
+
+class TestReasoningStreamEvent:
+    """Tests for reasoning stream event handling."""
+
+    @pytest.mark.asyncio
+    async def test_handle_reasoning_text_emits_stream_event(self) -> None:
+        """Test that reasoningText data channel messages emit REASONING_STREAM_EVENT_RECEIVED."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+
+        received_events: list[ReasoningStreamEvent] = []
+
+        @client.on(AnamEvent.REASONING_STREAM_EVENT_RECEIVED)
+        async def on_reasoning_event(event: ReasoningStreamEvent) -> None:
+            received_events.append(event)
+
+        data = {
+            "messageType": "reasoningText",
+            "data": {
+                "message_id": "msg-123",
+                "content_index": 0,
+                "content": "Let me think...",
+                "role": "persona",
+                "end_of_thought": False,
+            },
+        }
+
+        await client._handle_data_message(data)
+
+        assert len(received_events) == 1
+        event = received_events[0]
+        assert event.id == "persona::msg-123"
+        assert event.content == "Let me think..."
+        assert event.role == "persona"
+        assert event.end_of_thought is False
+
+    @pytest.mark.asyncio
+    async def test_reasoning_end_of_thought_emits_history_updated(self) -> None:
+        """Test that end_of_thought=True emits REASONING_HISTORY_UPDATED."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+
+        stream_events: list[ReasoningStreamEvent] = []
+        history_updates: list[list[ReasoningMessage]] = []
+
+        @client.on(AnamEvent.REASONING_STREAM_EVENT_RECEIVED)
+        async def on_stream(event: ReasoningStreamEvent) -> None:
+            stream_events.append(event)
+
+        @client.on(AnamEvent.REASONING_HISTORY_UPDATED)
+        async def on_history(messages: list[ReasoningMessage]) -> None:
+            history_updates.append(messages)
+
+        # First chunk
+        await client._handle_data_message({
+            "messageType": "reasoningText",
+            "data": {
+                "message_id": "msg-1",
+                "content_index": 0,
+                "content": "First ",
+                "role": "persona",
+                "end_of_thought": False,
+            },
+        })
+        # Second chunk (end of thought)
+        await client._handle_data_message({
+            "messageType": "reasoningText",
+            "data": {
+                "message_id": "msg-1",
+                "content_index": 1,
+                "content": "part.",
+                "role": "persona",
+                "end_of_thought": True,
+            },
+        })
+
+        assert len(stream_events) == 2
+        assert stream_events[1].end_of_thought is True
+        assert len(history_updates) == 1
+        assert len(history_updates[0]) == 1
+        assert history_updates[0][0].content == "First part."
+        assert history_updates[0][0].id == "persona::msg-1"
 
 
 class TestPersonaConfig:
