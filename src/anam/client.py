@@ -20,6 +20,7 @@ from .types import (
     AgentAudioInputConfig,
     AnamEvent,
     ClientOptions,
+    ClientToolEvent,
     ConnectionClosedCode,
     Message,
     MessageRole,
@@ -315,6 +316,20 @@ class AnamClient:
                     await self._emit(
                         AnamEvent.MESSAGE_HISTORY_UPDATED, self._message_history.copy()
                     )
+
+        elif message_type == "clientToolEvent":
+            # Convert WebRTC format (snake_case) to ClientToolEvent
+            tool_data = data.get("data", {})
+            client_tool_event = ClientToolEvent(
+                event_uid=tool_data.get("event_uid", ""),
+                session_id=tool_data.get("session_id", ""),
+                event_name=tool_data.get("event_name", ""),
+                event_data=tool_data.get("event_data", {}),
+                timestamp=tool_data.get("timestamp", ""),
+                timestamp_user_action=tool_data.get("timestamp_user_action", ""),
+                user_action_correlation_id=tool_data.get("user_action_correlation_id", ""),
+            )
+            await self._emit(AnamEvent.CLIENT_TOOL_EVENT_RECEIVED, client_tool_event)
 
     def _process_message_stream_event(self, event: MessageStreamEvent, timestamp: str) -> None:
         """Process a message stream event and update message history."""

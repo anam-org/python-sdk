@@ -21,6 +21,9 @@ class AnamEvent(str, Enum):
     # Persona events
     TALK_STREAM_INTERRUPTED = "talk_stream_interrupted"
 
+    # Tool events (function calling)
+    CLIENT_TOOL_EVENT_RECEIVED = "client_tool_event_received"
+
     # Error events
     ERROR = "error"
     SERVER_WARNING = "server_warning"
@@ -195,6 +198,33 @@ class MessageStreamEvent:
     content_index: int
     end_of_speech: bool
     interrupted: bool = False
+
+
+@dataclass
+class ClientToolEvent:
+    """A client tool event from the LLM (function calling).
+
+    Emitted when the LLM invokes a client-side tool. Use this to implement
+    function calling: handle the event, execute the tool logic, and optionally
+    send a response back via the talk stream.
+
+    Attributes:
+        event_uid: Unique ID for this event.
+        session_id: Session ID.
+        event_name: The tool name (e.g., "redirect", "get_weather").
+        event_data: LLM-generated parameters for the tool.
+        timestamp: ISO timestamp when event was created.
+        timestamp_user_action: ISO timestamp of user action that triggered this.
+        user_action_correlation_id: Correlation ID for tracking.
+    """
+
+    event_uid: str
+    session_id: str
+    event_name: str
+    event_data: dict[str, Any]
+    timestamp: str
+    timestamp_user_action: str
+    user_action_correlation_id: str
 
 
 @dataclass

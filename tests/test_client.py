@@ -2,7 +2,7 @@
 
 import pytest
 
-from anam import AnamClient, AnamEvent, ClientOptions, PersonaConfig
+from anam import AnamClient, AnamEvent, ClientOptions, ClientToolEvent, PersonaConfig
 from anam.errors import ConfigurationError
 
 
@@ -101,6 +101,47 @@ class TestAnamClientEvents:
         client.add_listener(AnamEvent.CONNECTION_ESTABLISHED, handler)
         client.remove_listener(AnamEvent.CONNECTION_ESTABLISHED, handler)
         assert handler not in client._event_callbacks[AnamEvent.CONNECTION_ESTABLISHED]
+
+
+class TestClientToolEvent:
+    """Tests for client tool event handling."""
+
+    @pytest.mark.asyncio
+    async def test_handle_client_tool_event_emits_event(self) -> None:
+        """Test that clientToolEvent data channel messages emit CLIENT_TOOL_EVENT_RECEIVED."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+
+        received_events: list[ClientToolEvent] = []
+
+        @client.on(AnamEvent.CLIENT_TOOL_EVENT_RECEIVED)
+        async def on_tool_event(event: ClientToolEvent) -> None:
+            received_events.append(event)
+
+        # Simulate data channel message (WebRTC format)
+        data = {
+            "messageType": "clientToolEvent",
+            "data": {
+                "event_uid": "evt-123",
+                "session_id": "sess-456",
+                "event_name": "redirect",
+                "event_data": {"url": "https://example.com"},
+                "timestamp": "2024-01-15T10:00:00Z",
+                "timestamp_user_action": "2024-01-15T09:59:59Z",
+                "user_action_correlation_id": "corr-789",
+            },
+        }
+
+        await client._handle_data_message(data)
+
+        assert len(received_events) == 1
+        event = received_events[0]
+        assert event.event_uid == "evt-123"
+        assert event.session_id == "sess-456"
+        assert event.event_name == "redirect"
+        assert event.event_data == {"url": "https://example.com"}
+        assert event.timestamp == "2024-01-15T10:00:00Z"
+        assert event.timestamp_user_action == "2024-01-15T09:59:59Z"
+        assert event.user_action_correlation_id == "corr-789"
 
 
 class TestPersonaConfig:
