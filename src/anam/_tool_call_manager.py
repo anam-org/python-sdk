@@ -80,17 +80,23 @@ class ToolCallManager:
         tool_type = event.get("tool_type", "")
         timestamp_str = event.get("timestamp", "")
 
-        # Track the pending call
+        # Track the pending call (only if we have a non-empty tool_call_id)
         try:
             started_at = datetime.fromisoformat(timestamp_str)
         except (ValueError, TypeError):
             started_at = datetime.now(timezone.utc)
 
-        self._pending_calls[tool_call_id] = _PendingToolCall(
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            started_at=started_at,
-        )
+        if tool_call_id:
+            self._pending_calls[tool_call_id] = _PendingToolCall(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                started_at=started_at,
+            )
+        else:
+            logger.warning(
+                "Received toolCallStarted event without a valid tool_call_id; "
+                "skipping pending-call tracking."
+            )
 
         # Build public payload
         payload = self._to_started_payload(event)
@@ -111,14 +117,16 @@ class ToolCallManager:
                             event, result=result
                         )
                         await self._emit(AnamEvent.TOOL_CALL_COMPLETED, completed_payload)
-                        self._pending_calls.pop(tool_call_id, None)
+                        if tool_call_id:
+                            self._pending_calls.pop(tool_call_id, None)
                 except Exception as e:
                     # Auto-fail
                     failed_payload = self._build_failed_payload(
                         event, error_message=str(e)
                     )
                     await self._emit(AnamEvent.TOOL_CALL_FAILED, failed_payload)
-                    self._pending_calls.pop(tool_call_id, None)
+                    if tool_call_id:
+                        self._pending_calls.pop(tool_call_id, None)
             else:
                 # For server tools, just call on_start informally
                 try:
@@ -197,7 +205,13 @@ class ToolCallManager:
             end_time = datetime.fromisoformat(timestamp_str)
         except (ValueError, TypeError):
             end_time = datetime.now(timezone.utc)
-        delta = end_time - pending.started_at
+        # Normalize both datetimes to UTC if they are timezone-naive to avoid TypeError
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=timezone.utc)
+        started_at = pending.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+        delta = end_time - started_at
         return delta.total_seconds() * 1000
 
     @staticmethod
@@ -246,7 +260,7 @@ class ToolCallManager:
     ) -> ToolCallCompletedPayload:
         """Build a completed payload from a started event (for client tool auto-complete)."""
         tool_call_id = started_event.get("tool_call_id", "")
-        timestamp = started_event.get("timestamp", "")
+        completion_time = datetime.now(timezone.utc).isoformat()
         return ToolCallCompletedPayload(
             event_uid=started_event.get("event_uid", ""),
             tool_call_id=tool_call_id,
@@ -254,8 +268,8 @@ class ToolCallManager:
             tool_type=started_event.get("tool_type", ""),
             tool_subtype=started_event.get("tool_subtype"),
             result=result,
-            execution_time=self._calculate_execution_time(tool_call_id, timestamp),
-            timestamp=timestamp,
+            execution_time=self._calculate_execution_time(tool_call_id, completion_time),
+            timestamp=completion_time,
         )
 
     def _build_failed_payload(
@@ -263,7 +277,7 @@ class ToolCallManager:
     ) -> ToolCallFailedPayload:
         """Build a failed payload from a started event (for client tool auto-fail)."""
         tool_call_id = started_event.get("tool_call_id", "")
-        timestamp = started_event.get("timestamp", "")
+        completion_time = datetime.now(timezone.utc).isoformat()
         return ToolCallFailedPayload(
             event_uid=started_event.get("event_uid", ""),
             tool_call_id=tool_call_id,
@@ -271,6 +285,6 @@ class ToolCallManager:
             tool_type=started_event.get("tool_type", ""),
             tool_subtype=started_event.get("tool_subtype"),
             error_message=error_message,
-            execution_time=self._calculate_execution_time(tool_call_id, timestamp),
-            timestamp=timestamp,
+            execution_time=self._calculate_execution_time(tool_call_id, completion_time),
+            timestamp=completion_time,
         )

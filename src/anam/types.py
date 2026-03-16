@@ -353,9 +353,11 @@ class ToolCallHandler(Protocol):
     Register handlers via ``AnamClient.register_tool_call_handler()`` to
     respond to tool call lifecycle events for a specific tool name.
 
-    For **client** tools, returning a string from ``on_start`` automatically
-    sends the result back to the engine. Raising an exception in ``on_start``
-    automatically reports the failure.
+    For **client** tools, returning a string from ``on_start`` causes the SDK
+    to emit a local ``TOOL_CALL_COMPLETED`` event with that result. Raising an
+    exception in ``on_start`` causes a local ``TOOL_CALL_FAILED`` event to be
+    emitted. These events are handled within the SDK and do not themselves
+    send results back to the engine over the data channel.
 
     For **server** tools, ``on_start`` is informational only — the engine
     handles execution and sends completed/failed events.
@@ -364,8 +366,10 @@ class ToolCallHandler(Protocol):
     async def on_start(self, payload: ToolCallStartedPayload) -> str | None:
         """Called when a tool call starts.
 
-        For client tools, return a string to auto-complete the call with that
-        result. Return ``None`` to handle completion separately.
+        For client tools, return a string to auto-complete the call by
+        emitting a local ``TOOL_CALL_COMPLETED`` event with that result.
+        Return ``None`` to handle completion separately (for example, by
+        emitting the completion or failure event at a later time).
         """
         ...
 

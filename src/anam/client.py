@@ -388,13 +388,17 @@ class AnamClient:
 
         The handler receives callbacks when the named tool is started,
         completed, or fails. For **client** tools, returning a string from
-        ``handler.on_start()`` automatically completes the call with that
-        result; raising an exception automatically fails it.
+        ``handler.on_start()`` is treated by the local tool call manager as a
+        successful completion result (it will emit a ``TOOL_CALL_COMPLETED``
+        event with that value). Raising an exception will cause a
+        ``TOOL_CALL_FAILED`` event to be emitted. This behavior affects local
+        client-side events only and does not by itself send a completion
+        message to the engine over the data channel.
 
         Args:
             tool_name: The name of the tool to handle.
             handler: An object implementing the ToolCallHandler protocol
-                (with ``on_start``, ``on_complete``, and/or ``on_fail`` methods).
+                (implementing ``on_start``, ``on_complete``, and ``on_fail`` methods).
 
         Returns:
             An unsubscribe function that removes the handler when called.
