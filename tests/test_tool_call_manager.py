@@ -145,9 +145,7 @@ class TestToolCallManager:
         assert payload.execution_time == pytest.approx(2000.0, abs=1.0)
 
     @pytest.mark.asyncio
-    async def test_client_tool_auto_complete_on_handler_return(
-        self, manager, emitted_events
-    ):
+    async def test_client_tool_auto_complete_on_handler_return(self, manager, emitted_events):
         """Test that client tools auto-complete when handler returns a string."""
 
         class MyHandler:
@@ -171,9 +169,7 @@ class TestToolCallManager:
         assert completed_payload.result == "my_result"
 
     @pytest.mark.asyncio
-    async def test_client_tool_auto_fail_on_handler_exception(
-        self, manager, emitted_events
-    ):
+    async def test_client_tool_auto_fail_on_handler_exception(self, manager, emitted_events):
         """Test that client tools auto-fail when handler raises."""
 
         class MyHandler:
@@ -242,9 +238,7 @@ class TestToolCallManager:
 
         unsubscribe()
         emitted_events.clear()
-        await manager.process_started_event(
-            _make_started_event(tool_call_id="tc-2")
-        )
+        await manager.process_started_event(_make_started_event(tool_call_id="tc-2"))
         # Handler should not be called after unsubscribe
         assert call_count == 1
 

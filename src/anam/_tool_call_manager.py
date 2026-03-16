@@ -55,7 +55,7 @@ class ToolCallManager:
 
         Args:
             tool_name: The name of the tool to handle.
-            handler: An object implementing the ToolCallHandler protocol.
+            handler: A :class:`ToolCallHandler` subclass instance.
 
         Returns:
             An unsubscribe function that removes the handler when called.
@@ -113,17 +113,13 @@ class ToolCallManager:
                     result = await handler.on_start(payload)
                     if result is not None:
                         # Auto-complete with the returned result
-                        completed_payload = self._build_completed_payload(
-                            event, result=result
-                        )
+                        completed_payload = self._build_completed_payload(event, result=result)
                         await self._emit(AnamEvent.TOOL_CALL_COMPLETED, completed_payload)
                         if tool_call_id:
                             self._pending_calls.pop(tool_call_id, None)
                 except Exception as e:
                     # Auto-fail
-                    failed_payload = self._build_failed_payload(
-                        event, error_message=str(e)
-                    )
+                    failed_payload = self._build_failed_payload(event, error_message=str(e))
                     await self._emit(AnamEvent.TOOL_CALL_FAILED, failed_payload)
                     if tool_call_id:
                         self._pending_calls.pop(tool_call_id, None)

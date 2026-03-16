@@ -397,15 +397,15 @@ class AnamClient:
 
         Args:
             tool_name: The name of the tool to handle.
-            handler: An object implementing the ToolCallHandler protocol
-                (implementing ``on_start``, ``on_complete``, and ``on_fail`` methods).
+            handler: A :class:`ToolCallHandler` subclass instance. Override
+                only the methods you need (``on_start``, ``on_complete``, ``on_fail``).
 
         Returns:
             An unsubscribe function that removes the handler when called.
 
         Example:
             ```python
-            class RedirectHandler:
+            class RedirectHandler(ToolCallHandler):
                 async def on_start(self, payload):
                     print(f"Redirecting with args: {payload.arguments}")
                     return "redirect_success"
