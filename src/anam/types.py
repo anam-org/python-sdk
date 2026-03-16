@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 
 class AnamEvent(str, Enum):
@@ -346,9 +346,8 @@ class ToolCallFailedPayload:
     timestamp: str
 
 
-@runtime_checkable
-class ToolCallHandler(Protocol):
-    """Protocol for tool call lifecycle handlers.
+class ToolCallHandler:
+    """Base class for tool call lifecycle handlers.
 
     Register handlers via ``AnamClient.register_tool_call_handler()`` to
     respond to tool call lifecycle events for a specific tool name.
@@ -371,12 +370,12 @@ class ToolCallHandler(Protocol):
         Return ``None`` to handle completion separately (for example, by
         emitting the completion or failure event at a later time).
         """
-        ...
+        return None
 
     async def on_complete(self, payload: ToolCallCompletedPayload) -> None:
         """Called when a tool call completes successfully."""
-        ...
+        pass
 
     async def on_fail(self, payload: ToolCallFailedPayload) -> None:
         """Called when a tool call fails."""
-        ...
+        pass
