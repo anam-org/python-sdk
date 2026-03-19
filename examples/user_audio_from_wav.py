@@ -50,13 +50,23 @@ logger = logging.getLogger(__name__)
 for noisy_logger in ("anam", "websockets", "aiohttp", "aiortc", "aioice"):
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
+REQUIRED_ENV_VARS = [
+    "ANAM_API_KEY",
+    "ANAM_AVATAR_ID",
+    "ANAM_LLM_ID",
+    "ANAM_VOICE_ID",
+]
+
+missing = [v for v in REQUIRED_ENV_VARS if not os.getenv(v)]
+if missing:
+    raise EnvironmentError(f"Missing required environment variables: {', '.join(missing)}")
 
 def _build_persona_config() -> PersonaConfig:
     """Build a persona configuration from environment variables."""
     persona_id = os.environ.get("ANAM_PERSONA_ID", "").strip().strip('"')
     avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
     voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
-    llm_id = os.environ.get("ANAM_LLM_ID", "").strip().strip('"') or None
+    llm_id = os.environ.get("ANAM_LLM_ID", "").strip().strip('"')
     avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "").strip().strip('"') or None
 
     if persona_id:
