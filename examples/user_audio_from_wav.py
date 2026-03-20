@@ -63,29 +63,18 @@ if missing:
 
 def _build_persona_config() -> PersonaConfig:
     """Build a persona configuration from environment variables."""
-    persona_id = os.environ.get("ANAM_PERSONA_ID", "").strip().strip('"')
     avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
     voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
     llm_id = os.environ.get("ANAM_LLM_ID", "").strip().strip('"')
     avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "").strip().strip('"') or None
 
-    if persona_id:
-        return PersonaConfig(persona_id=persona_id)
-
-    if avatar_id and voice_id:
-        return PersonaConfig(
-            avatar_id=avatar_id,
-            voice_id=voice_id,
-            llm_id=llm_id,
-            avatar_model=avatar_model,
-            enable_audio_passthrough=False,
-        )
-
-    raise ValueError(
-        "Set ANAM_PERSONA_ID or set ANAM_AVATAR_ID and ANAM_VOICE_ID "
-        "environment variables"
+    return PersonaConfig(
+        avatar_id=avatar_id,
+        voice_id=voice_id,
+        llm_id=llm_id,
+        avatar_model=avatar_model,
+        enable_audio_passthrough=False,
     )
-
 
 def _format_ids(correlation_ids: list[str | None]) -> str:
     """Format correlation IDs for log output."""
