@@ -1,8 +1,10 @@
 """Tests for AnamClient."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 
-from anam import AnamClient, AnamEvent, ClientOptions, PersonaConfig
+from anam import AnamClient, AnamEvent, ClientOptions, MessageRole, MessageStreamEvent, PersonaConfig
 from anam.errors import ConfigurationError
 
 
@@ -101,6 +103,81 @@ class TestAnamClientEvents:
         client.add_listener(AnamEvent.CONNECTION_ESTABLISHED, handler)
         client.remove_listener(AnamEvent.CONNECTION_ESTABLISHED, handler)
         assert handler not in client._event_callbacks[AnamEvent.CONNECTION_ESTABLISHED]
+
+
+class TestAnamClientDataMessages:
+    """Tests for data channel message handling."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("message_type", "event"),
+        [
+            ("userSpeechStarted", AnamEvent.USER_SPEECH_STARTED),
+            ("userSpeechEnded", AnamEvent.USER_SPEECH_ENDED),
+        ],
+    )
+    async def test_user_speech_events_emit_correlation_id(
+        self,
+        message_type: str,
+        event: AnamEvent,
+    ) -> None:
+        """User speech lifecycle events expose the backend correlation ID."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+        handler = AsyncMock()
+        client.add_listener(event, handler)
+
+        await client._handle_data_message(
+            {
+                "messageType": message_type,
+                "data": {"user_action_correlation_id": "corr-123"},
+            }
+        )
+
+        handler.assert_awaited_once_with("corr-123")
+
+    @pytest.mark.asyncio
+    async def test_user_speech_started_allows_missing_correlation_id(self) -> None:
+        """User speech events still emit when correlation IDs are unavailable."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+        handler = AsyncMock()
+        client.add_listener(AnamEvent.USER_SPEECH_STARTED, handler)
+
+        await client._handle_data_message(
+            {
+                "messageType": "userSpeechStarted",
+                "data": {},
+            }
+        )
+
+        handler.assert_awaited_once_with(None)
+
+    @pytest.mark.asyncio
+    async def test_speech_text_exposes_correlation_id_on_stream_event(self) -> None:
+        """Speech text events include the turn correlation ID for matching VAD events."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+        handler = AsyncMock()
+        client.add_listener(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, handler)
+
+        await client._handle_data_message(
+            {
+                "messageType": "speechText",
+                "data": {
+                    "message_id": "message-123",
+                    "role": "user",
+                    "content": "Hello there",
+                    "content_index": 0,
+                    "end_of_speech": True,
+                    "interrupted": False,
+                    "timestamp": "2026-03-18T12:00:00Z",
+                    "user_action_correlation_id": "corr-123",
+                },
+            }
+        )
+
+        stream_event = handler.await_args.args[0]
+        assert isinstance(stream_event, MessageStreamEvent)
+        assert stream_event.role == MessageRole.USER
+        assert stream_event.correlation_id == "corr-123"
 
 
 class TestPersonaConfig:
