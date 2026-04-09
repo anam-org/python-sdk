@@ -233,6 +233,14 @@ class AnamClient:
         if self.is_streaming:
             raise SessionError("Already connected. Call close() first.")
 
+        # Install TWCC feedback before any WebRTC connection is created.
+        # This must happen before RTCPeerConnection setup so the SDP offer
+        # includes the transport-cc extension and the receiver patches are
+        # in place when the decoder thread starts.
+        from ._twcc import install as _install_twcc
+
+        _install_twcc()
+
         logger.info("Connecting to Anam...")
 
         # Create API client and start session
