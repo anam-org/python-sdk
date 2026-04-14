@@ -222,7 +222,7 @@ class AnamClient:
         """Connect to Anam and start streaming (without context manager).
 
         Args:
-            session_options: Session options (default: SessionOptions(enable_session_replay=True)).
+            session_options: Session options (default: SessionOptions(enable_session_replay=True, video_quality="high")).
 
         Returns:
             A Session object for interacting with the avatar.

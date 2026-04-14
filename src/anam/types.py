@@ -123,9 +123,11 @@ class SessionOptions:
 
     Args:
         enable_session_replay: If True (default), session is recorded. Set False to disable.
+        video_quality: Optional video quality profile to pin the video quality and disable ABR. Currently only None or "high" (default) are supported.
     """
 
     enable_session_replay: bool = True
+    video_quality: str | None = "high"
 
     def __post_init__(self) -> None:
         self._session_replay = SessionReplayOptions(
@@ -135,6 +137,8 @@ class SessionOptions:
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
         result["sessionReplay"] = self._session_replay.to_dict()
+        if self.video_quality is not None:
+            result["videoQuality"] = self.video_quality
         return result
 
 

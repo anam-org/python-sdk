@@ -4,7 +4,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from anam import AnamClient, AnamEvent, ClientOptions, MessageRole, MessageStreamEvent, PersonaConfig
+from anam import (
+    AnamClient,
+    AnamEvent,
+    ClientOptions,
+    MessageRole,
+    MessageStreamEvent,
+    PersonaConfig,
+    SessionOptions,
+)
 from anam.errors import ConfigurationError
 
 
@@ -210,3 +218,24 @@ class TestPersonaConfig:
         assert result["languageCode"] == "en"
         assert result["llmId"] == "gpt-4"
         assert result["maxSessionLengthSeconds"] == 300
+
+
+class TestSessionOptions:
+    """Tests for SessionOptions serialization."""
+
+    def test_to_dict_defaults(self) -> None:
+        options = SessionOptions()
+        result = options.to_dict()
+
+        assert result == {
+            "sessionReplay": {"enableSessionReplay": True},
+        }
+
+    def test_to_dict_with_video_quality(self) -> None:
+        options = SessionOptions(video_quality="high")
+        result = options.to_dict()
+
+        assert result == {
+            "sessionReplay": {"enableSessionReplay": True},
+            "videoQuality": "high",
+        }

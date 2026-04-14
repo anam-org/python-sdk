@@ -75,6 +75,38 @@ asyncio.run(main())
 - 📝 **Fully typed** - Complete type hints for IDE support
 - 🔒 **Server-side ready** - Designed for server-side Python applications (e.g. for backend pipelines)
 
+## Video Quality Notes (Server-to-Server)
+
+The Python SDK is primarily used from server environments with server-to-server communication to Anam. In this setup, adaptive bitrate (ABR) is often not required.
+
+Therefore, the video bitrate is fixed to "high" by default. 
+
+```python
+from anam import SessionOptions
+`
+session_options = SessionOptions(video_quality="high")
+```
+This sends `sessionOptions.videoQuality="high"` to the API and pins the video bitrate for the session to the highest available bitrate.
+
+If you want to use ABR, use None or "abr" instead:
+
+```python
+from anam import SessionOptions
+`
+session_options = SessionOptions(video_quality="abr")
+```
+This sends `sessionOptions.videoQuality="abr"` to the API and enables ABR for the session.
+
+If you want to use the default video quality, use None:
+
+```python
+from anam import SessionOptions
+`
+session_options = SessionOptions(video_quality=None)
+```
+
+Currently, only `None`, `"high"`, or `"abr"` are supported `video_quality` value.
+
 ## API Reference
 
 ### AnamClient
