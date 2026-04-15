@@ -30,7 +30,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from anam import AnamClient, AnamEvent, ClientOptions
+from anam import AnamClient, AnamEvent, ClientOptions, SessionOptions
 from anam.types import MessageRole, PersonaConfig
 
 # Add parent directory to path to allow importing from examples
@@ -237,6 +237,7 @@ async def stream_session(
         except Exception as e:
             logger.error(f"Error consuming audio frames: {e}")
 
+    # connect defaults high quality video rendition and disables ABR
     async with client.connect() as session:
         print(f"Session: {session.session_id}")
         print("Type 'q' in CLI to quit")

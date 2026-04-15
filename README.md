@@ -88,24 +88,21 @@ session_options = SessionOptions(video_quality="high")
 ```
 This sends `sessionOptions.videoQuality="high"` to the API and pins the video bitrate for the session to the highest available bitrate.
 
-If you want to use ABR, use None or "abr" instead:
+If you want to use ABR, use `None` or "auto" instead:
 
 ```python
 from anam import SessionOptions
 `
-session_options = SessionOptions(video_quality="abr")
+session_options = SessionOptions(video_quality="auto")
 ```
-This sends `sessionOptions.videoQuality="abr"` to the API and enables ABR for the session.
-
-If you want to use the default video quality, use None:
-
+or
 ```python
 from anam import SessionOptions
 `
 session_options = SessionOptions(video_quality=None)
 ```
 
-Currently, only `None`, `"high"`, or `"abr"` are supported `video_quality` value.
+Currently, only `None`, `"high"`, or `"auto"` are supported `video_quality` value.
 
 ## API Reference
 
