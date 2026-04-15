@@ -229,9 +229,10 @@ class TestSessionOptions:
 
         assert result == {
             "sessionReplay": {"enableSessionReplay": True},
+            "videoQuality": "high",
         }
 
-    def test_to_dict_with_video_quality(self) -> None:
+    def test_to_dict_with_video_quality_high(self) -> None:
         options = SessionOptions(video_quality="high")
         result = options.to_dict()
 
@@ -239,3 +240,16 @@ class TestSessionOptions:
             "sessionReplay": {"enableSessionReplay": True},
             "videoQuality": "high",
         }
+
+    def test_to_dict_with_video_quality_auto(self) -> None:
+        options = SessionOptions(video_quality="auto")
+        result = options.to_dict()
+
+        assert result == {
+            "sessionReplay": {"enableSessionReplay": True},
+            "videoQuality": "auto",
+        }
+
+    def test_invalid_video_quality_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match='video_quality must be either "high" or "auto"'):
+            SessionOptions(video_quality="medium")  # type: ignore[arg-type]
