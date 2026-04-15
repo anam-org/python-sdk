@@ -30,7 +30,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from anam import AnamClient, AnamEvent, ClientOptions, SessionOptions
+from anam import AnamClient, AnamEvent, ClientOptions
 from anam.types import MessageRole, PersonaConfig
 
 # Add parent directory to path to allow importing from examples

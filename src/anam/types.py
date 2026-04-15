@@ -123,7 +123,7 @@ class SessionOptions:
 
     Args:
         enable_session_replay: If True (default), session is recorded. Set False to disable.
-        video_quality: Optional video quality profile to pin the video quality and disable ABR. Currently only None or "high" (default) are supported.
+        video_quality: Optional video quality profile to pin the video quality and disable ABR. Currently only "high" (default) or "auto" are supported values.
     """
 
     enable_session_replay: bool = True
