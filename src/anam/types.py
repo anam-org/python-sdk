@@ -19,6 +19,8 @@ class AnamEvent(str, Enum):
     MESSAGE_RECEIVED = "message_received"
     MESSAGE_STREAM_EVENT_RECEIVED = "message_stream_event_received"
     MESSAGE_HISTORY_UPDATED = "message_history_updated"
+    USER_SPEECH_STARTED = "user_speech_started"
+    USER_SPEECH_ENDED = "user_speech_ended"
 
     # Persona events
     TALK_STREAM_INTERRUPTED = "talk_stream_interrupted"
@@ -194,6 +196,8 @@ class MessageStreamEvent:
         content_index: Index of this chunk in the message (0 = first chunk/start of speech).
         end_of_speech: Whether this is the final chunk of the message.
         interrupted: Whether the message was interrupted (for persona messages).
+        correlation_id: Correlation ID for this turn, matching early user speech events when
+            provided by the backend.
     """
 
     id: str
@@ -202,6 +206,7 @@ class MessageStreamEvent:
     content_index: int
     end_of_speech: bool
     interrupted: bool = False
+    correlation_id: str | None = None
 
 
 @dataclass

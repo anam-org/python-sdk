@@ -6,6 +6,15 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.4.0-alpha.2 (2026-03-20)
+
+### Features
+
+- Add USER_SPEECH_STARTED and USER_SPEECH_ENDED events
+  ([#46](https://github.com/anam-org/python-sdk/pull/46),
+  [`11713ed`](https://github.com/anam-org/python-sdk/commit/11713ed8f2839ba29e2df97ad99902d7517cafd1))
+
+
 ## v0.4.0-alpha.1 (2026-02-26)
 
 ### Features

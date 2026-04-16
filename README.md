@@ -156,6 +156,16 @@ async def on_closed(code: str, reason: str | None):
     """Called when the connection is closed."""
     print(f"Connection closed: {code} - {reason or 'No reason'}")
 
+@client.on(AnamEvent.USER_SPEECH_STARTED)
+async def on_user_speech_started(correlation_id: str | None):
+    """Called when VAD detects user speech before transcription is available."""
+    print(f"🎙️ User started speaking ({correlation_id})")
+
+@client.on(AnamEvent.USER_SPEECH_ENDED)
+async def on_user_speech_ended(correlation_id: str | None):
+    """Called when VAD detects the user has stopped speaking."""
+    print(f"🛑 User stopped speaking ({correlation_id})")
+
 @client.on(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED)
 async def on_message_stream_event(event: MessageStreamEvent):
     """Called for each incremental chunk of transcribed text or persona response.
@@ -163,17 +173,19 @@ async def on_message_stream_event(event: MessageStreamEvent):
     This event fires for both user transcriptions and persona responses as they stream in.
     This can be used for real-time captions or transcriptions.
     """
+    correlation_id = event.correlation_id
+
     if event.role == MessageRole.USER:
         # User transcription (from their speech)
         if event.content_index == 0:
-            print(f"👤 User: ", end="", flush=True)
+            print(f"👤 User ({correlation_id}): ", end="", flush=True)
         print(event.content, end="", flush=True)
         if event.end_of_speech:
             print()  # New line when transcription completes
     else:
         # Persona response
         if event.content_index == 0:
-            print(f"🤖 Persona: ", end="", flush=True)
+            print(f"🤖 Persona ({correlation_id}): ", end="", flush=True)
         print(event.content, end="", flush=True)
         if event.end_of_speech:
             status = "✓" if not event.interrupted else "✗ INTERRUPTED"
@@ -298,6 +310,58 @@ async def main():
 
 asyncio.run(main())
 ```
+
+### Interactive Persona Session With Message History
+
+Use `examples/persona_interactive_video.py` for a full interactive session with
+video, audio, live captions, and conversation history output.
+
+This example supports:
+
+- `m <message>` to send a user message into the conversation
+- `c` to toggle live captions from `MESSAGE_STREAM_EVENT_RECEIVED`
+- `h` to toggle conversation history printing on session close using `client.get_message_history()`
+
+```bash
+uv sync --extra display
+
+export ANAM_API_KEY="your-api-key"
+export ANAM_AVATAR_ID="your-avatar-id"
+export ANAM_VOICE_ID="your-voice-id"
+export ANAM_LLM_ID="your-llm-id"
+uv run --extra display python examples/persona_interactive_video.py
+```
+
+Example interaction:
+
+```text
+>> c
+Captions enabled
+>> h
+Conversation history enabled
+>> m Hello there
+>> m Can you summarize what I just asked?
+>> q
+Conversation transcript:
+========================
+User: Hello there
+Persona: Hi! Nice to meet you.
+User: Can you summarize what I just asked?
+Persona: You asked me to summarize your previous message.
+```
+
+### Test User Audio Events From WAV
+
+Use the WAV example to exercise the real user-audio/VAD path and verify
+`USER_SPEECH_STARTED`, `USER_SPEECH_ENDED`, and transcript `correlation_id`
+matching without requiring microphone support.
+
+```bash
+export ANAM_API_KEY="your-api-key"
+export ANAM_PERSONA_ID="your-persona-id"
+uv run python examples/user_audio_from_wav.py path/to/input.wav
+```
+
 
 ## Configuration
 

@@ -271,10 +271,16 @@ class AnamClient:
     async def _handle_data_message(self, data: dict[str, Any]) -> None:
         """Handle data channel message."""
         message_type = data.get("messageType", "")
+        msg_data = data.get("data", {})
+
+        if not isinstance(msg_data, dict):
+            logger.debug("Ignoring data channel message with invalid payload: %s", message_type)
+            return
+
+        correlation_id = self._extract_correlation_id(msg_data)
 
         if message_type == "speechText":
             # Convert to MessageStreamEvent for incremental updates
-            msg_data = data.get("data", {})
             message_id = msg_data.get("message_id", "")
             role_str = msg_data.get("role", "assistant")
             content = msg_data.get("content", "")
@@ -302,6 +308,7 @@ class AnamClient:
                 content_index=content_index,
                 end_of_speech=end_of_speech,
                 interrupted=interrupted,
+                correlation_id=correlation_id,
             )
             await self._emit(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, stream_event)
 
@@ -320,6 +327,16 @@ class AnamClient:
                     await self._emit(
                         AnamEvent.MESSAGE_HISTORY_UPDATED, self._message_history.copy()
                     )
+        elif message_type == "userSpeechStarted":
+            await self._emit(AnamEvent.USER_SPEECH_STARTED, correlation_id)
+        elif message_type == "userSpeechEnded":
+            await self._emit(AnamEvent.USER_SPEECH_ENDED, correlation_id)
+
+    @staticmethod
+    def _extract_correlation_id(data: dict[str, Any]) -> str | None:
+        """Extract a turn correlation ID from backend event payloads."""
+        correlation_id = data.get("user_action_correlation_id") or data.get("correlationId")
+        return correlation_id if isinstance(correlation_id, str) else None
 
         elif message_type == "toolCallStarted":
             event_data = data.get("data", data)
