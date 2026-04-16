@@ -58,7 +58,9 @@ from .types import (
     AgentAudioInputConfig,
     AnamEvent,
     ClientOptions,
+    ClientToolConfig,
     ConnectionClosedCode,
+    KnowledgeToolConfig,
     Message,
     MessageRole,
     MessageStreamEvent,
@@ -69,6 +71,9 @@ from .types import (
     ToolCallFailedPayload,
     ToolCallHandler,
     ToolCallStartedPayload,
+    ToolConfig,
+    ToolParametersConfig,
+    WebhookToolConfig,
 )
 
 __all__ = [
@@ -83,7 +88,9 @@ __all__ = [
     "AnamEvent",
     "AudioFrame",
     "ClientOptions",
+    "ClientToolConfig",
     "ConnectionClosedCode",
+    "KnowledgeToolConfig",
     "Message",
     "MessageRole",
     "MessageStreamEvent",
@@ -94,6 +101,9 @@ __all__ = [
     "ToolCallFailedPayload",
     "ToolCallHandler",
     "ToolCallStartedPayload",
+    "ToolConfig",
+    "ToolParametersConfig",
+    "WebhookToolConfig",
     "VideoFrame",
     # Errors
     "AnamError",

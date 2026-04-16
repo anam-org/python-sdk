@@ -55,6 +55,120 @@ class MessageRole(str, Enum):
 
 
 @dataclass
+class ToolParametersConfig:
+    """JSON Schema definition for tool parameters (OpenAI-compatible function calling).
+
+    Args:
+        properties: Map of parameter names to their schema definitions.
+        required: List of required parameter names.
+    """
+
+    properties: dict[str, dict[str, Any]]
+    required: list[str] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"type": "object", "properties": self.properties}
+        if self.required is not None:
+            result["required"] = self.required
+        return result
+
+
+@dataclass
+class ClientToolConfig:
+    """Configuration for a client tool that triggers events on the client SDK.
+
+    Args:
+        name: Tool name (must be unique within the persona).
+        description: Description of what the tool does (shown to the LLM).
+        parameters: JSON Schema for the tool's parameters.
+    """
+
+    name: str
+    description: str
+    parameters: ToolParametersConfig | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "type": "client",
+            "name": self.name,
+            "description": self.description,
+        }
+        if self.parameters is not None:
+            result["parameters"] = self.parameters.to_dict()
+        return result
+
+
+@dataclass
+class WebhookToolConfig:
+    """Configuration for a server webhook tool that calls an external URL.
+
+    Args:
+        name: Tool name (must be unique within the persona).
+        description: Description of what the tool does (shown to the LLM).
+        url: The webhook URL to call.
+        method: HTTP method (GET, POST, PUT, PATCH, DELETE). Defaults to POST.
+        headers: Optional HTTP headers to include.
+        query_parameters: JSON Schema for query parameters (LLM fills values).
+        parameters: JSON Schema for body parameters (LLM fills values).
+        await_response: Whether to wait for the webhook response. Defaults to True.
+    """
+
+    name: str
+    description: str
+    url: str
+    method: str = "POST"
+    headers: dict[str, str] | None = None
+    query_parameters: ToolParametersConfig | None = None
+    parameters: ToolParametersConfig | None = None
+    await_response: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "type": "server",
+            "subtype": "webhook",
+            "name": self.name,
+            "description": self.description,
+            "url": self.url,
+            "method": self.method,
+            "awaitResponse": self.await_response,
+        }
+        if self.headers is not None:
+            result["headers"] = self.headers
+        if self.query_parameters is not None:
+            result["queryParameters"] = self.query_parameters.to_dict()
+        if self.parameters is not None:
+            result["parameters"] = self.parameters.to_dict()
+        return result
+
+
+@dataclass
+class KnowledgeToolConfig:
+    """Configuration for a server knowledge (RAG) tool.
+
+    Args:
+        name: Tool name (must be unique within the persona).
+        description: Description of what the tool does (shown to the LLM).
+        document_folder_ids: List of knowledge folder UUIDs to search.
+    """
+
+    name: str
+    description: str
+    document_folder_ids: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "server",
+            "subtype": "knowledge",
+            "name": self.name,
+            "description": self.description,
+            "documentFolderIds": self.document_folder_ids,
+        }
+
+
+ToolConfig = ClientToolConfig | WebhookToolConfig | KnowledgeToolConfig
+
+
+@dataclass
 class PersonaConfig:
     """Configuration for an Anam persona.
 
@@ -71,6 +185,8 @@ class PersonaConfig:
         max_session_length_seconds: Maximum session duration (optional).
         enable_audio_passthrough: If True, bypasses Anam's orchestration layer
             and allows to ingest TTS audio directly through the socket.
+        tools: List of inline tool configurations for ephemeral personas.
+        tool_ids: List of pre-created tool IDs (from https://lab.anam.ai/tools).
     """
 
     persona_id: str | None = None
@@ -83,6 +199,8 @@ class PersonaConfig:
     llm_id: str | None = None
     max_session_length_seconds: int | None = None
     enable_audio_passthrough: bool | None = False
+    tools: list[ToolConfig] | None = None
+    tool_ids: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API requests."""
@@ -107,6 +225,10 @@ class PersonaConfig:
             result["maxSessionLengthSeconds"] = self.max_session_length_seconds
         if self.enable_audio_passthrough is not None:
             result["enableAudioPassthrough"] = self.enable_audio_passthrough
+        if self.tools is not None:
+            result["tools"] = [t.to_dict() for t in self.tools]
+        if self.tool_ids is not None:
+            result["toolIds"] = self.tool_ids
         return result
 
 

@@ -331,24 +331,21 @@ class AnamClient:
             await self._emit(AnamEvent.USER_SPEECH_STARTED, correlation_id)
         elif message_type == "userSpeechEnded":
             await self._emit(AnamEvent.USER_SPEECH_ENDED, correlation_id)
+        elif message_type == "toolCallStarted":
+            event_data = data.get("data", data)
+            await self._tool_call_manager.process_started_event(event_data)
+        elif message_type == "toolCallCompleted":
+            event_data = data.get("data", data)
+            await self._tool_call_manager.process_completed_event(event_data)
+        elif message_type == "toolCallFailed":
+            event_data = data.get("data", data)
+            await self._tool_call_manager.process_failed_event(event_data)
 
     @staticmethod
     def _extract_correlation_id(data: dict[str, Any]) -> str | None:
         """Extract a turn correlation ID from backend event payloads."""
         correlation_id = data.get("user_action_correlation_id") or data.get("correlationId")
         return correlation_id if isinstance(correlation_id, str) else None
-
-        elif message_type == "toolCallStarted":
-            event_data = data.get("data", data)
-            await self._tool_call_manager.process_started_event(event_data)
-
-        elif message_type == "toolCallCompleted":
-            event_data = data.get("data", data)
-            await self._tool_call_manager.process_completed_event(event_data)
-
-        elif message_type == "toolCallFailed":
-            event_data = data.get("data", data)
-            await self._tool_call_manager.process_failed_event(event_data)
 
     def _process_message_stream_event(self, event: MessageStreamEvent, timestamp: str) -> None:
         """Process a message stream event and update message history."""

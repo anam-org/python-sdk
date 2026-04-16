@@ -117,12 +117,32 @@ class ToolCallManager:
                         await self._emit(AnamEvent.TOOL_CALL_COMPLETED, completed_payload)
                         if tool_call_id:
                             self._pending_calls.pop(tool_call_id, None)
+                        # Dispatch to handler's on_complete callback
+                        if hasattr(handler, "on_complete") and handler.on_complete is not None:
+                            try:
+                                await handler.on_complete(completed_payload)
+                            except Exception as cb_err:
+                                logger.error(
+                                    "Error in on_complete handler for tool '%s': %s",
+                                    tool_name,
+                                    cb_err,
+                                )
                 except Exception as e:
                     # Auto-fail
                     failed_payload = self._build_failed_payload(event, error_message=str(e))
                     await self._emit(AnamEvent.TOOL_CALL_FAILED, failed_payload)
                     if tool_call_id:
                         self._pending_calls.pop(tool_call_id, None)
+                    # Dispatch to handler's on_fail callback
+                    if hasattr(handler, "on_fail") and handler.on_fail is not None:
+                        try:
+                            await handler.on_fail(failed_payload)
+                        except Exception as cb_err:
+                            logger.error(
+                                "Error in on_fail handler for tool '%s': %s",
+                                tool_name,
+                                cb_err,
+                            )
             else:
                 # For server tools, just call on_start informally
                 try:

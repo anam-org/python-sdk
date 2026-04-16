@@ -12,7 +12,7 @@ Requirements:
 Usage:
     export ANAM_API_KEY="your-api-key"
     export ANAM_PERSONA_ID="your-persona-id"  # Must have tools configured
-    uv run --extra display python examples/tool_call_test.py
+    uv run --extra display python scripts/tool_call_test.py
 """
 
 import asyncio
@@ -428,7 +428,7 @@ def main() -> None:
     tool_specs = os.environ.get("ANAM_TOOL_HANDLERS", "").strip()
     if tool_specs:
         print("Pre-registering tool handlers from ANAM_TOOL_HANDLERS:")
-        register_handlers(client, tool_specs.split(","))
+        register_handlers(client, [s.strip() for s in tool_specs.split(",") if s.strip()])
 
     display = VideoDisplay()
     audio_player = AudioPlayer()
