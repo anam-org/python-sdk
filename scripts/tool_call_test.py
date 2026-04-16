@@ -3,15 +3,32 @@
 Tests the ToolCallHandler registration and lifecycle callbacks
 (on_start, on_complete, on_fail) with both client and server tools.
 
-Requires a persona with tools configured. Set up tools at https://lab.anam.ai/tools.
+Supports either a pre-defined persona (ANAM_PERSONA_ID) or an ephemeral
+persona (ANAM_AVATAR_ID + ANAM_VOICE_ID + ANAM_LLM_ID). For ephemeral
+personas, tools can be defined inline via ANAM_TOOLS (JSON) or referenced
+by ID via ANAM_TOOL_IDS.
 
 Requirements:
     uv sync --extra display
     # or: pip install opencv-python sounddevice
 
 Usage:
+    # With persona_id (tools configured in Lab):
     export ANAM_API_KEY="your-api-key"
-    export ANAM_PERSONA_ID="your-persona-id"  # Must have tools configured
+    export ANAM_PERSONA_ID="your-persona-id"
+    uv run --extra display python scripts/tool_call_test.py
+
+    # With ephemeral persona + inline tools:
+    export ANAM_API_KEY="your-api-key"
+    export ANAM_AVATAR_ID="your-avatar-id"
+    export ANAM_VOICE_ID="your-voice-id"
+    export ANAM_LLM_ID="your-llm-id"
+    export ANAM_TOOLS='[{"name":"get_weather","description":"Get weather for a city","parameters":{"properties":{"city":{"type":"string"}},"required":["city"]}}]'
+    export ANAM_TOOL_HANDLERS="auto:get_weather=sunny"
+    uv run --extra display python scripts/tool_call_test.py
+
+    # With ephemeral persona + pre-created tool IDs:
+    export ANAM_TOOL_IDS="uuid-1,uuid-2"
     uv run --extra display python scripts/tool_call_test.py
 """
 
@@ -27,11 +44,13 @@ from dotenv import load_dotenv
 
 from anam import AnamClient, AnamEvent, ClientOptions
 from anam.types import (
+    ClientToolConfig,
     PersonaConfig,
     ToolCallCompletedPayload,
     ToolCallFailedPayload,
     ToolCallHandler,
     ToolCallStartedPayload,
+    ToolParametersConfig,
 )
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -396,6 +415,54 @@ def main() -> None:
     if not api_key:
         raise ValueError("Set ANAM_API_KEY environment variable")
 
+    # Default client tool used when no ANAM_TOOLS or ANAM_TOOL_IDS are set
+    default_tool = ClientToolConfig(
+        name="get_weather",
+        description="Get the current weather for a city.",
+        parameters=ToolParametersConfig(
+            properties={
+                "city": {
+                    "type": "string",
+                    "description": "The city to get weather for",
+                },
+            },
+            required=["city"],
+        ),
+    )
+
+    # Parse inline tool definitions from ANAM_TOOLS env var (JSON array)
+    # Example: ANAM_TOOLS='[{"name":"get_weather","description":"Get weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"]}}]'
+    tools = None
+    tools_json = os.environ.get("ANAM_TOOLS", "").strip()
+    if tools_json:
+        raw_tools = json.loads(tools_json)
+        tools = []
+        for t in raw_tools:
+            params = None
+            if t.get("parameters"):
+                params = ToolParametersConfig(
+                    properties=t["parameters"]["properties"],
+                    required=t["parameters"].get("required"),
+                )
+            tools.append(ClientToolConfig(
+                name=t["name"],
+                description=t["description"],
+                parameters=params,
+            ))
+        print(f"Inline tools: {[t.name for t in tools]}")
+
+    # Parse pre-created tool IDs from ANAM_TOOL_IDS env var (comma-separated)
+    tool_ids = None
+    tool_ids_raw = os.environ.get("ANAM_TOOL_IDS", "").strip()
+    if tool_ids_raw:
+        tool_ids = [s.strip() for s in tool_ids_raw.split(",") if s.strip()]
+        print(f"Tool IDs: {tool_ids}")
+
+    # Fall back to default get_weather tool if nothing else is configured
+    if not tools and not tool_ids and not persona_id:
+        tools = [default_tool]
+        print(f"Using default tool: {default_tool.name}")
+
     if persona_id:
         print(f"Using persona_id: {persona_id}")
         client = AnamClient(
@@ -412,6 +479,8 @@ def main() -> None:
                 "You are a helpful assistant. When the user asks you to do something "
                 "that could involve a tool, use the appropriate tool. Keep responses short."
             ),
+            tools=tools,
+            tool_ids=tool_ids,
         )
         print(f"Using ephemeral persona: avatar={avatar_id}, voice={voice_id}, llm={llm_id}")
         client = AnamClient(
