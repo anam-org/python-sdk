@@ -495,9 +495,7 @@ class ToolCallHandler:
         For client tools, return a string to auto-complete the call by
         emitting a local ``TOOL_CALL_COMPLETED`` event with that result.
         Return ``None`` if the handler only needs the start notification.
-        The SDK does not currently expose a public API for completing or
-        failing a client tool call later.
-        """
+        The SDK does not currently pass the result of client tool calls back to the engine"""
         return None
 
     async def on_complete(self, payload: ToolCallCompletedPayload) -> None:
