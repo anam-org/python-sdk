@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.4.0-alpha.3 (2026-04-16)
+
+### Features
+
+- Pin high video quality ([#53](https://github.com/anam-org/python-sdk/pull/53),
+  [`4b14292`](https://github.com/anam-org/python-sdk/commit/4b142928143550de7fcfc8fc0ef3e24397abf80f))
+
+
 ## v0.4.0-alpha.2 (2026-03-20)
 
 ### Features
