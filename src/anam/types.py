@@ -1,5 +1,7 @@
 """Type definitions for the Anam SDK."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
@@ -22,6 +24,11 @@ class AnamEvent(str, Enum):
 
     # Persona events
     TALK_STREAM_INTERRUPTED = "talk_stream_interrupted"
+
+    # Tool call events
+    TOOL_CALL_STARTED = "tool_call_started"
+    TOOL_CALL_COMPLETED = "tool_call_completed"
+    TOOL_CALL_FAILED = "tool_call_failed"
 
     # Error events
     ERROR = "error"
@@ -48,6 +55,120 @@ class MessageRole(str, Enum):
 
 
 @dataclass
+class ToolParametersConfig:
+    """JSON Schema definition for tool parameters (OpenAI-compatible function calling).
+
+    Args:
+        properties: Map of parameter names to their schema definitions.
+        required: List of required parameter names.
+    """
+
+    properties: dict[str, dict[str, Any]]
+    required: list[str] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"type": "object", "properties": self.properties}
+        if self.required is not None:
+            result["required"] = self.required
+        return result
+
+
+@dataclass
+class ClientToolConfig:
+    """Configuration for a client tool that triggers events on the client SDK.
+
+    Args:
+        name: Tool name (must be unique within the persona).
+        description: Description of what the tool does (shown to the LLM).
+        parameters: JSON Schema for the tool's parameters.
+    """
+
+    name: str
+    description: str
+    parameters: ToolParametersConfig | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "type": "client",
+            "name": self.name,
+            "description": self.description,
+        }
+        if self.parameters is not None:
+            result["parameters"] = self.parameters.to_dict()
+        return result
+
+
+@dataclass
+class WebhookToolConfig:
+    """Configuration for a server webhook tool that calls an external URL.
+
+    Args:
+        name: Tool name (must be unique within the persona).
+        description: Description of what the tool does (shown to the LLM).
+        url: The webhook URL to call.
+        method: HTTP method (GET, POST, PUT, PATCH, DELETE). Defaults to POST.
+        headers: Optional HTTP headers to include.
+        query_parameters: JSON Schema for query parameters (LLM fills values).
+        parameters: JSON Schema for body parameters (LLM fills values).
+        await_response: Whether to wait for the webhook response. Defaults to True.
+    """
+
+    name: str
+    description: str
+    url: str
+    method: str = "POST"
+    headers: dict[str, str] | None = None
+    query_parameters: ToolParametersConfig | None = None
+    parameters: ToolParametersConfig | None = None
+    await_response: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "type": "server",
+            "subtype": "webhook",
+            "name": self.name,
+            "description": self.description,
+            "url": self.url,
+            "method": self.method,
+            "awaitResponse": self.await_response,
+        }
+        if self.headers is not None:
+            result["headers"] = self.headers
+        if self.query_parameters is not None:
+            result["queryParameters"] = self.query_parameters.to_dict()
+        if self.parameters is not None:
+            result["parameters"] = self.parameters.to_dict()
+        return result
+
+
+@dataclass
+class KnowledgeToolConfig:
+    """Configuration for a server knowledge (RAG) tool.
+
+    Args:
+        name: Tool name (must be unique within the persona).
+        description: Description of what the tool does (shown to the LLM).
+        document_folder_ids: List of knowledge folder UUIDs to search.
+    """
+
+    name: str
+    description: str
+    document_folder_ids: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "server",
+            "subtype": "knowledge",
+            "name": self.name,
+            "description": self.description,
+            "documentFolderIds": self.document_folder_ids,
+        }
+
+
+ToolConfig = ClientToolConfig | WebhookToolConfig | KnowledgeToolConfig
+
+
+@dataclass
 class PersonaConfig:
     """Configuration for an Anam persona.
 
@@ -64,6 +185,8 @@ class PersonaConfig:
         max_session_length_seconds: Maximum session duration (optional).
         enable_audio_passthrough: If True, bypasses Anam's orchestration layer
             and allows to ingest TTS audio directly through the socket.
+        tools: List of inline tool configurations for ephemeral personas.
+        tool_ids: List of pre-created tool IDs (from https://lab.anam.ai/tools).
     """
 
     persona_id: str | None = None
@@ -76,6 +199,8 @@ class PersonaConfig:
     llm_id: str | None = None
     max_session_length_seconds: int | None = None
     enable_audio_passthrough: bool | None = False
+    tools: list[ToolConfig] | None = None
+    tool_ids: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API requests."""
@@ -100,6 +225,10 @@ class PersonaConfig:
             result["maxSessionLengthSeconds"] = self.max_session_length_seconds
         if self.enable_audio_passthrough is not None:
             result["enableAudioPassthrough"] = self.enable_audio_passthrough
+        if self.tools is not None:
+            result["tools"] = [t.to_dict() for t in self.tools]
+        if self.tool_ids is not None:
+            result["toolIds"] = self.tool_ids
         return result
 
 
@@ -269,3 +398,115 @@ class SessionInfo:
             max_reconnection_attempts=client_config.get("maxWsReconnectionAttempts", 5),
             ice_servers=client_config.get("iceServers", []),
         )
+
+
+# --- Tool Call Types ---
+
+
+@dataclass
+class ToolCallStartedPayload:
+    """Payload emitted when a tool call starts.
+
+    Attributes:
+        event_uid: Unique event identifier.
+        tool_call_id: Unique ID from the LLM for this tool call.
+        tool_name: Name of the tool being called.
+        tool_type: Type of tool ("client" or "server").
+        tool_subtype: Subtype for server tools (e.g., "webhook", "rag").
+        arguments: Arguments passed to the tool.
+        timestamp: ISO timestamp of the event.
+    """
+
+    event_uid: str
+    tool_call_id: str
+    tool_name: str
+    tool_type: str
+    tool_subtype: str | None
+    arguments: dict[str, Any]
+    timestamp: str
+
+
+@dataclass
+class ToolCallCompletedPayload:
+    """Payload emitted when a tool call completes successfully.
+
+    Attributes:
+        event_uid: Unique event identifier.
+        tool_call_id: Unique ID from the LLM for this tool call.
+        tool_name: Name of the tool that was called.
+        tool_type: Type of tool ("client" or "server").
+        tool_subtype: Subtype for server tools (e.g., "webhook", "rag").
+        result: The result returned by the tool.
+        execution_time: Time in milliseconds between started and completed.
+        timestamp: ISO timestamp of the event.
+        documents_accessed: Documents accessed by RAG tools (if applicable).
+    """
+
+    event_uid: str
+    tool_call_id: str
+    tool_name: str
+    tool_type: str
+    tool_subtype: str | None
+    result: Any
+    execution_time: float
+    timestamp: str
+    documents_accessed: list[str] | None = None
+
+
+@dataclass
+class ToolCallFailedPayload:
+    """Payload emitted when a tool call fails.
+
+    Attributes:
+        event_uid: Unique event identifier.
+        tool_call_id: Unique ID from the LLM for this tool call.
+        tool_name: Name of the tool that failed.
+        tool_type: Type of tool ("client" or "server").
+        tool_subtype: Subtype for server tools (e.g., "webhook", "rag").
+        error_message: Description of the error.
+        execution_time: Time in milliseconds between started and failed.
+        timestamp: ISO timestamp of the event.
+    """
+
+    event_uid: str
+    tool_call_id: str
+    tool_name: str
+    tool_type: str
+    tool_subtype: str | None
+    error_message: str
+    execution_time: float
+    timestamp: str
+
+
+class ToolCallHandler:
+    """Base class for tool call lifecycle handlers.
+
+    Register handlers via ``AnamClient.register_tool_call_handler()`` to
+    respond to tool call lifecycle events for a specific tool name.
+
+    For **client** tools, returning a string from ``on_start`` causes the SDK
+    to emit a local ``TOOL_CALL_COMPLETED`` event with that result. Raising an
+    exception in ``on_start`` causes a local ``TOOL_CALL_FAILED`` event to be
+    emitted. These events are handled within the SDK and do not themselves
+    send results back to the engine over the data channel.
+
+    For **server** tools, ``on_start`` is informational only — the engine
+    handles execution and sends completed/failed events.
+    """
+
+    async def on_start(self, payload: ToolCallStartedPayload) -> str | None:
+        """Called when a tool call starts.
+
+        For client tools, return a string to auto-complete the call by
+        emitting a local ``TOOL_CALL_COMPLETED`` event with that result.
+        Return ``None`` if the handler only needs the start notification.
+        The SDK does not currently pass the result of client tool calls back to the engine"""
+        return None
+
+    async def on_complete(self, payload: ToolCallCompletedPayload) -> None:
+        """Called when a tool call completes successfully."""
+        pass
+
+    async def on_fail(self, payload: ToolCallFailedPayload) -> None:
+        """Called when a tool call fails."""
+        pass
