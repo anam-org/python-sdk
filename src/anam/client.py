@@ -190,7 +190,9 @@ class AnamClient:
             except Exception as e:
                 logger.error("Error in event callback for %s: %s", event.value, e)
 
-    def connect(self, session_options: SessionOptions = SessionOptions()) -> "_SessionContextManager":
+    def connect(
+        self, session_options: SessionOptions = SessionOptions()
+    ) -> "_SessionContextManager":
         """Connect to Anam and start streaming.
 
         Returns:
