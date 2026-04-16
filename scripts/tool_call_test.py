@@ -434,7 +434,7 @@ def main() -> None:
     # Example: ANAM_TOOLS='[{"name":"get_weather","description":"Get weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"]}}]'
     tools = None
     tools_json = os.environ.get("ANAM_TOOLS", "").strip()
-    if tools_json:
+    if tools_json and not persona_id:
         raw_tools = json.loads(tools_json)
         tools = []
         for t in raw_tools:
