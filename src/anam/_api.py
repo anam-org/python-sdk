@@ -46,7 +46,7 @@ class CoreApiClient:
 
         Args:
             persona_config: The persona configuration to use.
-            session_options: Session options (optional).
+            session_options: Session options.
         Returns:
             The session token string.
 
@@ -107,7 +107,7 @@ class CoreApiClient:
 
         Args:
             persona_config: The persona configuration.
-            session_options: Additional session options (optional).
+            session_options: Additional session options.
 
         Returns:
             SessionInfo with connection details.

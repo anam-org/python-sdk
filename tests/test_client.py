@@ -4,7 +4,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from anam import AnamClient, AnamEvent, ClientOptions, MessageRole, MessageStreamEvent, PersonaConfig
+from anam import (
+    AnamClient,
+    AnamEvent,
+    ClientOptions,
+    MessageRole,
+    MessageStreamEvent,
+    PersonaConfig,
+    SessionOptions,
+)
 from anam.errors import ConfigurationError
 
 
@@ -210,3 +218,38 @@ class TestPersonaConfig:
         assert result["languageCode"] == "en"
         assert result["llmId"] == "gpt-4"
         assert result["maxSessionLengthSeconds"] == 300
+
+
+class TestSessionOptions:
+    """Tests for SessionOptions serialization."""
+
+    def test_to_dict_defaults(self) -> None:
+        options = SessionOptions()
+        result = options.to_dict()
+
+        assert result == {
+            "sessionReplay": {"enableSessionReplay": True},
+            "videoQuality": "high",
+        }
+
+    def test_to_dict_with_video_quality_high(self) -> None:
+        options = SessionOptions(video_quality="high")
+        result = options.to_dict()
+
+        assert result == {
+            "sessionReplay": {"enableSessionReplay": True},
+            "videoQuality": "high",
+        }
+
+    def test_to_dict_with_video_quality_auto(self) -> None:
+        options = SessionOptions(video_quality="auto")
+        result = options.to_dict()
+
+        assert result == {
+            "sessionReplay": {"enableSessionReplay": True},
+            "videoQuality": "auto",
+        }
+
+    def test_invalid_video_quality_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match='video_quality must be either "high" or "auto"'):
+            SessionOptions(video_quality="medium")  # type: ignore[arg-type]

@@ -61,6 +61,7 @@ missing = [v for v in REQUIRED_ENV_VARS if not os.getenv(v)]
 if missing:
     raise EnvironmentError(f"Missing required environment variables: {', '.join(missing)}")
 
+
 def _build_persona_config() -> PersonaConfig:
     """Build a persona configuration from environment variables."""
     avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
@@ -76,11 +77,14 @@ def _build_persona_config() -> PersonaConfig:
         enable_audio_passthrough=False,
     )
 
+
 def _format_ids(correlation_ids: list[str | None]) -> str:
     """Format correlation IDs for log output."""
     if not correlation_ids:
         return "none"
-    return ", ".join("None" if correlation_id is None else correlation_id for correlation_id in correlation_ids)
+    return ", ".join(
+        "None" if correlation_id is None else correlation_id for correlation_id in correlation_ids
+    )
 
 
 def _compact_text(text: str) -> str:
@@ -141,9 +145,7 @@ async def _stream_wav_file_realtime(
         total_frames = wav_file.getnframes()
 
         if sample_width != 2:
-            raise ValueError(
-                f"Expected 16-bit PCM WAV input (sample width 2), got {sample_width}"
-            )
+            raise ValueError(f"Expected 16-bit PCM WAV input (sample width 2), got {sample_width}")
         if num_channels not in (1, 2):
             raise ValueError(f"Expected mono or stereo WAV input, got {num_channels} channels")
 
@@ -258,7 +260,9 @@ async def main() -> None:
         role = "user" if event.role == MessageRole.USER else "assistant"
         role_emoji = "👤" if event.role == MessageRole.USER else "🤖"
         status_emoji = "✗" if event.interrupted else "✓"
-        await log(f"{role_emoji} {role} [{event.correlation_id}] ({status_emoji} {status}): {message}")
+        await log(
+            f"{role_emoji} {role} [{event.correlation_id}] ({status_emoji} {status}): {message}"
+        )
 
         if event.role == MessageRole.USER:
             _append_unique(transcript_ids, event.correlation_id)
@@ -285,7 +289,9 @@ async def main() -> None:
         await asyncio.sleep(2.0)
 
         wav_duration, sample_rate, num_channels = await _stream_wav_file_realtime(session, wav_path)
-        await log(f"📤 Finished sending {wav_duration:.2f}s of WAV input. Sending trailing silence...")
+        await log(
+            f"📤 Finished sending {wav_duration:.2f}s of WAV input. Sending trailing silence..."
+        )
 
         silence_task = asyncio.create_task(
             _send_silence_until_cancelled(

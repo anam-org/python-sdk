@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 
 class AnamEvent(str, Enum):
@@ -123,18 +123,23 @@ class SessionOptions:
 
     Args:
         enable_session_replay: If True (default), session is recorded. Set False to disable.
+        video_quality: Video quality profile to pin the video quality. Supported values are "high" (default) and "auto".
     """
 
     enable_session_replay: bool = True
+    video_quality: Literal["high", "auto"] = "high"
 
     def __post_init__(self) -> None:
         self._session_replay = SessionReplayOptions(
             enable_session_replay=self.enable_session_replay
         )
+        if self.video_quality not in {"high", "auto"}:
+            raise ValueError('video_quality must be either "high" or "auto"')
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
         result["sessionReplay"] = self._session_replay.to_dict()
+        result["videoQuality"] = self.video_quality
         return result
 
 

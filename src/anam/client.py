@@ -190,7 +190,9 @@ class AnamClient:
             except Exception as e:
                 logger.error("Error in event callback for %s: %s", event.value, e)
 
-    def connect(self) -> "_SessionContextManager":
+    def connect(
+        self, session_options: SessionOptions = SessionOptions()
+    ) -> "_SessionContextManager":
         """Connect to Anam and start streaming.
 
         Returns:
@@ -216,13 +218,13 @@ class AnamClient:
                 await session.close()
             ```
         """
-        return _SessionContextManager(self)
+        return _SessionContextManager(self, session_options)
 
     async def connect_async(self, session_options: SessionOptions = SessionOptions()) -> "Session":
         """Connect to Anam and start streaming (without context manager).
 
         Args:
-            session_options: Session options (default: SessionOptions(enable_session_replay=True)).
+            session_options: Session options (default: SessionOptions(enable_session_replay=True, video_quality="high")).
 
         Returns:
             A Session object for interacting with the avatar.
@@ -448,13 +450,14 @@ class AnamClient:
 class _SessionContextManager:
     """Async context manager for AnamClient.connect()."""
 
-    def __init__(self, client: AnamClient):
+    def __init__(self, client: AnamClient, session_options: SessionOptions):
         self._client = client
         self._session: Session | None = None
+        self._session_options = session_options
 
     async def __aenter__(self) -> "Session":
         """Enter the context and connect."""
-        self._session = await self._client.connect_async()
+        self._session = await self._client.connect_async(self._session_options)
         return self._session
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
