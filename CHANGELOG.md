@@ -6,6 +6,9 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.4.0 (2026-04-16)
+
+
 ## v0.4.0-alpha.3 (2026-04-16)
 
 ### Features
