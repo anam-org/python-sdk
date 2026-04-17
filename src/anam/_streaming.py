@@ -559,6 +559,38 @@ class StreamingClient:
         }
         self.send_data_message(json.dumps(message))
 
+    def send_tool_result(
+        self,
+        session_id: str,
+        tool_call_id: str,
+        user_action_correlation_id: str,
+        timestamp_user_action: str,
+        result: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """Send a client tool result back to the engine over the data channel.
+
+        Args:
+            session_id: The session ID the tool call belongs to.
+            tool_call_id: The tool_call_id from the original toolCallStarted event.
+            user_action_correlation_id: Correlation ID from the original event.
+            timestamp_user_action: User-action timestamp from the original event.
+            result: The tool result string (optional).
+            error_message: Error message if the tool failed (optional).
+        """
+        message: dict[str, str] = {
+            "session_id": session_id,
+            "message_type": "tool_result",
+            "tool_call_id": tool_call_id,
+            "user_action_correlation_id": user_action_correlation_id,
+            "timestamp_user_action": timestamp_user_action,
+        }
+        if result is not None:
+            message["result"] = result
+        if error_message:
+            message["error"] = error_message
+        self.send_data_message(json.dumps(message))
+
     async def send_talk(self, content: str) -> None:
         """Send a single text message directly to TTS via REST API.
 

@@ -133,7 +133,7 @@ class AnamClient:
             event: [] for event in AnamEvent
         }
 
-        # Tool call manager
+        # Tool call manager (send_tool_result is wired once the streaming client is created)
         self._tool_call_manager = ToolCallManager(emit=self._emit)
 
         # Internal state
@@ -262,8 +262,17 @@ class AnamClient:
             custom_ice_servers=self._options.ice_servers,
         )
 
+        # Bind the tool call manager to this session so it can filter stale events
+        # and send client tool results back to the engine.
+        self._tool_call_manager.set_active_session(self._session_info.session_id)
+        self._tool_call_manager.set_send_tool_result(self._streaming_client.send_tool_result)
+
         # Connect
-        await self._streaming_client.connect()
+        try:
+            await self._streaming_client.connect()
+        except Exception:
+            self._tool_call_manager.clear_session_state()
+            raise
         self._is_streaming = True
 
         return Session(self)
@@ -402,12 +411,10 @@ class AnamClient:
 
         The handler receives callbacks when the named tool is started,
         completed, or fails. For **client** tools, returning a string from
-        ``handler.on_start()`` is treated by the local tool call manager as a
-        successful completion result (it will emit a ``TOOL_CALL_COMPLETED``
-        event with that value). Raising an exception will cause a
-        ``TOOL_CALL_FAILED`` event to be emitted. This behavior affects local
-        client-side events only and does not by itself send a completion
-        message to the engine over the data channel.
+        ``handler.on_start()`` sends the result back to the engine over the
+        data channel and emits a local ``TOOL_CALL_COMPLETED`` event.
+        Raising an exception sends the error back to the engine and emits a
+        local ``TOOL_CALL_FAILED`` event.
 
         Args:
             tool_name: The name of the tool to handle.
@@ -458,7 +465,8 @@ class AnamClient:
         """Close the connection and clean up resources."""
         if self._streaming_client and self.is_streaming:
             self._is_streaming = False
-            self._tool_call_manager.clear_pending_calls()
+            self._tool_call_manager.clear_session_state()
+            self._tool_call_manager.set_send_tool_result(None)
             await self._handle_connection_closed(ConnectionClosedCode.NORMAL.value, None)
             await self._streaming_client.close()
             self._streaming_client = None

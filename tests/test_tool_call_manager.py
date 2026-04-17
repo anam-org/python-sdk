@@ -1,7 +1,5 @@
 """Tests for ToolCallManager."""
 
-import asyncio
-
 import pytest
 
 from anam._tool_call_manager import ToolCallManager
@@ -66,11 +64,36 @@ class TestToolCallManager:
         return []
 
     @pytest.fixture
-    def manager(self, emitted_events):
+    def sent_tool_results(self):
+        return []
+
+    @pytest.fixture
+    def manager(self, emitted_events, sent_tool_results):
         async def emit(event, *args, **kwargs):
             emitted_events.append((event, args, kwargs))
 
-        return ToolCallManager(emit=emit)
+        def send_tool_result(
+            session_id,
+            tool_call_id,
+            user_action_correlation_id,
+            timestamp_user_action,
+            result,
+            error_message,
+        ):
+            sent_tool_results.append(
+                {
+                    "session_id": session_id,
+                    "tool_call_id": tool_call_id,
+                    "user_action_correlation_id": user_action_correlation_id,
+                    "timestamp_user_action": timestamp_user_action,
+                    "result": result,
+                    "error_message": error_message,
+                }
+            )
+
+        mgr = ToolCallManager(emit=emit, send_tool_result=send_tool_result)
+        mgr.set_active_session("sess-1")
+        return mgr
 
     @pytest.mark.asyncio
     async def test_started_event_emits_public_event(self, manager, emitted_events):
@@ -145,7 +168,9 @@ class TestToolCallManager:
         assert payload.execution_time == pytest.approx(2000.0, abs=1.0)
 
     @pytest.mark.asyncio
-    async def test_client_tool_auto_complete_on_handler_return(self, manager, emitted_events):
+    async def test_client_tool_auto_complete_on_handler_return(
+        self, manager, emitted_events, sent_tool_results
+    ):
         """Test that client tools auto-complete when handler returns a string."""
 
         class MyHandler:
@@ -168,8 +193,37 @@ class TestToolCallManager:
         completed_payload = emitted_events[1][1][0]
         assert completed_payload.result == "my_result"
 
+        # Should send the result back to the engine over the data channel
+        assert len(sent_tool_results) == 1
+        sent = sent_tool_results[0]
+        assert sent["session_id"] == "sess-1"
+        assert sent["tool_call_id"] == "tc-1"
+        assert sent["user_action_correlation_id"] == "corr-1"
+        assert sent["timestamp_user_action"] == "2025-01-01T00:00:00+00:00"
+        assert sent["result"] == "my_result"
+        assert sent["error_message"] is None
+
     @pytest.mark.asyncio
-    async def test_client_tool_auto_fail_on_handler_exception(self, manager, emitted_events):
+    async def test_client_tool_no_result_not_sent(
+        self, manager, emitted_events, sent_tool_results
+    ):
+        """Returning None from on_start should NOT send a tool_result or auto-complete."""
+
+        class MyHandler:
+            async def on_start(self, payload):
+                return None
+
+        manager.register_handler("redirect", MyHandler())
+        await manager.process_started_event(_make_started_event())
+
+        # Only STARTED is emitted, no auto-complete and no tool_result sent
+        assert [e[0] for e in emitted_events] == [AnamEvent.TOOL_CALL_STARTED]
+        assert sent_tool_results == []
+
+    @pytest.mark.asyncio
+    async def test_client_tool_auto_fail_on_handler_exception(
+        self, manager, emitted_events, sent_tool_results
+    ):
         """Test that client tools auto-fail when handler raises."""
 
         class MyHandler:
@@ -191,6 +245,48 @@ class TestToolCallManager:
         assert emitted_events[1][0] == AnamEvent.TOOL_CALL_FAILED
         failed_payload = emitted_events[1][1][0]
         assert "handler error" in failed_payload.error_message
+
+        # Should send the error back to the engine
+        assert len(sent_tool_results) == 1
+        sent = sent_tool_results[0]
+        assert sent["result"] is None
+        assert "handler error" in sent["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_failed_call_blocks_subsequent_completed(
+        self, manager, emitted_events
+    ):
+        """A completed event arriving after a failure should be ignored."""
+
+        class MyHandler:
+            async def on_start(self, payload):
+                raise ValueError("handler error")
+
+        manager.register_handler("redirect", MyHandler())
+        await manager.process_started_event(_make_started_event())
+        emitted_events.clear()
+
+        # Stale completed event for the same tool_call_id should be ignored
+        await manager.process_completed_event(_make_completed_event())
+        assert emitted_events == []
+
+    @pytest.mark.asyncio
+    async def test_events_filtered_by_active_session(self, manager, emitted_events):
+        """Events whose session_id doesn't match the active session are dropped."""
+        await manager.process_started_event(_make_started_event(session_id="sess-other"))
+        await manager.process_completed_event(_make_completed_event(session_id="sess-other"))
+        await manager.process_failed_event(_make_failed_event(session_id="sess-other"))
+
+        assert emitted_events == []
+
+    @pytest.mark.asyncio
+    async def test_clear_session_state_drops_subsequent_events(
+        self, manager, emitted_events
+    ):
+        """After clear_session_state, subsequent events are ignored until a new session is set."""
+        manager.clear_session_state()
+        await manager.process_started_event(_make_started_event())
+        assert emitted_events == []
 
     @pytest.mark.asyncio
     async def test_server_tool_does_not_auto_complete(self, manager, emitted_events):
@@ -366,6 +462,8 @@ class TestAnamClientToolCallIntegration:
         from anam import AnamClient
 
         client = AnamClient(api_key="test-key", persona_id="test-persona")
+        # Simulate a connected session so the manager accepts events
+        client._tool_call_manager.set_active_session("sess-1")
 
         received = []
 
@@ -389,6 +487,8 @@ class TestAnamClientToolCallIntegration:
         from anam import AnamClient
 
         client = AnamClient(api_key="test-key", persona_id="test-persona")
+        # Simulate a connected session so the manager accepts events
+        client._tool_call_manager.set_active_session("sess-1")
 
         received = []
 
@@ -419,6 +519,8 @@ class TestAnamClientToolCallIntegration:
         from anam import AnamClient
 
         client = AnamClient(api_key="test-key", persona_id="test-persona")
+        # Simulate a connected session so the manager accepts events
+        client._tool_call_manager.set_active_session("sess-1")
 
         received = []
 

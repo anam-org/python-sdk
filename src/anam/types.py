@@ -81,20 +81,33 @@ class ClientToolConfig:
         name: Tool name (must be unique within the persona).
         description: Description of what the tool does (shown to the LLM).
         parameters: JSON Schema for the tool's parameters.
+        await_result: If True, the return value from the registered handler's
+            ``on_start`` is sent back to the LLM as the tool result so it can
+            incorporate it into its response. If False (default), the tool
+            call is fire-and-forget and the LLM continues without the result.
+        tool_timeout_seconds: How long the engine waits for the client to
+            return a tool result before timing out. Only applies when
+            ``await_result`` is True. Range: 1–600 seconds. Defaults to 10
+            seconds on the engine when omitted.
     """
 
     name: str
     description: str
     parameters: ToolParametersConfig | None = None
+    await_result: bool = False
+    tool_timeout_seconds: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
             "type": "client",
             "name": self.name,
             "description": self.description,
+            "awaitResult": self.await_result,
         }
         if self.parameters is not None:
             result["parameters"] = self.parameters.to_dict()
+        if self.tool_timeout_seconds is not None:
+            result["toolTimeoutSeconds"] = self.tool_timeout_seconds
         return result
 
 
@@ -404,6 +417,7 @@ class ToolCallStartedPayload:
 
     Attributes:
         event_uid: Unique event identifier.
+        session_id: ID of the session this tool call belongs to.
         tool_call_id: Unique ID from the LLM for this tool call.
         tool_name: Name of the tool being called.
         tool_type: Type of tool ("client" or "server").
@@ -413,6 +427,7 @@ class ToolCallStartedPayload:
     """
 
     event_uid: str
+    session_id: str
     tool_call_id: str
     tool_name: str
     tool_type: str
@@ -427,6 +442,7 @@ class ToolCallCompletedPayload:
 
     Attributes:
         event_uid: Unique event identifier.
+        session_id: ID of the session this tool call belongs to.
         tool_call_id: Unique ID from the LLM for this tool call.
         tool_name: Name of the tool that was called.
         tool_type: Type of tool ("client" or "server").
@@ -438,6 +454,7 @@ class ToolCallCompletedPayload:
     """
 
     event_uid: str
+    session_id: str
     tool_call_id: str
     tool_name: str
     tool_type: str
@@ -454,6 +471,7 @@ class ToolCallFailedPayload:
 
     Attributes:
         event_uid: Unique event identifier.
+        session_id: ID of the session this tool call belongs to.
         tool_call_id: Unique ID from the LLM for this tool call.
         tool_name: Name of the tool that failed.
         tool_type: Type of tool ("client" or "server").
@@ -464,6 +482,7 @@ class ToolCallFailedPayload:
     """
 
     event_uid: str
+    session_id: str
     tool_call_id: str
     tool_name: str
     tool_type: str
@@ -480,10 +499,10 @@ class ToolCallHandler:
     respond to tool call lifecycle events for a specific tool name.
 
     For **client** tools, returning a string from ``on_start`` causes the SDK
-    to emit a local ``TOOL_CALL_COMPLETED`` event with that result. Raising an
-    exception in ``on_start`` causes a local ``TOOL_CALL_FAILED`` event to be
-    emitted. These events are handled within the SDK and do not themselves
-    send results back to the engine over the data channel.
+    to emit a local ``TOOL_CALL_COMPLETED`` event with that result AND send
+    the result back to the engine over the data channel so the LLM can
+    continue the conversation. Raising an exception in ``on_start`` sends the
+    error back to the engine and emits a local ``TOOL_CALL_FAILED`` event.
 
     For **server** tools, ``on_start`` is informational only — the engine
     handles execution and sends completed/failed events.
@@ -492,10 +511,10 @@ class ToolCallHandler:
     async def on_start(self, payload: ToolCallStartedPayload) -> str | None:
         """Called when a tool call starts.
 
-        For client tools, return a string to auto-complete the call by
-        emitting a local ``TOOL_CALL_COMPLETED`` event with that result.
-        Return ``None`` if the handler only needs the start notification.
-        The SDK does not currently pass the result of client tool calls back to the engine"""
+        For client tools, return a string to send the result back to the
+        engine and emit a local ``TOOL_CALL_COMPLETED`` event. Return
+        ``None`` if the handler only needs the start notification and no
+        result should be sent back to the engine."""
         return None
 
     async def on_complete(self, payload: ToolCallCompletedPayload) -> None:
