@@ -101,8 +101,10 @@ class ToolCallManager:
         """Process a toolCallStarted data channel message.
 
         For client tools with a registered handler:
-        - If on_start returns a string, send the result back to the engine
+        - If on_start returns, send the result back to the engine
           and auto-complete the call.
+        - If await_result is set to true the engine will wait for this returned response
+          else it will consider the tool call fire-and-forget
         - If on_start raises, send the error back to the engine and auto-fail.
         """
         session_id = event.get("session_id", "")
