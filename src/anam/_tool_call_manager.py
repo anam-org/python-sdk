@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 # Type for the emit callback
 EmitCallback = Callable[..., Awaitable[None]]
 
+# Type for the send_tool_result callback (session_id, tool_call_id,
+# user_action_correlation_id, timestamp_user_action, result, error_message)
+SendToolResultCallback = Callable[[str, str, str, str, str | None, str | None], None]
+
 
 @dataclass
 class _PendingToolCall:
@@ -42,13 +46,38 @@ class ToolCallManager:
     - Maintains a registry of per-tool-name handlers.
     - Tracks pending (in-flight) tool calls for execution time calculation.
     - Converts wire-format (snake_case) events to public payload dataclasses.
-    - For client tools, auto-completes or auto-fails based on handler result.
+    - For client tools, auto-completes or auto-fails based on handler result,
+      and sends the result/error back to the engine over the data channel.
+    - Filters events by active session to avoid processing stale events.
     """
 
-    def __init__(self, emit: EmitCallback) -> None:
+    def __init__(
+        self,
+        emit: EmitCallback,
+        send_tool_result: SendToolResultCallback | None = None,
+    ) -> None:
         self._emit = emit
+        self._send_tool_result = send_tool_result
         self._handlers: dict[str, ToolCallHandler] = {}
         self._pending_calls: dict[str, _PendingToolCall] = {}
+        self._failed_calls: dict[str, ToolCallFailedPayload] = {}
+        self._active_session_id: str | None = None
+
+    def set_send_tool_result(self, send_tool_result: SendToolResultCallback | None) -> None:
+        """Set the callback used to send tool results back to the engine."""
+        self._send_tool_result = send_tool_result
+
+    def set_active_session(self, session_id: str) -> None:
+        """Set the active session ID. Events with a different session_id are ignored."""
+        self._active_session_id = session_id
+        self.clear_pending_calls()
+        self.clear_failed_calls()
+
+    def clear_session_state(self) -> None:
+        """Clear all session-scoped state (active session, pending + failed calls)."""
+        self._active_session_id = None
+        self.clear_pending_calls()
+        self.clear_failed_calls()
 
     def register_handler(self, tool_name: str, handler: ToolCallHandler) -> Callable[[], None]:
         """Register a handler for a specific tool name.
@@ -72,9 +101,21 @@ class ToolCallManager:
         """Process a toolCallStarted data channel message.
 
         For client tools with a registered handler:
-        - If on_start returns a string, auto-complete the call.
-        - If on_start raises, auto-fail the call.
+        - If on_start returns, send the result back to the engine
+          and auto-complete the call.
+        - If await_result is set to true the engine will wait for this returned response
+          else it will consider the tool call fire-and-forget
+        - If on_start raises, send the error back to the engine and auto-fail.
         """
+        session_id = event.get("session_id", "")
+        if self._active_session_id is None or self._active_session_id != session_id:
+            logger.debug(
+                "Ignoring toolCallStarted for inactive session (event=%s, active=%s)",
+                session_id,
+                self._active_session_id,
+            )
+            return
+
         tool_call_id = event.get("tool_call_id", "")
         tool_name = event.get("tool_name", "")
         tool_type = event.get("tool_type", "")
@@ -108,31 +149,36 @@ class ToolCallManager:
         handler = self._handlers.get(tool_name)
         if handler and hasattr(handler, "on_start") and handler.on_start is not None:
             if tool_type == "client":
-                # For client tools, auto-complete/fail based on handler result
+                # For client tools, send result/error back to engine and auto-complete/fail
                 try:
                     result = await handler.on_start(payload)
-                    if result is not None:
-                        # Auto-complete with the returned result
-                        completed_payload = self._build_completed_payload(event, result=result)
-                        await self._emit(AnamEvent.TOOL_CALL_COMPLETED, completed_payload)
-                        if tool_call_id:
-                            self._pending_calls.pop(tool_call_id, None)
-                        # Dispatch to handler's on_complete callback
-                        if hasattr(handler, "on_complete") and handler.on_complete is not None:
-                            try:
-                                await handler.on_complete(completed_payload)
-                            except Exception as cb_err:
-                                logger.error(
-                                    "Error in on_complete handler for tool '%s': %s",
-                                    tool_name,
-                                    cb_err,
-                                )
+                    self._send_client_tool_result(event, result=result, error_message=None)
+                    # Auto-complete with the returned result
+                    completed_payload = self._build_completed_payload(event, result=result)
+                    await self._emit(AnamEvent.TOOL_CALL_COMPLETED, completed_payload)
+                    if tool_call_id:
+                        self._pending_calls.pop(tool_call_id, None)
+                    # Dispatch to handler's on_complete callback
+                    if hasattr(handler, "on_complete") and handler.on_complete is not None:
+                        try:
+                            await handler.on_complete(completed_payload)
+                        except Exception as cb_err:
+                            logger.error(
+                                "Error in on_complete handler for tool '%s': %s",
+                                tool_name,
+                                cb_err,
+                            )
                 except Exception as e:
-                    # Auto-fail
+                    # Auto-fail: send error back to engine
+                    error_message = f"Error in handler: {e}"
+                    self._send_client_tool_result(event, result=None, error_message=error_message)
                     failed_payload = self._build_failed_payload(event, error_message=str(e))
                     await self._emit(AnamEvent.TOOL_CALL_FAILED, failed_payload)
                     if tool_call_id:
                         self._pending_calls.pop(tool_call_id, None)
+                    # Track the failed call so a stale completed event doesn't double-process it
+                    if tool_call_id:
+                        self._failed_calls[tool_call_id] = failed_payload
                     # Dispatch to handler's on_fail callback
                     if hasattr(handler, "on_fail") and handler.on_fail is not None:
                         try:
@@ -156,8 +202,22 @@ class ToolCallManager:
 
     async def process_completed_event(self, event: dict[str, Any]) -> None:
         """Process a toolCallCompleted data channel message."""
+        session_id = event.get("session_id", "")
+        if self._active_session_id is None or self._active_session_id != session_id:
+            logger.debug(
+                "Ignoring toolCallCompleted for inactive session (event=%s, active=%s)",
+                session_id,
+                self._active_session_id,
+            )
+            return
+
         tool_call_id = event.get("tool_call_id", "")
         tool_name = event.get("tool_name", "")
+
+        # If this call was previously marked as failed, do not process it as completed
+        if tool_call_id and tool_call_id in self._failed_calls:
+            del self._failed_calls[tool_call_id]
+            return
 
         # Build payload (calculates execution time from pending call)
         payload = self._to_completed_payload(event)
@@ -182,11 +242,24 @@ class ToolCallManager:
 
     async def process_failed_event(self, event: dict[str, Any]) -> None:
         """Process a toolCallFailed data channel message."""
+        session_id = event.get("session_id", "")
+        if self._active_session_id is None or self._active_session_id != session_id:
+            logger.debug(
+                "Ignoring toolCallFailed for inactive session (event=%s, active=%s)",
+                session_id,
+                self._active_session_id,
+            )
+            return
+
         tool_call_id = event.get("tool_call_id", "")
         tool_name = event.get("tool_name", "")
 
         # Build payload (calculates execution time from pending call)
         payload = self._to_failed_payload(event)
+
+        # Mark the call as failed so a late completed event is ignored
+        if tool_call_id:
+            self._failed_calls[tool_call_id] = payload
 
         # Clean up pending call
         self._pending_calls.pop(tool_call_id, None)
@@ -209,6 +282,42 @@ class ToolCallManager:
     def clear_pending_calls(self) -> None:
         """Clear all pending tool calls (e.g., on session close)."""
         self._pending_calls.clear()
+
+    def clear_failed_calls(self) -> None:
+        """Clear all tracked failed calls (e.g., on session close)."""
+        self._failed_calls.clear()
+
+    # --- Internal helpers ---
+
+    def _send_client_tool_result(
+        self,
+        started_event: dict[str, Any],
+        result: str | None,
+        error_message: str | None,
+    ) -> None:
+        """Send a tool_result data channel message for a client tool."""
+        if self._send_tool_result is None:
+            logger.debug(
+                "No send_tool_result callback configured; skipping tool_result send."
+            )
+            return
+
+        session_id = started_event.get("session_id", "")
+        tool_call_id = started_event.get("tool_call_id", "")
+        user_action_correlation_id = started_event.get("user_action_correlation_id", "")
+        timestamp_user_action = started_event.get("timestamp_user_action", "")
+
+        try:
+            self._send_tool_result(
+                session_id,
+                tool_call_id,
+                user_action_correlation_id,
+                timestamp_user_action,
+                result,
+                error_message,
+            )
+        except Exception as e:
+            logger.error("Failed to send tool_result for tool_call_id=%s: %s", tool_call_id, e)
 
     # --- Payload conversion helpers ---
 
@@ -234,6 +343,7 @@ class ToolCallManager:
     def _to_started_payload(event: dict[str, Any]) -> ToolCallStartedPayload:
         return ToolCallStartedPayload(
             event_uid=event.get("event_uid", ""),
+            session_id=event.get("session_id", ""),
             tool_call_id=event.get("tool_call_id", ""),
             tool_name=event.get("tool_name", ""),
             tool_type=event.get("tool_type", ""),
@@ -247,6 +357,7 @@ class ToolCallManager:
         timestamp = event.get("timestamp", "")
         return ToolCallCompletedPayload(
             event_uid=event.get("event_uid", ""),
+            session_id=event.get("session_id", ""),
             tool_call_id=tool_call_id,
             tool_name=event.get("tool_name", ""),
             tool_type=event.get("tool_type", ""),
@@ -262,6 +373,7 @@ class ToolCallManager:
         timestamp = event.get("timestamp", "")
         return ToolCallFailedPayload(
             event_uid=event.get("event_uid", ""),
+            session_id=event.get("session_id", ""),
             tool_call_id=tool_call_id,
             tool_name=event.get("tool_name", ""),
             tool_type=event.get("tool_type", ""),
@@ -279,6 +391,7 @@ class ToolCallManager:
         completion_time = datetime.now(timezone.utc).isoformat()
         return ToolCallCompletedPayload(
             event_uid=started_event.get("event_uid", ""),
+            session_id=started_event.get("session_id", ""),
             tool_call_id=tool_call_id,
             tool_name=started_event.get("tool_name", ""),
             tool_type=started_event.get("tool_type", ""),
@@ -296,6 +409,7 @@ class ToolCallManager:
         completion_time = datetime.now(timezone.utc).isoformat()
         return ToolCallFailedPayload(
             event_uid=started_event.get("event_uid", ""),
+            session_id=started_event.get("session_id", ""),
             tool_call_id=tool_call_id,
             tool_name=started_event.get("tool_name", ""),
             tool_type=started_event.get("tool_type", ""),

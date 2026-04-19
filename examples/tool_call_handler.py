@@ -1,13 +1,14 @@
-"""Tool call handler example — client-side logging for tool events.
+"""Tool call handler example — client tool with result passback.
 
 This example shows how to:
 1. Define a client tool (get_weather) on an ephemeral persona
 2. Register a ToolCallHandler to observe tool call lifecycle events
-3. Log when a tool starts, completes, or fails on the client side
+3. Return a result from ``on_start`` — the SDK sends it back to the engine
+   over the data channel so the LLM can use it in its response
 
 When the user asks about the weather, the LLM invokes the get_weather
-tool. The handler logs the event and returns a dummy result so the
-LLM can incorporate it into its response.
+tool. The handler returns a JSON string, which the SDK forwards to the
+engine; the LLM then incorporates the result into its spoken reply.
 
 Requirements:
     uv sync --extra display
@@ -68,7 +69,9 @@ class WeatherToolHandler(ToolCallHandler):
     async def on_start(self, payload: ToolCallStartedPayload) -> str | None:
         city = payload.arguments.get("city", "unknown")
         print(f"\n[get_weather] Started — city={city!r}")
-        # Return a dummy result. The LLM wont use this in its response.
+        # Returning a string sends the result back to the engine over the data
+        # channel so the LLM can incorporate it into its response. Returning
+        # None would acknowledge the call locally without sending a result.
         return json.dumps({
             "city": city,
             "temperature_celsius": 18,
@@ -217,6 +220,8 @@ def main() -> None:
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
     # Define the get_weather client tool inline on the ephemeral persona.
+    # await_result=True tells the engine to wait for the handler's return value
+    # and pass it back to the LLM as the tool result.
     get_weather_tool = ClientToolConfig(
         name="get_weather",
         description="Get the current weather for a city.",
@@ -229,6 +234,8 @@ def main() -> None:
             },
             required=["city"],
         ),
+        await_result=True,
+        tool_timeout_seconds=10,
     )
 
     persona_config = PersonaConfig(
