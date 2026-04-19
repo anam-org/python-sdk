@@ -272,6 +272,15 @@ class AnamClient:
             await self._streaming_client.connect()
         except Exception:
             self._tool_call_manager.clear_session_state()
+            self._tool_call_manager.set_send_tool_result(None)
+            try:
+                await self._streaming_client.close()
+            except Exception as close_err:
+                logger.warning(
+                    "Error closing streaming client after failed connect: %s", close_err
+                )
+            self._streaming_client = None
+            self._session_info = None
             raise
         self._is_streaming = True
 
