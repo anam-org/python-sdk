@@ -70,7 +70,7 @@ asyncio.run(main())
 - 🤖 **Audio-passthrough** - Send TTS generated audio input and receive rendered synchronized audio/video avatar
 - 🗣️ **Direct text-to-speech** - Send text directly to TTS for immediate speech output (bypasses LLM processing)
 - 🎤 **Real-time user audio input** - Send raw audio samples (e.g. from microphone) to Anam for processing (turnkey solution: STT → LLM → TTS → Avatar)
-- 📤 **Direct egress** - Publish the avatar's synchronised audio + video directly to a 3rd party video network provider. (currently supported providers: Daily)
+- 📤 **Direct egress** - (experimental) Publish the avatar's synchronised audio + video directly to a 3rd party video network provider. (currently supported providers: Daily)
 - 📡 **Async iterator API** - Clean, Pythonic async/await patterns for continuous stream of audio/video frames
 - 🎯 **Event-driven API** - Simple decorator-based event handlers for discrete events
 - 📝 **Fully typed** - Complete type hints for IDE support
@@ -101,6 +101,9 @@ async with client.connect(session_options=session_options) as session:
 Currently, only `"high"` or `"auto"` are supported `video_quality` values.
 
 ## Direct Egress (Daily)
+
+[!WARNING]
+Direct egress is experimental and currently only supported for Cara-4 avatars. 
 
 Instead of consuming avatar frames over the SDK's WebRTC connection, Anam can publish the avatar's synchronised audio + video directly to a 3rd party real-time media network layer (e.g. WebRTC). The SDK's connections stays open for signalling; media goes straight from Anam to your channel/room/SFU/etc. Supported 3rd party networks: Daily.
 
