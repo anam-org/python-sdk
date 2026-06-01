@@ -105,7 +105,7 @@ Currently, only `"high"` or `"auto"` are supported `video_quality` values.
 [!WARNING]
 Direct egress is experimental and currently only supported for Cara-4 avatars. 
 
-Instead of consuming avatar frames over the SDK's WebRTC connection, Anam can publish the avatar's synchronised audio + video directly to a 3rd party real-time media network layer (e.g. WebRTC). The SDK's connections stays open for signalling; media goes straight from Anam to your channel/room/SFU/etc. Supported 3rd party networks: Daily.
+Instead of consuming avatar frames over the SDK's WebRTC connection, Anam can publish the avatar's synchronised audio + video directly to a 3rd party real-time media network layer (e.g. WebRTC). The SDK's connection stays open for signalling; media goes straight from Anam to your channel/room/SFU/etc. Supported 3rd party networks: Daily.
 
 ```python
 from anam import (
@@ -130,7 +130,7 @@ session_options = SessionOptions(
         daily=EgressDailyOptions(
             room_url="https://your-domain.daily.co/your-room",
             token="meeting-token-minted-by-you",  # optional for public rooms
-            user_name="anam-avatar",              # optional, defaults to "anam-avatar"
+            user_name="anam-avatar",              # optional
         ),
     ),
 )
