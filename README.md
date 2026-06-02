@@ -70,6 +70,7 @@ asyncio.run(main())
 - 🤖 **Audio-passthrough** - Send TTS generated audio input and receive rendered synchronized audio/video avatar
 - 🗣️ **Direct text-to-speech** - Send text directly to TTS for immediate speech output (bypasses LLM processing)
 - 🎤 **Real-time user audio input** - Send raw audio samples (e.g. from microphone) to Anam for processing (turnkey solution: STT → LLM → TTS → Avatar)
+- 📤 **Direct egress** - (experimental) Publish the avatar's synchronised audio + video directly to a 3rd party video network provider. (currently supported providers: Daily)
 - 📡 **Async iterator API** - Clean, Pythonic async/await patterns for continuous stream of audio/video frames
 - 🎯 **Event-driven API** - Simple decorator-based event handlers for discrete events
 - 📝 **Fully typed** - Complete type hints for IDE support
@@ -98,6 +99,51 @@ async with client.connect(session_options=session_options) as session:
 ```
 
 Currently, only `"high"` or `"auto"` are supported `video_quality` values.
+
+## Direct Egress (Daily)
+
+> [!WARNING]
+> Direct Egress is experimental and only supported for Cara-4 avatars.
+> The transport and signalling path will change in upcoming alpha releases,
+> including our backend support. Expect breaking changes between alphas.
+
+Instead of consuming avatar frames over the SDK's WebRTC connection, Anam can publish the avatar's synchronised audio + video directly to a 3rd party real-time media network layer (e.g. WebRTC). The SDK's connection stays open for signalling; media goes straight from Anam to your channel/room/SFU/etc. Supported 3rd party networks: Daily.
+
+```python
+from anam import (
+    AnamClient,
+    EgressDailyOptions,
+    EgressOptions,
+    PersonaConfig,
+    SessionOptions,
+)
+
+client = AnamClient(
+    api_key="your-api-key",
+    persona_config=PersonaConfig(
+        avatar_id="your-avatar-id",
+        enable_audio_passthrough=True,
+    ),
+)
+
+session_options = SessionOptions(
+    egress=EgressOptions(
+        mode="daily",
+        daily=EgressDailyOptions(
+            room_url="https://your-domain.daily.co/your-room",
+            token="meeting-token-minted-by-you",  # optional for public rooms
+            user_name="anam-avatar",              # optional
+        ),
+    ),
+)
+
+async with client.connect(session_options=session_options) as session:
+    # The avatar is now publishing into your Daily room.
+    # Drive it via the normal SDK surface — e.g. send TTS audio:
+    await session.wait_until_closed()
+```
+
+**Daily tokens.** Mint meeting tokens through your own Daily app (Daily REST API or a server you control); the SDK never does this for you. A Daily meeting token is bound to the room it was minted for, so the `token` you pass must be minted for the same `room_url` — passing a token minted for a different room will fail at join time with a 403. For public rooms (no token required) you can omit `token` entirely.
 
 ## API Reference
 

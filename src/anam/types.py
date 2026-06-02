@@ -118,16 +118,67 @@ class SessionReplayOptions:
 
 
 @dataclass
+class EgressDailyOptions:
+    """Daily-specific egress credentials.
+
+    Args:
+        room_url: Daily room URL the avatar joins as a publisher.
+        token: Optional Daily meeting token. Omit for public rooms.
+        user_name: Optional display name for the avatar participant (default: "anam-avatar").
+    """
+
+    room_url: str
+    token: str | None = None
+    user_name: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"roomUrl": self.room_url}
+        if self.token:
+            result["token"] = self.token
+        if self.user_name:
+            result["userName"] = self.user_name
+        return result
+
+
+@dataclass
+class EgressOptions:
+    """Direct egress to a third-party real-time transport.
+
+    When set, the avatar's audio + video is published into the named
+    provider's room. The WebRTC peer connection still exists for signalling
+    (interrupts, status messages).
+
+    Args:
+        mode: Egress provider. Only ``"daily"`` is currently supported.
+        daily: Required when ``mode`` is ``"daily"``.
+    """
+
+    mode: Literal["daily"]
+    daily: EgressDailyOptions
+
+    def __post_init__(self) -> None:
+        if self.mode == "daily" and self.daily is None:
+            raise ValueError('EgressOptions(mode="daily") requires a daily=... block')
+
+    def to_dict(self) -> dict[str, Any]:
+        if self.mode == "daily":
+            return {"mode": "daily", "daily": self.daily.to_dict()}
+        raise ValueError(f"Unsupported egress mode: {self.mode!r}")
+
+
+@dataclass
 class SessionOptions:
     """Configuration for an Anam session.
 
     Args:
         enable_session_replay: If True (default), session is recorded. Set False to disable.
         video_quality: Video quality profile to pin the video quality. Supported values are "high" (default) and "auto".
+        egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
     """
 
     enable_session_replay: bool = True
     video_quality: Literal["high", "auto"] = "high"
+    egress: EgressOptions | None = None
 
     def __post_init__(self) -> None:
         self._session_replay = SessionReplayOptions(
@@ -137,9 +188,12 @@ class SessionOptions:
             raise ValueError('video_quality must be either "high" or "auto"')
 
     def to_dict(self) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        result["sessionReplay"] = self._session_replay.to_dict()
-        result["videoQuality"] = self.video_quality
+        result: dict[str, Any] = {
+            "sessionReplay": self._session_replay.to_dict(),
+            "videoQuality": self.video_quality,
+        }
+        if self.egress is not None:
+            result["egress"] = self.egress.to_dict()
         return result
 
 
