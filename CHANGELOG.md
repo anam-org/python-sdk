@@ -6,6 +6,23 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.5.0-alpha.1 (2026-06-02)
+
+### Documentation
+
+- Add direct egress description and warning for the experimental nature of the feature
+  ([`01a58bb`](https://github.com/anam-org/python-sdk/commit/01a58bba0c3addf8bcbef93ef455690048a91791))
+
+### Features
+
+- Expand sessionOptions with egressOptions
+  ([`01a58bb`](https://github.com/anam-org/python-sdk/commit/01a58bba0c3addf8bcbef93ef455690048a91791))
+
+- Introducing direct egress support for 3rd party real-time network delivery via
+  sessionOptions.egress; add support for Daily rooms
+  ([`01a58bb`](https://github.com/anam-org/python-sdk/commit/01a58bba0c3addf8bcbef93ef455690048a91791))
+
+
 ## v0.4.0 (2026-04-16)
 
 
