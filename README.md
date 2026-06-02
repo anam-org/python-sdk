@@ -102,8 +102,10 @@ Currently, only `"high"` or `"auto"` are supported `video_quality` values.
 
 ## Direct Egress (Daily)
 
-[!WARNING]
-Direct egress is experimental and currently only supported for Cara-4 avatars. 
+> [!WARNING]
+> Direct Egress is experimental and only supported for Cara-4 avatars.
+> The transport and signalling path will change in upcoming alpha releases,
+> including our backend support. Expect breaking changes between alphas.
 
 Instead of consuming avatar frames over the SDK's WebRTC connection, Anam can publish the avatar's synchronised audio + video directly to a 3rd party real-time media network layer (e.g. WebRTC). The SDK's connection stays open for signalling; media goes straight from Anam to your channel/room/SFU/etc. Supported 3rd party networks: Daily.
 
