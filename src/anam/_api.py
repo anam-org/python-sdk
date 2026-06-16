@@ -20,8 +20,7 @@ CLIENT_METADATA = {
 class CoreApiClient:
     """Internal client for Anam REST API.
 
-    Starts engine sessions via the direct API-key path.
-    As this requires an API key, this code should only run in a trusted environment.
+    Starts sessions using the direct API-key path.
     """
 
     def __init__(
