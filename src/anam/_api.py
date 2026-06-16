@@ -93,9 +93,6 @@ class CoreApiClient:
                     )
 
                 if response.status == 401:
-                    # The direct path returns ``{"error": "Invalid API key"}``
-                    # for a rejected key; surface that distinctly so callers
-                    # can catch AuthenticationError instead of SessionError.
                     raise AuthenticationError(
                         message or "Invalid API key",
                         details={"response": data},
