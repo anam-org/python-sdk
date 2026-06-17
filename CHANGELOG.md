@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.5.0-alpha.2 (2026-06-17)
+
+### Features
+
+- Start sessions via direct API-key route
+  ([`ea783e0`](https://github.com/anam-org/python-sdk/commit/ea783e0e15da20abcd8f783439220c0bb5a9a077))
+
+
 ## v0.5.0-alpha.1 (2026-06-02)
 
 ### Documentation
