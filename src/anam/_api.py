@@ -53,8 +53,9 @@ class CoreApiClient:
             SessionInfo with connection details.
 
         Raises:
-            AuthenticationError: If the API key is rejected.
-            SessionError: If session creation fails for any other reason.
+            AuthenticationError: If the API key is rejected (HTTP 401).
+            SessionError: If session creation fails (HTTP 400-429).
+            AnamError: For any other unexpected server response.
         """
         url = f"{self._api_url}/engine/session"
         headers = {
