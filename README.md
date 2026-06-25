@@ -170,7 +170,7 @@ client = AnamClient(
         llm_id="your-llm-id",
         name="My Assistant",
         system_prompt="You are a helpful assistant...",
-        avatar_model="cara-3",
+        avatar_model="cara-4",
         language_code="en",
         enable_audio_passthrough=False,
     ),
@@ -488,11 +488,15 @@ persona = PersonaConfig(
     avatar_id="your-avatar-id",       # From https://lab.anam.ai/avatars (do not use persona_id)
     voice_id="your-voice-id",         # From https://lab.anam.ai/voices
     llm_id="your-llm-id",             # From https://lab.anam.ai/llms (optional)
-    avatar_model="cara-3",            # Video frame model (optional)
+    avatar_model="cara-4",            # Video frame model (optional)
     system_prompt="You are...",       # See https://docs.anam.ai/concepts/prompting-guide
     enable_audio_passthrough=False,
 )
 ```
+
+### Avatar model
+
+Set `avatar_model` on ephemeral `PersonaConfig`. If your avatar does not support Cara-4, use `avatar_model="cara-3"` or if you require Cara-4 generate a new avatar in [lab.anam.ai](https://lab.anam.ai). New avatars will support the "cara-4" model.
 
 ### Orchestration
 

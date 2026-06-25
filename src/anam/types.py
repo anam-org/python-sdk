@@ -55,7 +55,7 @@ class PersonaConfig:
         persona_id: The ID of the persona to use - Only uses pre-defined personas. All other parameters are ignored, except enable_audio_passthrough.
         name: Display name for the persona (optional).
         avatar_id: The avatar to use for video (from: https://lab.anam.ai/avatars). Do not use persona_id as avatar_id.
-        avatar_model: Avatar model version (e.g., 'cara-3') (optional).
+        avatar_model: Avatar model version (e.g., 'cara-4') (optional).
         voice_id: The voice to use for audio (optional, uses persona default).
         system_prompt: Custom system prompt for the persona (optional).
         language_code: Language code (e.g., 'en', 'es') (optional).
