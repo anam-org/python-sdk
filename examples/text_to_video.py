@@ -231,7 +231,7 @@ async def text_to_video(
     if not voice_id:
         voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
     if not avatar_model:
-        avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"')
+        avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"') or None
 
     # Determine mode - prefer avatar_id + voice_id if both provided
     if avatar_id and voice_id:

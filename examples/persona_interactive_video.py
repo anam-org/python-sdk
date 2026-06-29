@@ -286,7 +286,7 @@ def main() -> None:
     api_key = os.environ.get("ANAM_API_KEY", "").strip().strip('"')
     avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
     voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
-    avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"')
+    avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"') or None
     llm_id = os.environ.get("ANAM_LLM_ID", "").strip().strip('"')
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 

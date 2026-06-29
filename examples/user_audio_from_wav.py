@@ -67,7 +67,7 @@ def _build_persona_config() -> PersonaConfig:
     avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
     voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
     llm_id = os.environ.get("ANAM_LLM_ID", "").strip().strip('"')
-    avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"')
+    avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"') or None
 
     return PersonaConfig(
         avatar_id=avatar_id,
