@@ -496,7 +496,7 @@ persona = PersonaConfig(
 
 ### Avatar model
 
-Set `avatar_model` on ephemeral `PersonaConfig`. If your avatar does not support Cara-4, use `avatar_model="cara-3"` or if you require Cara-4 generate a new avatar in [lab.anam.ai](https://lab.anam.ai). New avatars will support the "cara-4" model.
+Set `avatar_model` on ephemeral `PersonaConfig`. If your avatar does not support Cara-4, use `avatar_model="cara-3"` or if you require Cara-4, generate a new avatar in [lab.anam.ai](https://lab.anam.ai). New avatars will support the "cara-4" model.
 
 ### Orchestration
 
