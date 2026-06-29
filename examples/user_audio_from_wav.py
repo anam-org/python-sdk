@@ -13,7 +13,7 @@ Usage:
     export ANAM_AVATAR_ID="your-avatar-id"
     export ANAM_VOICE_ID="your-voice-id"
     export ANAM_LLM_ID="your-llm-id"  # optional
-    export ANAM_AVATAR_MODEL="cara-3"  # optional
+    export ANAM_AVATAR_MODEL="cara-4"  # optional
     uv run python examples/user_audio_from_wav.py path/to/input.wav
 """
 
@@ -67,7 +67,7 @@ def _build_persona_config() -> PersonaConfig:
     avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
     voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
     llm_id = os.environ.get("ANAM_LLM_ID", "").strip().strip('"')
-    avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "").strip().strip('"') or None
+    avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"') or None
 
     return PersonaConfig(
         avatar_id=avatar_id,

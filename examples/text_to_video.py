@@ -19,7 +19,7 @@ Usage:
     export ANAM_API_KEY="your-api-key"
     export ANAM_AVATAR_ID="your-avatar-id"
     export ANAM_VOICE_ID="your-voice-id"
-    export ANAM_AVATAR_MODEL="cara-3"    # optional, defaults to cara-3
+    export ANAM_AVATAR_MODEL="cara-4"    # optional, defaults to cara-4
     export ANAM_LLM_ID="your-llm-id"     # optional, uses default Anam LLM
     uv run python examples/text_to_video.py "Hello, how are you today?"
 """
@@ -205,7 +205,7 @@ async def text_to_video(
         persona_id: Persona ID to use.
         avatar_id: Avatar ID for ephemeral persona.
         voice_id: Voice ID for ephemeral persona.
-        avatar_model: Avatar model version (e.g., 'cara-3').
+        avatar_model: Avatar model version (e.g., 'cara-4').
 
     Returns:
         Path to the output video file.
@@ -231,7 +231,7 @@ async def text_to_video(
     if not voice_id:
         voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
     if not avatar_model:
-        avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-3").strip().strip('"')
+        avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"') or None
 
     # Determine mode - prefer avatar_id + voice_id if both provided
     if avatar_id and voice_id:

@@ -199,6 +199,7 @@ def main() -> None:
 
     persona_config = PersonaConfig(
         avatar_id=avatar_id,
+        avatar_model=os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"') or None,
         enable_audio_passthrough=True,
     )
 

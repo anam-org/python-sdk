@@ -18,7 +18,7 @@ Usage:
     export ANAM_AVATAR_ID="your-avatar-id"
     export ANAM_VOICE_ID="your-voice-id"
     export ANAM_LLM_ID="your-llm-id"
-    export ANAM_AVATAR_MODEL="model-name"     # optional, e.g. "cara-3"
+    export ANAM_AVATAR_MODEL="model-name"     # optional, e.g. "cara-4"
     uv run --extra display python examples/persona_interactive_video.py
 """
 
@@ -286,7 +286,7 @@ def main() -> None:
     api_key = os.environ.get("ANAM_API_KEY", "").strip().strip('"')
     avatar_id = os.environ.get("ANAM_AVATAR_ID", "").strip().strip('"')
     voice_id = os.environ.get("ANAM_VOICE_ID", "").strip().strip('"')
-    avatar_model = os.environ.get("ANAM_AVATAR_MODEL")
+    avatar_model = os.environ.get("ANAM_AVATAR_MODEL", "cara-4").strip().strip('"') or None
     llm_id = os.environ.get("ANAM_LLM_ID", "").strip().strip('"')
     api_base_url = os.environ.get("ANAM_API_BASE_URL", "https://api.anam.ai").strip().strip('"')
 
@@ -310,7 +310,7 @@ def main() -> None:
     #   - avatar_id: the "face" (https://lab.anam.ai/avatars). Do not use persona_id as avatar_id.
     #   - voice_id: voice for TTS (https://lab.anam.ai/voices).
     #   - llm_id: LLM for reasoning (https://lab.anam.ai/llms).
-    #   - avatar_model: video frame model (e.g. "cara-3").
+    #   - avatar_model: video frame model (e.g. "cara-4").
     #   - system_prompt: primes the LLM. See https://docs.anam.ai/concepts/prompting-guide
     #
     # enable_audio_passthrough:
