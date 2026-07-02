@@ -35,11 +35,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Output writer hint for saved MP4 files; the live iterator yields frames as they arrive.
+AVATAR_VIDEO_FPS = 25.0
+
 
 class VideoRecorder:
-    """Records video frames to an MP4 file."""
+    """Records Anam avatar video frames to an MP4 file."""
 
-    def __init__(self, output_path: str, fps: float = 30.0) -> None:
+    def __init__(self, output_path: str, fps: float = AVATAR_VIDEO_FPS) -> None:
         self.output_path: str = output_path
         self.fps: float = fps
         self.writer: cv2.VideoWriter | None = None
@@ -59,7 +62,7 @@ class VideoRecorder:
                 self.fps,
                 (frame.width, frame.height),
             )
-            logger.info("Recording video to: %s", self.output_path)
+            logger.info("Recording video to: %s (%.0ffps)", self.output_path, self.fps)
 
         self.writer.write(img)
         self.frame_count += 1

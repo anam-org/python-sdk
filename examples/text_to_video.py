@@ -55,11 +55,14 @@ logging.getLogger("websockets").setLevel(logging.WARNING)
 logging.getLogger("aiohttp").setLevel(logging.WARNING)
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
+# Output writer hint for saved MP4 files; the live iterator yields frames as they arrive.
+AVATAR_VIDEO_FPS = 25
+
 
 class VideoWriter:
-    """Writes video frames to an MP4 file using PyAV."""
+    """Writes Anam avatar video frames to an MP4 file using PyAV."""
 
-    def __init__(self, output_path: str, fps: int = 30) -> None:
+    def __init__(self, output_path: str, fps: int = AVATAR_VIDEO_FPS) -> None:
         self.output_path = output_path
         self.fps = fps
         self.container: av.container.OutputContainer | None = None
@@ -83,7 +86,11 @@ class VideoWriter:
             # Use medium preset for good quality/speed balance
             self.stream.options = {"crf": "18", "preset": "medium"}
             logger.info(
-                "Recording video to: %s (%dx%d)", self.output_path, frame.width, frame.height
+                "Recording video to: %s (%dx%d @ %dfps)",
+                self.output_path,
+                frame.width,
+                frame.height,
+                self.fps,
             )
 
         # Convert to yuv420p for h264 encoding
@@ -191,6 +198,10 @@ async def text_to_video(
     """Convert text to avatar video using the talk() command.
 
     The avatar will speak the provided text directly via the TTS pipeline.
+    The MP4 output writer is configured at 25 fps. This is an output encoding
+    hint; the live video iterator yields frames as they arrive. If you adapt
+    this example, using 30 fps for the saved output can make audio and video
+    drift out of sync.
 
     You can configure either:
     - persona_id: Use an existing persona
