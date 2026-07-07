@@ -321,7 +321,7 @@ async with client.connect() as session:
 
 Director notes control how the avatar performs a conversation (how something is said, not just what is said). Set session defaults on `PersonaConfig(director_notes=...)`, then send runtime `director_note_cue` messages with `session.send_director_note_cue(...)`.
 For supported styles/cues and timing semantics (`at_seconds` vs `in_seconds`), see the official docs: [Director Notes](https://anam.ai/docs/personas/director-notes).
-The parameters `at_seconds` and `in_seconds` only support positive finite numbers, a finite guardrail is in place to prevent invalid JSON serialization at session start. All other invalid values will log a warning and be ignored.
+The parameters `at_seconds` and `in_seconds` only support positive finite numbers, a finite guardrail is in place to prevent invalid JSON serialization at session start. All other invalid values will be returned with from the backend and be ignored.
 
 #### Initial Director Notes
 
