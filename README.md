@@ -152,7 +152,7 @@ async with client.connect(session_options=session_options) as session:
 The main client class for connecting to Anam AI.
 
 ```python
-from anam import AnamClient, PersonaConfig, ClientOptions
+from anam import AnamClient, ClientOptions, DirectorNotes, PersonaConfig
 
 # Simple initialization for pre-defined personas - all other parameters are ignored except enable_audio_passthrough
 client = AnamClient(
@@ -172,6 +172,10 @@ client = AnamClient(
         system_prompt="You are a helpful assistant...",
         avatar_model="cara-4",
         language_code="en",
+        director_notes=DirectorNotes(
+            preset_style="warm",
+            expressivity=0.7,
+        ),
         enable_audio_passthrough=False,
     ),
 )
@@ -300,6 +304,9 @@ async with client.connect() as session:
     
     # Interrupt the avatar if speaking
     await session.interrupt()
+
+    # Runtime director-note cue (turn-scoped)
+    await session.send_director_note_cue("curious", at_seconds=0.5)
     
     # Get message history
     history = client.get_message_history()
@@ -308,6 +315,43 @@ async with client.connect() as session:
     
     # Wait until the session ends
     await session.wait_until_closed()
+```
+
+### Director Notes
+
+Director notes control how the avatar performs a conversation (how something is said, not just what is said). Set session defaults on `PersonaConfig(director_notes=...)`, then send runtime `director_note_cue` messages with `session.send_director_note_cue(...)`.
+For supported styles/cues and timing semantics (`at_seconds` vs `in_seconds`), see the official docs: [Director Notes](https://anam.ai/docs/personas/director-notes).
+
+#### Initial Director Notes
+
+Set director notes directly on `PersonaConfig` to apply them from session start:
+
+```python
+from anam import DirectorNotes, PersonaConfig
+
+persona = PersonaConfig(
+    avatar_id="your-avatar-id",
+    director_notes=DirectorNotes(
+        preset_style="warm",
+        expressivity=0.7,
+    ),
+)
+```
+The initial director notes are the avatar's default presence for the session.
+
+##### Runtime Director Note Cues
+
+Use `session.send_director_note_cue(...)` to adjust delivery style during the active turn.
+
+```python
+import asyncio
+
+async with client.connect() as session:
+    cues = ["warm", "playful", "concerned", "laughter"]
+
+    for cue in cues:
+        await session.send_director_note_cue(cue, at_seconds=3.0)
+        await asyncio.sleep(8)
 ```
 
 ## Examples
@@ -481,7 +525,7 @@ Ephemeral personas give you full control over components at startup. Configure a
 They are ideal for production environments where you need to control the components at startup.
 
 ```python
-from anam import PersonaConfig
+from anam import DirectorNotes, PersonaConfig
 
 # Ephemeral: specify avatar_id, voice_id, and optionally llm_id, avatar_model
 persona = PersonaConfig(
@@ -490,6 +534,10 @@ persona = PersonaConfig(
     llm_id="your-llm-id",             # From https://lab.anam.ai/llms (optional)
     avatar_model="cara-4",            # Video frame model (optional)
     system_prompt="You are...",       # See https://docs.anam.ai/concepts/prompting-guide
+    director_notes=DirectorNotes(     # Optional: Initial director notes 
+        preset_style="warm",
+        expressivity=0.7,
+    ),
     enable_audio_passthrough=False,
 )
 ```
