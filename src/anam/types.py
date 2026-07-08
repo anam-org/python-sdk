@@ -57,8 +57,6 @@ class DirectorNotes:
 
     custom_style_prompt: str | None = None
     preset_style: str | None = None
-    idling_prompt: str | None = None
-    overlay_model_name_on_output: bool | None = None
     expressivity: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,13 +65,8 @@ class DirectorNotes:
             result["customStylePrompt"] = self.custom_style_prompt
         if self.preset_style is not None:
             result["presetStyle"] = self.preset_style
-        if self.idling_prompt is not None:
-            result["idlingPrompt"] = self.idling_prompt
-        if self.overlay_model_name_on_output is not None:
-            result["overlayModelNameOnOutput"] = self.overlay_model_name_on_output
         if self.expressivity is not None:
-            # Non-finite floats serialize to invalid JSON (NaN/Infinity) and break
-            # the engine parser at session startup, so reject them here.
+            # Non-finite floats are invalid JSON
             if not math.isfinite(self.expressivity):
                 raise ValueError("expressivity must be a finite number")
             result["expressivity"] = self.expressivity
