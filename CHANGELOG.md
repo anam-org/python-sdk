@@ -6,6 +6,19 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.7.0-alpha.1 (2026-07-08)
+
+### Documentation
+
+- Default examples to use Cara-4
+  ([`a03f4b1`](https://github.com/anam-org/python-sdk/commit/a03f4b1c19d3da7d8d7e832146493fb78d1d00e2))
+
+### Features
+
+- Director notes API
+  ([`e49ef36`](https://github.com/anam-org/python-sdk/commit/e49ef3640448a9994e89aebeb2ee770e3e392e10))
+
+
 ## v0.6.0 (2026-06-17)
 
 
