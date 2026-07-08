@@ -566,7 +566,7 @@ class Session:
         """Send a director-note cue over the active session data channel.
 
         Args:
-            tag: Director-note cue tag (for example ``"playfull"``).
+            tag: Director-note cue tag (for example ``"playful"``).
             at_seconds: Optional turn-relative cue time in seconds.
             in_seconds: Optional delay relative to receipt time in seconds.
 
