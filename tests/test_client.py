@@ -1,6 +1,8 @@
 """Tests for AnamClient."""
 
-from unittest.mock import AsyncMock
+import json
+import math
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -8,12 +10,14 @@ from anam import (
     AnamClient,
     AnamEvent,
     ClientOptions,
+    DirectorNotes,
     MessageRole,
     MessageStreamEvent,
     PersonaConfig,
+    Session,
     SessionOptions,
 )
-from anam.errors import ConfigurationError
+from anam.errors import ConfigurationError, SessionError
 
 
 class TestAnamClientInit:
@@ -208,6 +212,11 @@ class TestPersonaConfig:
             language_code="en",
             llm_id="gpt-4",
             max_session_length_seconds=300,
+            director_notes=DirectorNotes(
+                preset_style="warm",
+                expressivity=0.8,
+                custom_style_prompt="speak softly",
+            ),
         )
         result = config.to_dict()
         assert result["personaId"] == "test-id"
@@ -218,6 +227,18 @@ class TestPersonaConfig:
         assert result["languageCode"] == "en"
         assert result["llmId"] == "gpt-4"
         assert result["maxSessionLengthSeconds"] == 300
+        assert result["directorNotes"] == {
+            "presetStyle": "warm",
+            "expressivity": 0.8,
+            "customStylePrompt": "speak softly",
+        }
+
+    @pytest.mark.parametrize("value", [math.inf, -math.inf, math.nan])
+    def test_director_notes_rejects_non_finite_expressivity(self, value: float) -> None:
+        """Non-finite expressivity would serialize to invalid JSON at session start."""
+        config = PersonaConfig(director_notes=DirectorNotes(expressivity=value))
+        with pytest.raises(ValueError, match="expressivity must be a finite number"):
+            config.to_dict()
 
 
 class TestSessionOptions:
@@ -253,3 +274,91 @@ class TestSessionOptions:
     def test_invalid_video_quality_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match='video_quality must be either "high" or "auto"'):
             SessionOptions(video_quality="medium")  # type: ignore[arg-type]
+
+
+class TestDirectorNoteCue:
+    """Tests for Session.send_director_note_cue."""
+
+    @pytest.mark.asyncio
+    async def test_sends_at_seconds_cue_payload(self) -> None:
+        client = AnamClient(
+            api_key="test-key",
+            persona_config=PersonaConfig(avatar_id="avatar-only"),
+        )
+        client._streaming_client = MagicMock()
+        client._streaming_client._data_channel_open = True
+        client._streaming_client.send_data_message = MagicMock(return_value=True)
+
+        session_obj = Session(client)
+        await session_obj.send_director_note_cue("curious", at_seconds=0.5)
+
+        client._streaming_client.send_data_message.assert_called_once()
+        payload = json.loads(client._streaming_client.send_data_message.call_args.args[0])
+        assert payload == {
+            "message_type": "director_note_cue",
+            "cue": {"tag": "curious"},
+            "at_seconds": 0.5,
+        }
+
+    @pytest.mark.asyncio
+    async def test_sends_in_seconds_cue_payload(self) -> None:
+        client = AnamClient(api_key="test-key", persona_id="stateful-persona")
+        client._streaming_client = MagicMock()
+        client._streaming_client._data_channel_open = True
+        client._streaming_client.send_data_message = MagicMock(return_value=True)
+
+        session_obj = Session(client)
+        await session_obj.send_director_note_cue("concerned", in_seconds=1.25)
+
+        payload = json.loads(client._streaming_client.send_data_message.call_args.args[0])
+        assert payload == {
+            "message_type": "director_note_cue",
+            "cue": {"tag": "concerned"},
+            "in_seconds": 1.25,
+        }
+
+    @pytest.mark.asyncio
+    async def test_forwards_payload_verbatim(self) -> None:
+        """The SDK is pass-through: the backend is the single source of truth."""
+        client = AnamClient(api_key="test-key", persona_id="stateful-persona")
+        client._streaming_client = MagicMock()
+        client._streaming_client._data_channel_open = True
+        client._streaming_client.send_data_message = MagicMock(return_value=True)
+
+        session_obj = Session(client)
+        await session_obj.send_director_note_cue("warm", at_seconds=-0.1, in_seconds=2.0)
+
+        payload = json.loads(client._streaming_client.send_data_message.call_args.args[0])
+        assert payload == {
+            "message_type": "director_note_cue",
+            "cue": {"tag": "warm"},
+            "at_seconds": -0.1,
+            "in_seconds": 2.0,
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("field", ["at_seconds", "in_seconds"])
+    @pytest.mark.parametrize("value", [math.inf, -math.inf, math.nan])
+    async def test_rejects_non_finite_timing(self, field: str, value: float) -> None:
+        """Non-finite floats would serialize to invalid JSON (Infinity/NaN), which
+        breaks the engine's parser, so the SDK rejects them before sending."""
+        client = AnamClient(api_key="test-key", persona_id="stateful-persona")
+        client._streaming_client = MagicMock()
+        client._streaming_client._data_channel_open = True
+        client._streaming_client.send_data_message = MagicMock(return_value=True)
+
+        session_obj = Session(client)
+        with pytest.raises(ValueError, match=f"{field} must be a finite number"):
+            await session_obj.send_director_note_cue("warm", **{field: value})
+        client._streaming_client.send_data_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_raises_when_data_channel_send_fails(self) -> None:
+        client = AnamClient(api_key="test-key", persona_id="stateful-persona")
+        client._streaming_client = MagicMock()
+        client._streaming_client._data_channel_open = True
+        client._streaming_client.send_data_message = MagicMock(return_value=False)
+
+        session_obj = Session(client)
+        with pytest.raises(SessionError, match="Failed to send director note cue"):
+            await session_obj.send_director_note_cue("surprised", at_seconds=0.0)

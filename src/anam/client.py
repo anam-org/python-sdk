@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import math
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable, TypeVar
@@ -531,9 +533,6 @@ class Session:
         Raises:
             SessionError: If not connected or if LLM is not available.
         """
-        if not self._client._streaming_client:
-            raise SessionError("Not connected")
-
         # Validate that LLM is available for processing messages
         persona_config = self._get_persona_config()
 
@@ -545,13 +544,7 @@ class Session:
                 "Persona ID and LLM ID are not set, messages will not be processed by the backend."
             )
 
-        # Wait for data channel to be ready
-        streaming = self._client._streaming_client
-        if not getattr(streaming, "_data_channel_open", False):
-            logger.debug("Waiting for data channel to open...")
-            if not await streaming.wait_for_data_channel(timeout=10.0):
-                raise SessionError("Data channel did not open in time")
-
+        streaming = await self._ensure_data_channel_open()
         streaming.send_user_message(content)
 
     async def interrupt(self) -> None:
@@ -560,17 +553,57 @@ class Session:
         Raises:
             SessionError: If not connected.
         """
+        streaming = await self._ensure_data_channel_open()
+        streaming.send_interrupt()
+
+    async def send_director_note_cue(
+        self,
+        tag: str,
+        *,
+        at_seconds: float | None = None,
+        in_seconds: float | None = None,
+    ) -> None:
+        """Send a director-note cue over the active session data channel.
+
+        Args:
+            tag: Director-note cue tag (for example ``"playful"``).
+            at_seconds: Optional turn-relative cue time in seconds.
+            in_seconds: Optional delay relative to receipt time in seconds.
+
+        Raises:
+            SessionError: If not connected, data channel is unavailable, or send fails.
+            ValueError: If a provided timing value is not finite.
+        """
+        for field_name, value in (("at_seconds", at_seconds), ("in_seconds", in_seconds)):
+            if value is not None and not math.isfinite(value):
+                raise ValueError(f"{field_name} must be a finite number")
+
+        payload: dict[str, Any] = {
+            "message_type": "director_note_cue",
+            "cue": {"tag": tag},
+        }
+
+        if at_seconds is not None:
+            payload["at_seconds"] = at_seconds
+
+        if in_seconds is not None:
+            payload["in_seconds"] = in_seconds
+
+        streaming = await self._ensure_data_channel_open()
+        if not streaming.send_data_message(json.dumps(payload)):
+            raise SessionError("Failed to send director note cue over data channel")
+
+    async def _ensure_data_channel_open(self) -> StreamingClient:
+        """Return the streaming client once the data channel is ready."""
         if not self._client._streaming_client:
             raise SessionError("Not connected")
 
-        # Wait for data channel to be ready (same as send_message)
         streaming = self._client._streaming_client
         if not getattr(streaming, "_data_channel_open", False):
             logger.debug("Waiting for data channel to open...")
             if not await streaming.wait_for_data_channel(timeout=10.0):
                 raise SessionError("Data channel did not open in time")
-
-        streaming.send_interrupt()
+        return streaming
 
     def create_talk_stream(self, correlation_id: str | None = None) -> TalkMessageStream:
         """Create a talk message stream for sending text chunks to TTS.

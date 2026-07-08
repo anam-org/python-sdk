@@ -1,5 +1,6 @@
 """Type definitions for the Anam SDK."""
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
@@ -48,6 +49,31 @@ class MessageRole(str, Enum):
 
 
 @dataclass
+class DirectorNotes:
+    """Director-notes settings applied at session start via ``PersonaConfig``.
+
+    These fields are optional and serialized only when set.
+    """
+
+    custom_style_prompt: str | None = None
+    preset_style: str | None = None
+    expressivity: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        if self.custom_style_prompt is not None:
+            result["customStylePrompt"] = self.custom_style_prompt
+        if self.preset_style is not None:
+            result["presetStyle"] = self.preset_style
+        if self.expressivity is not None:
+            # Non-finite floats are invalid JSON
+            if not math.isfinite(self.expressivity):
+                raise ValueError("expressivity must be a finite number")
+            result["expressivity"] = self.expressivity
+        return result
+
+
+@dataclass
 class PersonaConfig:
     """Configuration for an Anam persona.
 
@@ -62,6 +88,7 @@ class PersonaConfig:
         llm_id: LLM model to use (optional). Set to 'CUSTOMER_CLIENT_V1' to disable
             Anam's default brain for custom LLM integration.
         max_session_length_seconds: Maximum session duration (optional).
+        director_notes: Optional director-notes defaults applied at session start.
         enable_audio_passthrough: If True, bypasses Anam's orchestration layer
             and allows to ingest TTS audio directly through the socket.
     """
@@ -75,6 +102,7 @@ class PersonaConfig:
     language_code: str | None = None
     llm_id: str | None = None
     max_session_length_seconds: int | None = None
+    director_notes: DirectorNotes | None = None
     enable_audio_passthrough: bool | None = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -98,6 +126,10 @@ class PersonaConfig:
             result["llmId"] = self.llm_id
         if self.max_session_length_seconds is not None:
             result["maxSessionLengthSeconds"] = self.max_session_length_seconds
+        if self.director_notes is not None:
+            director_notes = self.director_notes.to_dict()
+            if director_notes:
+                result["directorNotes"] = director_notes
         if self.enable_audio_passthrough is not None:
             result["enableAudioPassthrough"] = self.enable_audio_passthrough
         return result
