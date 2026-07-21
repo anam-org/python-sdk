@@ -365,15 +365,29 @@ import wave
 import asyncio
 from anam import AnamClient
 
+# Output writer hint: encode saved MP4 files at 25 fps. This does not mean
+# session.video_frames() is a fixed-rate iterator.
+AVATAR_VIDEO_FPS = 25
 client = AnamClient(api_key="...", persona_id="...")
 
-video_writer = cv2.VideoWriter("output.mp4", ...)
+video_writer = None
 audio_writer = wave.open("output.wav", "wb")
 
 async def save_video(session):
+    global video_writer
+
     async for frame in session.video_frames():
         # Read frame as BGR for OpenCV VideoWriter
         bgr_frame = frame.to_ndarray(format="bgr24")
+
+        if video_writer is None:
+            video_writer = cv2.VideoWriter(
+                "output.mp4",
+                cv2.VideoWriter.fourcc(*"mp4v"),
+                AVATAR_VIDEO_FPS,
+                (frame.width, frame.height),
+            )
+
         video_writer.write(bgr_frame)
 
 async def save_audio(session):
