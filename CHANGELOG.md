@@ -6,6 +6,19 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.7.0-alpha.2 (2026-07-21)
+
+### Documentation
+
+- Clarify avatar video frame rate
+  ([`a1d7553`](https://github.com/anam-org/python-sdk/commit/a1d75534af5f7c2b563b959c345a1469014cc634))
+
+### Features
+
+- Add widht/height to sessionOptions for Cara-4 portrait
+  ([`89f6d92`](https://github.com/anam-org/python-sdk/commit/89f6d922a32ee744997022e984e2dd424103370b))
+
+
 ## v0.7.0-alpha.1 (2026-07-08)
 
 ### Documentation
