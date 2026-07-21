@@ -145,6 +145,36 @@ async with client.connect(session_options=session_options) as session:
 
 **Daily tokens.** Mint meeting tokens through your own Daily app (Daily REST API or a server you control); the SDK never does this for you. A Daily meeting token is bound to the room it was minted for, so the `token` you pass must be minted for the same `room_url` — passing a token minted for a different room will fail at join time with a 403. For public rooms (no token required) you can omit `token` entirely.
 
+## Output Video Dimensions
+
+Optional. Request a specific output resolution via `video_width` / `video_height` on `SessionOptions`. Both must be set together (or both left unset); unsupported model/resolution combinations are rejected by the API. When unset, output defaults to landscape for the avatar model.
+
+| avatar model | orientation | width | height |
+|--------------|-------------|-------|--------|
+| Cara-3 | landscape | 720 | 480 |
+| Cara-4 | landscape | 1152 | 768 |
+| Cara-4 | portrait | 768 | 1152 |
+
+Landscape (Cara-4 default):
+
+```python
+from anam import SessionOptions
+
+session_options = SessionOptions(video_width=1152, video_height=768)
+async with client.connect(session_options=session_options) as session:
+    ...
+```
+
+Portrait (Cara-4 only — the avatar must be on a portrait-capable Cara-4 model):
+
+```python
+from anam import SessionOptions
+
+session_options = SessionOptions(video_width=768, video_height=1152)
+async with client.connect(session_options=session_options) as session:
+    ...
+```
+
 ## API Reference
 
 ### AnamClient
