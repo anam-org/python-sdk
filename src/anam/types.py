@@ -205,11 +205,15 @@ class SessionOptions:
     Args:
         enable_session_replay: If True (default), session is recorded. Set False to disable.
         video_quality: Video quality profile to pin the video quality. Supported values are "high" (default) and "auto".
+        video_width: Requested video output width. Must be provided with video_height.
+        video_height: Requested video output height. Must be provided with video_width.
         egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
     """
 
     enable_session_replay: bool = True
     video_quality: Literal["high", "auto"] = "high"
+    video_width: int | None = None
+    video_height: int | None = None
     egress: EgressOptions | None = None
 
     def __post_init__(self) -> None:
@@ -218,12 +222,25 @@ class SessionOptions:
         )
         if self.video_quality not in {"high", "auto"}:
             raise ValueError('video_quality must be either "high" or "auto"')
+        if (self.video_width is None) != (self.video_height is None):
+            raise ValueError("video_width and video_height must be provided together")
+        for name, value in (
+            ("video_width", self.video_width),
+            ("video_height", self.video_height),
+        ):
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            ):
+                raise ValueError(f"{name} must be a positive integer")
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
             "sessionReplay": self._session_replay.to_dict(),
             "videoQuality": self.video_quality,
         }
+        if self.video_width is not None and self.video_height is not None:
+            result["videoWidth"] = self.video_width
+            result["videoHeight"] = self.video_height
         if self.egress is not None:
             result["egress"] = self.egress.to_dict()
         return result

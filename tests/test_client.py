@@ -2,6 +2,7 @@
 
 import json
 import math
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -271,9 +272,55 @@ class TestSessionOptions:
             "videoQuality": "auto",
         }
 
+    def test_to_dict_with_video_dimensions(self) -> None:
+        options = SessionOptions(video_width=1152, video_height=768)
+        result = options.to_dict()
+
+        assert result == {
+            "sessionReplay": {"enableSessionReplay": True},
+            "videoQuality": "high",
+            "videoWidth": 1152,
+            "videoHeight": 768,
+        }
+
     def test_invalid_video_quality_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match='video_quality must be either "high" or "auto"'):
             SessionOptions(video_quality="medium")  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"video_width": 1152},
+            {"video_height": 768},
+        ],
+    )
+    def test_video_dimensions_must_be_provided_together(self, kwargs: dict[str, Any]) -> None:
+        with pytest.raises(
+            ValueError,
+            match="video_width and video_height must be provided together",
+        ):
+            SessionOptions(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("video_width", 0),
+            ("video_width", -1),
+            ("video_width", 1.5),
+            ("video_width", True),
+            ("video_height", 0),
+            ("video_height", -1),
+            ("video_height", 1.5),
+            ("video_height", True),
+        ],
+    )
+    def test_video_dimensions_must_be_positive_integers(
+        self, field: str, value: int | float | bool
+    ) -> None:
+        kwargs: dict[str, Any] = {"video_width": 1152, "video_height": 768, field: value}
+
+        with pytest.raises(ValueError, match=f"{field} must be a positive integer"):
+            SessionOptions(**kwargs)  # type: ignore[arg-type]
 
 
 class TestDirectorNoteCue:
