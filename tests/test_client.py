@@ -299,11 +299,18 @@ class TestSessionOptions:
             mode="daily",
             daily=EgressDailyOptions(room_url="https://example.daily.co/room"),
         )
-        options = SessionOptions(True, "high", None, None, egress)
+        options = SessionOptions(True, "high", None, None, egress, True)
 
         assert options.egress is egress
-        assert options.show_ai_avatar_disclosure is None
-        assert options.to_dict()["egress"]["mode"] == "daily"
+        assert options.show_ai_avatar_disclosure is True
+        result = options.to_dict()
+        assert result["egress"]["mode"] == "daily"
+        assert list(result) == [
+            "sessionReplay",
+            "videoQuality",
+            "egress",
+            "showAiAvatarDisclosure",
+        ]
 
     def test_invalid_video_quality_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match='video_quality must be either "high" or "auto"'):

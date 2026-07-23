@@ -244,10 +244,10 @@ class SessionOptions:
         if self.video_width is not None and self.video_height is not None:
             result["videoWidth"] = self.video_width
             result["videoHeight"] = self.video_height
-        if self.show_ai_avatar_disclosure is not None:
-            result["showAiAvatarDisclosure"] = self.show_ai_avatar_disclosure
         if self.egress is not None:
             result["egress"] = self.egress.to_dict()
+        if self.show_ai_avatar_disclosure is not None:
+            result["showAiAvatarDisclosure"] = self.show_ai_avatar_disclosure
         return result
 
 
