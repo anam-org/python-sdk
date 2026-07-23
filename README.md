@@ -102,8 +102,8 @@ Currently, only `"high"` or `"auto"` are supported `video_quality` values.
 
 ### AI avatar disclosure
 
-Anam applies the AI avatar disclosure automatically when required. To request it
-explicitly for a session:
+Anam applies the AI avatar disclosure automatically when required. When
+enabled, it remains visible throughout the session. To request it explicitly:
 
 ```python
 session_options = SessionOptions(show_ai_avatar_disclosure=True)
