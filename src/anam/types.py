@@ -207,17 +207,17 @@ class SessionOptions:
         video_quality: Video quality profile to pin the video quality. Supported values are "high" (default) and "auto".
         video_width: Requested video output width. Must be provided with video_height.
         video_height: Requested video output height. Must be provided with video_width.
+        egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
         show_ai_avatar_disclosure: Show the AI avatar disclosure at session start.
             Omit to use Anam's default. Explicit False requires an eligible plan.
-        egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
     """
 
     enable_session_replay: bool = True
     video_quality: Literal["high", "auto"] = "high"
     video_width: int | None = None
     video_height: int | None = None
-    show_ai_avatar_disclosure: bool | None = None
     egress: EgressOptions | None = None
+    show_ai_avatar_disclosure: bool | None = None
 
     def __post_init__(self) -> None:
         self._session_replay = SessionReplayOptions(
