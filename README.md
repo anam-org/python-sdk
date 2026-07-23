@@ -100,6 +100,18 @@ async with client.connect(session_options=session_options) as session:
 
 Currently, only `"high"` or `"auto"` are supported `video_quality` values.
 
+### AI avatar disclosure
+
+Anam applies the AI avatar disclosure automatically when required. To request it
+explicitly for a session:
+
+```python
+session_options = SessionOptions(show_ai_avatar_disclosure=True)
+```
+
+Eligible plans can set `show_ai_avatar_disclosure=False` when the application
+provides its own disclosure. Leave it unset to use Anam's default.
+
 ## Direct Egress (Daily)
 
 > [!WARNING]

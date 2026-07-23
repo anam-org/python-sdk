@@ -207,6 +207,8 @@ class SessionOptions:
         video_quality: Video quality profile to pin the video quality. Supported values are "high" (default) and "auto".
         video_width: Requested video output width. Must be provided with video_height.
         video_height: Requested video output height. Must be provided with video_width.
+        show_ai_avatar_disclosure: Show the AI avatar disclosure at session start.
+            Omit to use Anam's default. Explicit False requires an eligible plan.
         egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
     """
 
@@ -214,6 +216,7 @@ class SessionOptions:
     video_quality: Literal["high", "auto"] = "high"
     video_width: int | None = None
     video_height: int | None = None
+    show_ai_avatar_disclosure: bool | None = None
     egress: EgressOptions | None = None
 
     def __post_init__(self) -> None:
@@ -241,6 +244,8 @@ class SessionOptions:
         if self.video_width is not None and self.video_height is not None:
             result["videoWidth"] = self.video_width
             result["videoHeight"] = self.video_height
+        if self.show_ai_avatar_disclosure is not None:
+            result["showAiAvatarDisclosure"] = self.show_ai_avatar_disclosure
         if self.egress is not None:
             result["egress"] = self.egress.to_dict()
         return result

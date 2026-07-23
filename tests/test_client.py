@@ -283,6 +283,15 @@ class TestSessionOptions:
             "videoHeight": 768,
         }
 
+    @pytest.mark.parametrize("value", [True, False])
+    def test_to_dict_with_ai_avatar_disclosure(self, value: bool) -> None:
+        options = SessionOptions(show_ai_avatar_disclosure=value)
+
+        assert options.to_dict()["showAiAvatarDisclosure"] is value
+
+    def test_to_dict_omits_ai_avatar_disclosure_by_default(self) -> None:
+        assert "showAiAvatarDisclosure" not in SessionOptions().to_dict()
+
     def test_invalid_video_quality_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match='video_quality must be either "high" or "auto"'):
             SessionOptions(video_quality="medium")  # type: ignore[arg-type]
