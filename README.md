@@ -109,8 +109,8 @@ enabled, it remains visible throughout the session. To request it explicitly:
 session_options = SessionOptions(show_ai_avatar_disclosure=True)
 ```
 
-Eligible plans can set `show_ai_avatar_disclosure=False` when the application
-provides its own disclosure. Leave it unset to use Anam's default.
+Set `show_ai_avatar_disclosure=False` when the application provides its own
+disclosure. Leave it unset to use Anam's default.
 
 ## Direct Egress (Daily)
 

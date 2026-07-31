@@ -209,7 +209,7 @@ class SessionOptions:
         video_height: Requested video output height. Must be provided with video_width.
         egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
         show_ai_avatar_disclosure: Show the AI avatar disclosure throughout the session.
-            Omit to use Anam's default. Explicit False requires an eligible plan.
+            Omit to use Anam's default.
     """
 
     enable_session_replay: bool = True
@@ -247,7 +247,7 @@ class SessionOptions:
         if self.egress is not None:
             result["egress"] = self.egress.to_dict()
         if self.show_ai_avatar_disclosure is not None:
-            result["showAiAvatarDisclosure"] = self.show_ai_avatar_disclosure
+            result["showAIAvatarDisclosure"] = self.show_ai_avatar_disclosure
         return result
 
 

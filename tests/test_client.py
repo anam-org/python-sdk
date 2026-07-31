@@ -289,10 +289,10 @@ class TestSessionOptions:
     def test_to_dict_with_ai_avatar_disclosure(self, value: bool) -> None:
         options = SessionOptions(show_ai_avatar_disclosure=value)
 
-        assert options.to_dict()["showAiAvatarDisclosure"] is value
+        assert options.to_dict()["showAIAvatarDisclosure"] is value
 
     def test_to_dict_omits_ai_avatar_disclosure_by_default(self) -> None:
-        assert "showAiAvatarDisclosure" not in SessionOptions().to_dict()
+        assert "showAIAvatarDisclosure" not in SessionOptions().to_dict()
 
     def test_ai_avatar_disclosure_preserves_positional_egress_argument(self) -> None:
         egress = EgressOptions(
@@ -309,7 +309,7 @@ class TestSessionOptions:
             "sessionReplay",
             "videoQuality",
             "egress",
-            "showAiAvatarDisclosure",
+            "showAIAvatarDisclosure",
         ]
 
     def test_invalid_video_quality_raises_value_error(self) -> None:
