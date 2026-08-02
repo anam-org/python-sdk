@@ -100,17 +100,18 @@ async with client.connect(session_options=session_options) as session:
 
 Currently, only `"high"` or `"auto"` are supported `video_quality` values.
 
-### AI avatar disclosure
+### AI avatar disclosure watermark
 
-Anam applies the AI avatar disclosure automatically when required. When
-enabled, it remains visible throughout the session. To request it explicitly:
+Anam's default is not to render an AI avatar disclosure watermark. Set
+`show_ai_avatar_disclosure=True` when you want Anam to disclose that the video
+contains an AI avatar via a watermark:
 
 ```python
 session_options = SessionOptions(show_ai_avatar_disclosure=True)
 ```
 
-Set `show_ai_avatar_disclosure=False` when the application provides its own
-disclosure. Leave it unset to use Anam's default.
+Leave it unset, or set `show_ai_avatar_disclosure=False`, when the application
+provides its own disclosure or no watermark is required.
 
 ## Direct Egress (Daily)
 

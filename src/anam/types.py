@@ -208,8 +208,8 @@ class SessionOptions:
         video_width: Requested video output width. Must be provided with video_height.
         video_height: Requested video output height. Must be provided with video_width.
         egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
-        show_ai_avatar_disclosure: Show the AI avatar disclosure throughout the session.
-            Omit to use Anam's default.
+        show_ai_avatar_disclosure: Show Anam's AI avatar disclosure watermark throughout
+            the session. Defaults to Anam's default behavior, which is off.
     """
 
     enable_session_replay: bool = True
