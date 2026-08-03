@@ -1,3 +1,3 @@
 """Version information for anam-ai SDK."""
 
-__version__ = "0.7.0-alpha.2"
+__version__ = "0.8.0"
