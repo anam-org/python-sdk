@@ -113,6 +113,11 @@ session_options = SessionOptions(show_ai_avatar_disclosure=True)
 Leave it unset, or set `show_ai_avatar_disclosure=False`, when the application
 provides its own disclosure or no watermark is required.
 
+This may be useful for transparency workflows, including where the
+[EU AI Act Article 50](https://digital-strategy.ec.europa.eu/en/faqs/transparency-obligations-under-article-50-ai-act)
+is relevant to informing people that they are interacting with an AI system or
+viewing AI-generated or manipulated content.
+
 ## Direct Egress (Daily)
 
 > [!WARNING]
