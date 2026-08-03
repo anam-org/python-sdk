@@ -208,6 +208,8 @@ class SessionOptions:
         video_width: Requested video output width. Must be provided with video_height.
         video_height: Requested video output height. Must be provided with video_width.
         egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
+        show_ai_avatar_disclosure: Show Anam's AI avatar disclosure watermark throughout
+            the session. Defaults to Anam's default behavior, which is off.
     """
 
     enable_session_replay: bool = True
@@ -215,6 +217,7 @@ class SessionOptions:
     video_width: int | None = None
     video_height: int | None = None
     egress: EgressOptions | None = None
+    show_ai_avatar_disclosure: bool | None = None
 
     def __post_init__(self) -> None:
         self._session_replay = SessionReplayOptions(
@@ -243,6 +246,8 @@ class SessionOptions:
             result["videoHeight"] = self.video_height
         if self.egress is not None:
             result["egress"] = self.egress.to_dict()
+        if self.show_ai_avatar_disclosure is not None:
+            result["showAIAvatarDisclosure"] = self.show_ai_avatar_disclosure
         return result
 
 

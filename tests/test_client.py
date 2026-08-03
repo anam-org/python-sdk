@@ -12,6 +12,8 @@ from anam import (
     AnamEvent,
     ClientOptions,
     DirectorNotes,
+    EgressDailyOptions,
+    EgressOptions,
     MessageRole,
     MessageStreamEvent,
     PersonaConfig,
@@ -282,6 +284,33 @@ class TestSessionOptions:
             "videoWidth": 1152,
             "videoHeight": 768,
         }
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_to_dict_with_ai_avatar_disclosure(self, value: bool) -> None:
+        options = SessionOptions(show_ai_avatar_disclosure=value)
+
+        assert options.to_dict()["showAIAvatarDisclosure"] is value
+
+    def test_to_dict_omits_ai_avatar_disclosure_by_default(self) -> None:
+        assert "showAIAvatarDisclosure" not in SessionOptions().to_dict()
+
+    def test_ai_avatar_disclosure_preserves_positional_egress_argument(self) -> None:
+        egress = EgressOptions(
+            mode="daily",
+            daily=EgressDailyOptions(room_url="https://example.daily.co/room"),
+        )
+        options = SessionOptions(True, "high", None, None, egress, True)
+
+        assert options.egress is egress
+        assert options.show_ai_avatar_disclosure is True
+        result = options.to_dict()
+        assert result["egress"]["mode"] == "daily"
+        assert list(result) == [
+            "sessionReplay",
+            "videoQuality",
+            "egress",
+            "showAIAvatarDisclosure",
+        ]
 
     def test_invalid_video_quality_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match='video_quality must be either "high" or "auto"'):
