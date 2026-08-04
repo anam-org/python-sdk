@@ -232,6 +232,8 @@ class SessionOptions:
             raise ValueError('video_quality must be either "high" or "auto"')
         if (self.video_width is None) != (self.video_height is None):
             raise ValueError("video_width and video_height must be provided together")
+        if self.region_policy == "strict" and self.region is None:
+            raise ValueError('region_policy="strict" requires region to be set')
         for name, value in (
             ("video_width", self.video_width),
             ("video_height", self.video_height),

@@ -307,6 +307,19 @@ class TestSessionOptions:
         assert "region" not in result
         assert "regionPolicy" not in result
 
+    def test_strict_region_policy_requires_region(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match='region_policy="strict" requires region to be set',
+        ):
+            SessionOptions(region_policy="strict")
+
+    def test_strict_region_policy_with_region_is_valid(self) -> None:
+        options = SessionOptions(region="us", region_policy="strict")
+
+        assert options.region == "us"
+        assert options.region_policy == "strict"
+
     def test_ai_avatar_disclosure_preserves_positional_egress_argument(self) -> None:
         egress = EgressOptions(
             mode="daily",
@@ -397,6 +410,32 @@ class TestSessionInfo:
         info = SessionInfo("session-1", "engine.test", "https", "/ws", 5, 3, [])
 
         assert info.region is None
+
+
+class TestSessionRegionAccessors:
+    """Tests for served-region access through the public client API."""
+
+    @staticmethod
+    def client_with_response(**overrides: Any) -> AnamClient:
+        client = AnamClient(api_key="test-key", persona_id="stateful-persona")
+        client._session_info = SessionInfo.from_api_response(
+            TestSessionInfo.api_response(**overrides)
+        )
+        return client
+
+    def test_accessors_return_served_region(self) -> None:
+        client = self.client_with_response(region="us")
+        session = Session(client)
+
+        assert client.region == "us"
+        assert session.region == "us"
+
+    def test_accessors_return_none_when_region_is_unreported(self) -> None:
+        client = self.client_with_response()
+        session = Session(client)
+
+        assert client.region is None
+        assert session.region is None
 
 
 class TestDirectorNoteCue:

@@ -424,6 +424,11 @@ class AnamClient:
         """Get the current session ID."""
         return self._session_info.session_id if self._session_info else None
 
+    @property
+    def region(self) -> str | None:
+        """Get the current session region."""
+        return self._session_info.region if self._session_info else None
+
     def get_message_history(self) -> list[Message]:
         """Get the current message history.
 
@@ -781,6 +786,11 @@ class Session:
     def session_id(self) -> str | None:
         """Get the session ID."""
         return self._client.session_id
+
+    @property
+    def region(self) -> str | None:
+        """Get the session region."""
+        return self._client.region
 
     async def __aenter__(self) -> Session:
         """Enter async context."""
