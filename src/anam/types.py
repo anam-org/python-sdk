@@ -210,6 +210,9 @@ class SessionOptions:
         egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
         show_ai_avatar_disclosure: Show Anam's AI avatar disclosure watermark throughout
             the session. Defaults to Anam's default behavior, which is off.
+        region: Requested engine region. Supported values are "eu" and "us".
+        region_policy: "preferred" permits cross-region capacity failover; "strict"
+            keeps the session in the requested region.
     """
 
     enable_session_replay: bool = True
@@ -218,6 +221,8 @@ class SessionOptions:
     video_height: int | None = None
     egress: EgressOptions | None = None
     show_ai_avatar_disclosure: bool | None = None
+    region: Literal["eu", "us"] | None = None
+    region_policy: Literal["preferred", "strict"] | None = None
 
     def __post_init__(self) -> None:
         self._session_replay = SessionReplayOptions(
@@ -248,6 +253,10 @@ class SessionOptions:
             result["egress"] = self.egress.to_dict()
         if self.show_ai_avatar_disclosure is not None:
             result["showAIAvatarDisclosure"] = self.show_ai_avatar_disclosure
+        if self.region is not None:
+            result["region"] = self.region
+        if self.region_policy is not None:
+            result["regionPolicy"] = self.region_policy
         return result
 
 
@@ -363,6 +372,7 @@ class SessionInfo:
     heartbeat_interval_seconds: int
     max_reconnection_attempts: int
     ice_servers: list[dict[str, Any]] = field(default_factory=list)
+    region: Literal["eu", "us"] | None = None
 
     @classmethod
     def from_api_response(cls, data: dict[str, Any]) -> "SessionInfo":
@@ -376,4 +386,5 @@ class SessionInfo:
             heartbeat_interval_seconds=client_config.get("heartbeatIntervalSeconds", 5),
             max_reconnection_attempts=client_config.get("maxWsReconnectionAttempts", 5),
             ice_servers=client_config.get("iceServers", []),
+            region=data.get("region"),
         )

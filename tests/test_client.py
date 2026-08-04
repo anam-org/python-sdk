@@ -21,6 +21,7 @@ from anam import (
     SessionOptions,
 )
 from anam.errors import ConfigurationError, SessionError
+from anam.types import SessionInfo
 
 
 class TestAnamClientInit:
@@ -294,6 +295,18 @@ class TestSessionOptions:
     def test_to_dict_omits_ai_avatar_disclosure_by_default(self) -> None:
         assert "showAIAvatarDisclosure" not in SessionOptions().to_dict()
 
+    def test_to_dict_with_session_region(self) -> None:
+        options = SessionOptions(region="eu", region_policy="strict")
+
+        assert options.to_dict()["region"] == "eu"
+        assert options.to_dict()["regionPolicy"] == "strict"
+
+    def test_to_dict_omits_session_region_by_default(self) -> None:
+        result = SessionOptions().to_dict()
+
+        assert "region" not in result
+        assert "regionPolicy" not in result
+
     def test_ai_avatar_disclosure_preserves_positional_egress_argument(self) -> None:
         egress = EgressOptions(
             mode="daily",
@@ -350,6 +363,40 @@ class TestSessionOptions:
 
         with pytest.raises(ValueError, match=f"{field} must be a positive integer"):
             SessionOptions(**kwargs)  # type: ignore[arg-type]
+
+
+class TestSessionInfo:
+    """Tests for engine-session response parsing."""
+
+    @staticmethod
+    def api_response(**overrides: Any) -> dict[str, Any]:
+        return {
+            "sessionId": "session-1",
+            "engineHost": "engine.test",
+            "engineProtocol": "https",
+            "signallingEndpoint": "/ws",
+            "clientConfig": {
+                "heartbeatIntervalSeconds": 5,
+                "maxWsReconnectionAttempts": 3,
+                "iceServers": [],
+            },
+            **overrides,
+        }
+
+    def test_from_api_response_includes_served_region(self) -> None:
+        info = SessionInfo.from_api_response(self.api_response(region="us"))
+
+        assert info.region == "us"
+
+    def test_from_api_response_omits_unreported_region(self) -> None:
+        info = SessionInfo.from_api_response(self.api_response())
+
+        assert info.region is None
+
+    def test_region_field_preserves_positional_constructor_compatibility(self) -> None:
+        info = SessionInfo("session-1", "engine.test", "https", "/ws", 5, 3, [])
+
+        assert info.region is None
 
 
 class TestDirectorNoteCue:
