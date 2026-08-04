@@ -426,7 +426,11 @@ class AnamClient:
 
     @property
     def region(self) -> str | None:
-        """Get the current session region."""
+        """Get the current session region.
+
+        Known values today are "eu" and "us"; additional regions may be introduced
+        over time. Treat unrecognized values as informational.
+        """
         return self._session_info.region if self._session_info else None
 
     def get_message_history(self) -> list[Message]:
@@ -789,7 +793,11 @@ class Session:
 
     @property
     def region(self) -> str | None:
-        """Get the session region."""
+        """Get the session region.
+
+        Known values today are "eu" and "us"; additional regions may be introduced
+        over time. Treat unrecognized values as informational.
+        """
         return self._client.region
 
     async def __aenter__(self) -> Session:

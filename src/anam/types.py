@@ -210,7 +210,8 @@ class SessionOptions:
         egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
         show_ai_avatar_disclosure: Show Anam's AI avatar disclosure watermark throughout
             the session. Defaults to Anam's default behavior, which is off.
-        region: Requested engine region. Supported values are "eu" and "us".
+        region: Requested engine region. Known values today are "eu" and "us";
+            additional regions may be introduced over time.
         region_policy: "preferred" permits cross-region capacity failover; "strict"
             keeps the session in the requested region.
     """
@@ -221,7 +222,7 @@ class SessionOptions:
     video_height: int | None = None
     egress: EgressOptions | None = None
     show_ai_avatar_disclosure: bool | None = None
-    region: Literal["eu", "us"] | None = None
+    region: str | None = None
     region_policy: Literal["preferred", "strict"] | None = None
 
     def __post_init__(self) -> None:
@@ -365,6 +366,11 @@ class SessionInfo:
     """Information about an active streaming session.
 
     This is returned by the API when starting a session.
+
+    Args:
+        region: Actual region that served the session. Known values today are "eu"
+            and "us"; additional regions may be introduced over time. Treat
+            unrecognized values as informational.
     """
 
     session_id: str
@@ -374,7 +380,7 @@ class SessionInfo:
     heartbeat_interval_seconds: int
     max_reconnection_attempts: int
     ice_servers: list[dict[str, Any]] = field(default_factory=list)
-    region: Literal["eu", "us"] | None = None
+    region: str | None = None
 
     @classmethod
     def from_api_response(cls, data: dict[str, Any]) -> "SessionInfo":

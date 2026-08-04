@@ -2,7 +2,7 @@
 
 import json
 import math
-from typing import Any
+from typing import Any, get_type_hints
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -301,6 +301,15 @@ class TestSessionOptions:
         assert options.to_dict()["region"] == "eu"
         assert options.to_dict()["regionPolicy"] == "strict"
 
+    def test_to_dict_with_future_session_region(self) -> None:
+        options = SessionOptions(region="ap", region_policy="preferred")
+
+        assert options.to_dict()["region"] == "ap"
+        assert options.to_dict()["regionPolicy"] == "preferred"
+
+    def test_region_type_accepts_future_values(self) -> None:
+        assert get_type_hints(SessionOptions)["region"] == str | None
+
     def test_to_dict_omits_session_region_by_default(self) -> None:
         result = SessionOptions().to_dict()
 
@@ -396,10 +405,14 @@ class TestSessionInfo:
             **overrides,
         }
 
-    def test_from_api_response_includes_served_region(self) -> None:
-        info = SessionInfo.from_api_response(self.api_response(region="us"))
+    @pytest.mark.parametrize("region", ["us", "ap"])
+    def test_from_api_response_includes_served_region(self, region: str) -> None:
+        info = SessionInfo.from_api_response(self.api_response(region=region))
 
-        assert info.region == "us"
+        assert info.region == region
+
+    def test_region_type_accepts_future_values(self) -> None:
+        assert get_type_hints(SessionInfo)["region"] == str | None
 
     def test_from_api_response_omits_unreported_region(self) -> None:
         info = SessionInfo.from_api_response(self.api_response())
@@ -423,12 +436,13 @@ class TestSessionRegionAccessors:
         )
         return client
 
-    def test_accessors_return_served_region(self) -> None:
-        client = self.client_with_response(region="us")
+    @pytest.mark.parametrize("region", ["us", "ap"])
+    def test_accessors_return_served_region(self, region: str) -> None:
+        client = self.client_with_response(region=region)
         session = Session(client)
 
-        assert client.region == "us"
-        assert session.region == "us"
+        assert client.region == region
+        assert session.region == region
 
     def test_accessors_return_none_when_region_is_unreported(self) -> None:
         client = self.client_with_response()
