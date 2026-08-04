@@ -261,12 +261,18 @@ class ClientOptions:
         ice_servers: Custom ICE servers for WebRTC (optional).
         client_label: Custom label for session tracking (optional).
             Defaults to 'python-sdk' if not specified.
+        environment: Engine routing overrides for non-production targets
+            (optional), e.g. ``{"podName": ..., "engineVersion": ...}`` to pin
+            the session to a specific engine pod / devspace / preview. Sent
+            verbatim as the ``environment`` field of the session request; the
+            backend ignores it for standard production routing.
     """
 
     api_base_url: str = "https://api.anam.ai"
     api_version: str = "v1"
     ice_servers: list[dict[str, Any]] | None = None
     client_label: str | None = None
+    environment: dict[str, str] | None = None
 
 
 @dataclass

@@ -72,6 +72,7 @@ class TestAnamClientInit:
         """Test initialization with ClientOptions."""
         options = ClientOptions(
             api_base_url="https://custom.api.com",
+            environment={"podName": "anam-engine-abc", "engineVersion": "v5.13.2"},
         )
         client = AnamClient(
             api_key="test-key",
@@ -79,6 +80,76 @@ class TestAnamClientInit:
             options=options,
         )
         assert client._options.api_base_url == "https://custom.api.com"
+        assert client._options.environment == {
+            "podName": "anam-engine-abc",
+            "engineVersion": "v5.13.2",
+        }
+
+    def test_environment_defaults_to_none(self) -> None:
+        assert ClientOptions().environment is None
+
+
+class TestCoreApiClientSessionBody:
+    """The session request body carries engine routing overrides."""
+
+    @staticmethod
+    def _fake_session(captured: dict):
+        response_payload = {
+            "sessionId": "sess-1",
+            "engineHost": "engine.example",
+            "engineProtocol": "https",
+            "signallingEndpoint": "wss://engine.example/ws",
+        }
+
+        class _Resp:
+            status = 201
+
+            async def json(self) -> dict:
+                return response_payload
+
+            async def __aenter__(self) -> "_Resp":
+                return self
+
+            async def __aexit__(self, *_: object) -> bool:
+                return False
+
+        class _Session:
+            async def __aenter__(self) -> "_Session":
+                return self
+
+            async def __aexit__(self, *_: object) -> bool:
+                return False
+
+            def post(self, url: str, headers=None, json=None):  # noqa: A002
+                captured["body"] = json
+                return _Resp()
+
+        return _Session
+
+    @pytest.mark.asyncio
+    async def test_environment_is_sent_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from anam._api import CoreApiClient
+
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr("aiohttp.ClientSession", self._fake_session(captured))
+
+        overrides = {"podName": "anam-engine-abc", "engineVersion": "v5.13.2"}
+        client = CoreApiClient("key", ClientOptions(environment=overrides))
+        await client.start_session(PersonaConfig(persona_id="p"), SessionOptions())
+
+        assert captured["body"]["environment"] == overrides
+
+    @pytest.mark.asyncio
+    async def test_environment_is_omitted_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from anam._api import CoreApiClient
+
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr("aiohttp.ClientSession", self._fake_session(captured))
+
+        client = CoreApiClient("key", ClientOptions())
+        await client.start_session(PersonaConfig(persona_id="p"), SessionOptions())
+
+        assert "environment" not in captured["body"]
 
 
 class TestAnamClientEvents:
