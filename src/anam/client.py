@@ -576,7 +576,7 @@ class Session:
         # A pre-minted token owns its persona/brain snapshot server-side, so
         # there is intentionally no local PersonaConfig to inspect. API-key
         # sessions retain the useful warning for obviously unhandled input.
-        persona_config = self._client._persona_config
+        persona_config = None if self._client._session_token else self._get_persona_config()
         if (
             persona_config
             and persona_config.persona_id is None
