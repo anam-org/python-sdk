@@ -6,6 +6,30 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.9.0-alpha.2 (2026-08-05)
+
+### Bug Fixes
+
+- Make auto-approval workflow bootstrap-safe ([#68](https://github.com/anam-org/python-sdk/pull/68),
+  [`b6d7eb6`](https://github.com/anam-org/python-sdk/commit/b6d7eb67146905665405ea1574a05a82c8ebd32b))
+
+- Retain API-key persona validation ([#68](https://github.com/anam-org/python-sdk/pull/68),
+  [`b6d7eb6`](https://github.com/anam-org/python-sdk/commit/b6d7eb67146905665405ea1574a05a82c8ebd32b))
+
+- Support token-authenticated messages ([#68](https://github.com/anam-org/python-sdk/pull/68),
+  [`b6d7eb6`](https://github.com/anam-org/python-sdk/commit/b6d7eb67146905665405ea1574a05a82c8ebd32b))
+
+### Continuous Integration
+
+- Auto-approve low-risk and hot-fix PRs ([#68](https://github.com/anam-org/python-sdk/pull/68),
+  [`b6d7eb6`](https://github.com/anam-org/python-sdk/commit/b6d7eb67146905665405ea1574a05a82c8ebd32b))
+
+### Features
+
+- Support pre-minted session tokens ([#68](https://github.com/anam-org/python-sdk/pull/68),
+  [`b6d7eb6`](https://github.com/anam-org/python-sdk/commit/b6d7eb67146905665405ea1574a05a82c8ebd32b))
+
+
 ## v0.9.0-alpha.1 (2026-08-05)
 
 ### Features
