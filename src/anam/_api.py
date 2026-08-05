@@ -69,6 +69,10 @@ class CoreApiClient:
             "sessionOptions": session_options.to_dict(),
             "clientMetadata": CLIENT_METADATA,
         }
+        # Engine routing overrides (e.g. pin to a specific pod / devspace /
+        # preview). Only sent when set; omitted entirely for production.
+        if self._options.environment:
+            body["environment"] = self._options.environment
 
         logger.debug("Starting session at %s (direct API-key auth)", url)
 
