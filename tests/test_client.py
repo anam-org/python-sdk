@@ -116,6 +116,9 @@ class TestAnamClientInit:
     def test_environment_defaults_to_none(self) -> None:
         assert ClientOptions().environment is None
 
+    def test_request_headers_default_to_none(self) -> None:
+        assert ClientOptions().request_headers is None
+
 
 class TestCoreApiClientSessionBody:
     """The session request body matches the selected authentication mode."""
@@ -202,6 +205,34 @@ class TestCoreApiClientSessionBody:
 
         assert captured["headers"]["Authorization"] == f"Bearer {token}"
         assert captured["body"] == {"clientMetadata": CLIENT_METADATA}
+
+    @pytest.mark.asyncio
+    async def test_additional_request_headers_cannot_override_sdk_headers(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from anam._api import CoreApiClient
+
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr("aiohttp.ClientSession", self._fake_session(captured))
+
+        token = "header.payload.signature"
+        client = CoreApiClient(
+            session_token=token,
+            options=ClientOptions(
+                request_headers={
+                    "x-vercel-protection-bypass": "preview-secret",
+                    "Authorization": "Bearer attacker-controlled",
+                    "Content-Type": "text/plain",
+                }
+            ),
+        )
+        await client.start_session(None, SessionOptions())
+
+        assert captured["headers"] == {
+            "x-vercel-protection-bypass": "preview-secret",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
 
 class TestAnamClientEvents:
