@@ -243,6 +243,19 @@ class TestAnamClientEvents:
         assert handler not in client._event_callbacks[AnamEvent.CONNECTION_ESTABLISHED]
 
 
+class TestSessionMessages:
+    @pytest.mark.asyncio
+    async def test_pre_minted_token_can_send_message_without_local_persona(self) -> None:
+        client = AnamClient(session_token="header.payload.signature")
+        client._streaming_client = MagicMock()
+        client._streaming_client._data_channel_open = True
+
+        session = Session(client)
+        await session.send_message("Hello")
+
+        client._streaming_client.send_user_message.assert_called_once_with("Hello")
+
+
 class TestAnamClientDataMessages:
     """Tests for data channel message handling."""
 

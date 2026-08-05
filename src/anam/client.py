@@ -573,12 +573,14 @@ class Session:
         Raises:
             SessionError: If not connected or if LLM is not available.
         """
-        # Validate that LLM is available for processing messages
-        persona_config = self._get_persona_config()
-
-        # Check a persona and LLM are consuming the text messages
-        if persona_config.persona_id is None and (
-            persona_config.llm_id == "CUSTOMER_CLIENT_V1" or persona_config.llm_id is None
+        # A pre-minted token owns its persona/brain snapshot server-side, so
+        # there is intentionally no local PersonaConfig to inspect. API-key
+        # sessions retain the useful warning for obviously unhandled input.
+        persona_config = self._client._persona_config
+        if (
+            persona_config
+            and persona_config.persona_id is None
+            and (persona_config.llm_id == "CUSTOMER_CLIENT_V1" or persona_config.llm_id is None)
         ):
             logger.warning(
                 "Persona ID and LLM ID are not set, messages will not be processed by the backend."

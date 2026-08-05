@@ -12,6 +12,7 @@ jobs:
 
     steps:
       - id: app-token
+        if: contains(github.event.pull_request.labels.*.name, 'hot-fix') || contains(github.event.pull_request.labels.*.name, 'low-risk')
         uses: actions/create-github-app-token@v2
         with:
           app-id: '1095332'
