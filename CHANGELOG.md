@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.9.0-alpha.1 (2026-08-05)
+
+### Features
+
+- Forward engine routing overrides via ClientOptions.environment (ENG-2612)
+  ([`fb073ad`](https://github.com/anam-org/python-sdk/commit/fb073ad29199c32dfadbd422b5a8ed0f2cfd7bd5))
+
+
 ## v0.8.0 (2026-08-03)
 
 
