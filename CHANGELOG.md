@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.9.0-alpha.3 (2026-08-05)
+
+### Features
+
+- Support additional session request headers ([#69](https://github.com/anam-org/python-sdk/pull/69),
+  [`a6d5947`](https://github.com/anam-org/python-sdk/commit/a6d594765a03e4367ef9c575db500929073bd163))
+
+
 ## v0.9.0-alpha.2 (2026-08-05)
 
 ### Bug Fixes
