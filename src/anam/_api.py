@@ -20,15 +20,18 @@ CLIENT_METADATA = {
 class CoreApiClient:
     """Internal client for Anam REST API.
 
-    Starts sessions using the direct API-key path.
+    Starts sessions using either direct API-key auth or a pre-minted token.
     """
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None = None,
         options: ClientOptions | None = None,
+        *,
+        session_token: str | None = None,
     ):
         self._api_key = api_key
+        self._session_token = session_token
         self._options = options or ClientOptions()
         self._base_url = self._options.api_base_url
         self._api_version = self._options.api_version
@@ -40,13 +43,14 @@ class CoreApiClient:
 
     async def start_session(
         self,
-        persona_config: PersonaConfig,
+        persona_config: PersonaConfig | None,
         session_options: SessionOptions,
     ) -> SessionInfo:
-        """Start a new streaming session using direct API-key auth.
+        """Start a new streaming session.
 
         Args:
-            persona_config: The persona configuration.
+            persona_config: The persona configuration for API-key auth. The
+                server-side token snapshot is used for session-token auth.
             session_options: Additional session options.
 
         Returns:
@@ -58,23 +62,31 @@ class CoreApiClient:
             AnamError: For any other unexpected server response.
         """
         url = f"{self._api_url}/engine/session"
+        authorization = self._session_token or self._api_key
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._api_key}",
+            "Authorization": f"Bearer {authorization}",
         }
-        client_label = self._options.client_label or "python-sdk"
-        body: dict[str, Any] = {
-            "clientLabel": client_label,
-            "personaConfig": persona_config.to_dict(),
-            "sessionOptions": session_options.to_dict(),
-            "clientMetadata": CLIENT_METADATA,
-        }
-        # Engine routing overrides (e.g. pin to a specific pod / devspace /
-        # preview). Only sent when set; omitted entirely for production.
-        if self._options.environment:
-            body["environment"] = self._options.environment
+        body: dict[str, Any] = {"clientMetadata": CLIENT_METADATA}
+        auth_mode = "session-token" if self._session_token else "direct API-key"
 
-        logger.debug("Starting session at %s (direct API-key auth)", url)
+        if not self._session_token:
+            if persona_config is None:
+                raise SessionError("Persona configuration not found")
+            client_label = self._options.client_label or "python-sdk"
+            body.update(
+                {
+                    "clientLabel": client_label,
+                    "personaConfig": persona_config.to_dict(),
+                    "sessionOptions": session_options.to_dict(),
+                }
+            )
+            # Engine routing overrides (e.g. pin to a specific pod / devspace /
+            # preview). Only sent when set; omitted entirely for production.
+            if self._options.environment:
+                body["environment"] = self._options.environment
+
+        logger.debug("Starting session at %s (%s auth)", url, auth_mode)
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=body) as response:

@@ -1,0 +1,44 @@
+name: Auto approve low risk and hot fix PRs
+
+on:
+  pull_request:
+    types: [labeled, synchronize, opened, reopened]
+
+permissions: {}
+
+jobs:
+  auto-approve:
+    runs-on: ubuntu-latest
+
+    steps:
+      - id: app-token
+        if: contains(github.event.pull_request.labels.*.name, 'hot-fix') || contains(github.event.pull_request.labels.*.name, 'low-risk')
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: '1095332'
+          private-key: ${{ secrets.ANAM_PUSH_BOT_PRIVATE_KEY }}
+
+      - uses: actions/github-script@v7
+        if: contains(github.event.pull_request.labels.*.name, 'hot-fix') || contains(github.event.pull_request.labels.*.name, 'low-risk')
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            if (reviews.some((review) => review.state === 'APPROVED')) {
+              core.info('PR is already approved');
+              return;
+            }
+            const labels = context.payload.pull_request.labels
+              .map((label) => label.name)
+              .filter((label) => ['hot-fix', 'low-risk'].includes(label));
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              event: 'APPROVE',
+              body: `Auto-approved with label(s): ${labels.join(', ')}`,
+            });

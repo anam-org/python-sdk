@@ -69,21 +69,29 @@ class AnamClient:
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None = None,
         persona_id: str | None = None,
         persona_config: PersonaConfig | None = None,
         options: ClientOptions | None = None,
+        *,
+        session_token: str | None = None,
     ):
         """Initialize the Anam client.
 
-        You must provide either `persona_id` for a simple setup, or `persona_config`
-        for full configuration control. `persona_config` takes precedence over `persona_id`.
+        Authenticate with either an API key or a pre-minted session token.
+
+        API-key authentication requires either `persona_id` for a simple setup
+        or `persona_config` for full configuration control. A session token
+        already contains the server-side persona and session snapshot, so it
+        must not be combined with either persona argument.
 
         Args:
-            api_key: Your Anam API key.
+            api_key: Your Anam API key. Mutually exclusive with `session_token`.
             persona_id: ID of the persona to use (simple setup).
             persona_config: Full persona configuration (advanced setup).
             options: Additional client options.
+            session_token: A pre-minted Anam session token. Mutually exclusive
+                with `api_key` and persona configuration.
 
         Raises:
             ConfigurationError: If configuration is invalid.
@@ -108,25 +116,56 @@ class AnamClient:
                 ),
             )
             ```
+
+            Pre-minted session token:
+            ```python
+            client = AnamClient(session_token="your-session-token")
+            ```
         """
-        # Validate configuration
-        if not api_key:
-            raise ConfigurationError("api_key is required")
+        # Before direct API-key session starts were introduced, the first
+        # positional argument was commonly a pre-minted session token. API keys
+        # never contain dots, while Anam session JWTs do, so retain that legacy
+        # form while recommending the explicit session_token keyword.
+        if (
+            api_key
+            and "." in api_key
+            and not session_token
+            and not persona_id
+            and not persona_config
+        ):
+            session_token = api_key
+            api_key = None
 
-        if not persona_id and not persona_config:
-            raise ConfigurationError("Either persona_id or persona config must be provided")
+        has_api_key = bool(api_key)
+        has_session_token = bool(session_token)
+        if has_api_key == has_session_token:
+            raise ConfigurationError("Provide exactly one of api_key or session_token")
 
-        if persona_id and persona_config:
-            raise ConfigurationError("Provide either persona_id or persona config, not both")
+        if has_session_token:
+            if persona_id or persona_config:
+                raise ConfigurationError(
+                    "session_token cannot be combined with persona_id or persona_config"
+                )
+        else:
+            if not persona_id and not persona_config:
+                raise ConfigurationError(
+                    "Either persona_id or persona config must be provided with api_key"
+                )
+            if persona_id and persona_config:
+                raise ConfigurationError("Provide either persona_id or persona config, not both")
 
         self._api_key = api_key
+        self._session_token = session_token
         self._options = options or ClientOptions()
 
         # Create persona config
+        self._persona_config: PersonaConfig | None
         if persona_config:
             self._persona_config = persona_config
+        elif persona_id:
+            self._persona_config = PersonaConfig(persona_id=persona_id)
         else:
-            self._persona_config = PersonaConfig(persona_id=persona_id)  # type: ignore
+            self._persona_config = None
 
         # Event callbacks
         self._event_callbacks: dict[AnamEvent, list[EventCallback]] = {
@@ -242,6 +281,7 @@ class AnamClient:
         # Create API client and start session
         self._api_client = CoreApiClient(
             api_key=self._api_key,
+            session_token=self._session_token,
             options=self._options,
         )
 
@@ -533,12 +573,14 @@ class Session:
         Raises:
             SessionError: If not connected or if LLM is not available.
         """
-        # Validate that LLM is available for processing messages
-        persona_config = self._get_persona_config()
-
-        # Check a persona and LLM are consuming the text messages
-        if persona_config.persona_id is None and (
-            persona_config.llm_id == "CUSTOMER_CLIENT_V1" or persona_config.llm_id is None
+        # A pre-minted token owns its persona/brain snapshot server-side, so
+        # there is intentionally no local PersonaConfig to inspect. API-key
+        # sessions retain the useful warning for obviously unhandled input.
+        persona_config = None if self._client._session_token else self._get_persona_config()
+        if (
+            persona_config
+            and persona_config.persona_id is None
+            and (persona_config.llm_id == "CUSTOMER_CLIENT_V1" or persona_config.llm_id is None)
         ):
             logger.warning(
                 "Persona ID and LLM ID are not set, messages will not be processed by the backend."
