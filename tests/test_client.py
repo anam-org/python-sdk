@@ -26,15 +26,43 @@ from anam.errors import ConfigurationError, SessionError
 class TestAnamClientInit:
     """Tests for AnamClient initialization."""
 
-    def test_requires_api_key(self) -> None:
-        """Test that api_key is required."""
-        with pytest.raises(ConfigurationError, match="api_key is required"):
+    def test_requires_one_authentication_mode(self) -> None:
+        """Test that one credential is required."""
+        with pytest.raises(ConfigurationError, match="exactly one"):
             AnamClient(api_key="", persona_id="test-persona")
+
+    def test_cannot_provide_both_authentication_modes(self) -> None:
+        with pytest.raises(ConfigurationError, match="exactly one"):
+            AnamClient(
+                api_key="test-key",
+                session_token="header.payload.signature",
+                persona_id="test-persona",
+            )
 
     def test_requires_persona(self) -> None:
         """Test that either persona_id or persona is required."""
         with pytest.raises(ConfigurationError, match="Either persona_id or persona"):
             AnamClient(api_key="test-key")
+
+    def test_session_token_does_not_accept_persona_configuration(self) -> None:
+        with pytest.raises(ConfigurationError, match="cannot be combined"):
+            AnamClient(
+                session_token="header.payload.signature",
+                persona_id="test-persona",
+            )
+
+    def test_init_with_session_token(self) -> None:
+        client = AnamClient(session_token="header.payload.signature")
+
+        assert client._api_key is None
+        assert client._session_token == "header.payload.signature"
+        assert client._persona_config is None
+
+    def test_legacy_positional_session_token_is_supported(self) -> None:
+        client = AnamClient("header.payload.signature")
+
+        assert client._api_key is None
+        assert client._session_token == "header.payload.signature"
 
     def test_cannot_provide_both_persona_options(self) -> None:
         """Test that you can't provide both persona_id and persona_config."""
@@ -90,7 +118,7 @@ class TestAnamClientInit:
 
 
 class TestCoreApiClientSessionBody:
-    """The session request body carries engine routing overrides."""
+    """The session request body matches the selected authentication mode."""
 
     @staticmethod
     def _fake_session(captured: dict):
@@ -121,6 +149,8 @@ class TestCoreApiClientSessionBody:
                 return False
 
             def post(self, url: str, headers=None, json=None):  # noqa: A002
+                captured["url"] = url
+                captured["headers"] = headers
                 captured["body"] = json
                 return _Resp()
 
@@ -150,6 +180,28 @@ class TestCoreApiClientSessionBody:
         await client.start_session(PersonaConfig(persona_id="p"), SessionOptions())
 
         assert "environment" not in captured["body"]
+
+    @pytest.mark.asyncio
+    async def test_pre_minted_session_token_uses_snapshot_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from anam._api import CLIENT_METADATA, CoreApiClient
+
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr("aiohttp.ClientSession", self._fake_session(captured))
+
+        token = "header.payload.signature"
+        client = CoreApiClient(
+            session_token=token,
+            options=ClientOptions(
+                client_label="must-not-override-token",
+                environment={"podName": "must-not-override-token"},
+            ),
+        )
+        await client.start_session(None, SessionOptions(video_quality="auto"))
+
+        assert captured["headers"]["Authorization"] == f"Bearer {token}"
+        assert captured["body"] == {"clientMetadata": CLIENT_METADATA}
 
 
 class TestAnamClientEvents:
