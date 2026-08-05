@@ -64,6 +64,7 @@ class CoreApiClient:
         url = f"{self._api_url}/engine/session"
         authorization = self._session_token or self._api_key
         headers = {
+            **(self._options.request_headers or {}),
             "Content-Type": "application/json",
             "Authorization": f"Bearer {authorization}",
         }
