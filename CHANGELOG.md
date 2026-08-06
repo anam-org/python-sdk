@@ -6,6 +6,14 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.9.0-alpha.4 (2026-08-06)
+
+### Features
+
+- Session region controls ([#66](https://github.com/anam-org/python-sdk/pull/66),
+  [`7d75bfc`](https://github.com/anam-org/python-sdk/commit/7d75bfca10f206d79e68c89d2f6a2196e08d50b8))
+
+
 ## v0.9.0-alpha.3 (2026-08-05)
 
 ### Features
