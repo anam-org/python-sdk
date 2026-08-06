@@ -78,20 +78,14 @@ class AnamClient:
     ):
         """Initialize the Anam client.
 
-        Authenticate with either an API key or a pre-minted session token.
-
         API-key authentication requires either `persona_id` for a simple setup
-        or `persona_config` for full configuration control. A session token
-        already contains the server-side persona and session snapshot, so it
-        must not be combined with either persona argument.
+        or `persona_config` for full configuration control.
 
         Args:
-            api_key: Your Anam API key. Mutually exclusive with `session_token`.
+            api_key: Your Anam API key.
             persona_id: ID of the persona to use (simple setup).
             persona_config: Full persona configuration (advanced setup).
             options: Additional client options.
-            session_token: A pre-minted Anam session token. Mutually exclusive
-                with `api_key` and persona configuration.
 
         Raises:
             ConfigurationError: If configuration is invalid.
@@ -116,16 +110,7 @@ class AnamClient:
                 ),
             )
             ```
-
-            Pre-minted session token:
-            ```python
-            client = AnamClient(session_token="your-session-token")
-            ```
         """
-        # Before direct API-key session starts were introduced, the first
-        # positional argument was commonly a pre-minted session token. API keys
-        # never contain dots, while Anam session JWTs do, so retain that legacy
-        # form while recommending the explicit session_token keyword.
         if (
             api_key
             and "." in api_key
@@ -582,9 +567,6 @@ class Session:
         Raises:
             SessionError: If not connected or if LLM is not available.
         """
-        # A pre-minted token owns its persona/brain snapshot server-side, so
-        # there is intentionally no local PersonaConfig to inspect. API-key
-        # sessions retain the useful warning for obviously unhandled input.
         persona_config = None if self._client._session_token else self._get_persona_config()
         if (
             persona_config

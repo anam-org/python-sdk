@@ -61,22 +61,6 @@ async def main():
 asyncio.run(main())
 ```
 
-### Pre-minted session tokens
-
-Use a pre-minted session token when another trusted service has already
-snapshotted the persona and session configuration:
-
-```python
-client = AnamClient(session_token="your-session-token")
-
-async with client.connect() as session:
-    await session.talk("This text is sent directly to TTS.")
-```
-
-The token and its server-side snapshot are authoritative. Do not also pass an
-API key, persona configuration, client label, routing override, or session
-options that you expect to override that snapshot.
-
 ## Features
 
 - 🎥 **Real-time Audio/Video streaming** - Receive synchronized audio/video frames from the avatar (as PyAV AudioFrame/VideoFrame objects)
