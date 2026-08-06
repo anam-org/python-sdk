@@ -2,7 +2,7 @@
 
 import json
 import math
-from typing import Any
+from typing import Any, get_type_hints
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -21,6 +21,7 @@ from anam import (
     SessionOptions,
 )
 from anam.errors import ConfigurationError, SessionError
+from anam.types import SessionInfo
 
 
 class TestAnamClientInit:
@@ -461,6 +462,47 @@ class TestSessionOptions:
     def test_to_dict_omits_ai_avatar_disclosure_by_default(self) -> None:
         assert "showAIAvatarDisclosure" not in SessionOptions().to_dict()
 
+    def test_to_dict_with_session_region(self) -> None:
+        options = SessionOptions(region="eu", region_policy="strict")
+
+        assert options.to_dict()["region"] == "eu"
+        assert options.to_dict()["regionPolicy"] == "strict"
+
+    def test_to_dict_with_future_session_region(self) -> None:
+        options = SessionOptions(region="mars", region_policy="preferred")
+
+        assert options.to_dict()["region"] == "mars"
+        assert options.to_dict()["regionPolicy"] == "preferred"
+
+    def test_region_type_accepts_future_values(self) -> None:
+        assert get_type_hints(SessionOptions)["region"] == str | None
+
+    def test_to_dict_omits_session_region_by_default(self) -> None:
+        result = SessionOptions().to_dict()
+
+        assert "region" not in result
+        assert "regionPolicy" not in result
+
+    def test_invalid_region_policy_raises(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match='region_policy must be either "preferred" or "strict"',
+        ):
+            SessionOptions(region="eu", region_policy="fallback")  # type: ignore[arg-type]
+
+    def test_strict_region_policy_requires_region(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match='region_policy="strict" requires region to be set',
+        ):
+            SessionOptions(region_policy="strict")
+
+    def test_strict_region_policy_with_region_is_valid(self) -> None:
+        options = SessionOptions(region="us", region_policy="strict")
+
+        assert options.region == "us"
+        assert options.region_policy == "strict"
+
     def test_ai_avatar_disclosure_preserves_positional_egress_argument(self) -> None:
         egress = EgressOptions(
             mode="daily",
@@ -517,6 +559,71 @@ class TestSessionOptions:
 
         with pytest.raises(ValueError, match=f"{field} must be a positive integer"):
             SessionOptions(**kwargs)  # type: ignore[arg-type]
+
+
+class TestSessionInfo:
+    """Tests for engine-session response parsing."""
+
+    @staticmethod
+    def api_response(**overrides: Any) -> dict[str, Any]:
+        return {
+            "sessionId": "session-1",
+            "engineHost": "engine.test",
+            "engineProtocol": "https",
+            "signallingEndpoint": "/ws",
+            "clientConfig": {
+                "heartbeatIntervalSeconds": 5,
+                "maxWsReconnectionAttempts": 3,
+                "iceServers": [],
+            },
+            **overrides,
+        }
+
+    @pytest.mark.parametrize("region", ["us", "mars"])
+    def test_from_api_response_includes_served_region(self, region: str) -> None:
+        info = SessionInfo.from_api_response(self.api_response(region=region))
+
+        assert info.region == region
+
+    def test_region_type_accepts_future_values(self) -> None:
+        assert get_type_hints(SessionInfo)["region"] == str | None
+
+    def test_from_api_response_omits_unreported_region(self) -> None:
+        info = SessionInfo.from_api_response(self.api_response())
+
+        assert info.region is None
+
+    def test_region_field_preserves_positional_constructor_compatibility(self) -> None:
+        info = SessionInfo("session-1", "engine.test", "https", "/ws", 5, 3, [])
+
+        assert info.region is None
+
+
+class TestSessionRegionAccessors:
+    """Tests for served-region access through the public client API."""
+
+    @staticmethod
+    def client_with_response(**overrides: Any) -> AnamClient:
+        client = AnamClient(api_key="test-key", persona_id="stateful-persona")
+        client._session_info = SessionInfo.from_api_response(
+            TestSessionInfo.api_response(**overrides)
+        )
+        return client
+
+    @pytest.mark.parametrize("region", ["us", "mars"])
+    def test_accessors_return_served_region(self, region: str) -> None:
+        client = self.client_with_response(region=region)
+        session = Session(client)
+
+        assert client.region == region
+        assert session.region == region
+
+    def test_accessors_return_none_when_region_is_unreported(self) -> None:
+        client = self.client_with_response()
+        session = Session(client)
+
+        assert client.region is None
+        assert session.region is None
 
 
 class TestDirectorNoteCue:
