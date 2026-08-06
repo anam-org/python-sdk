@@ -18,10 +18,7 @@ CLIENT_METADATA = {
 
 
 class CoreApiClient:
-    """Internal client for Anam REST API.
-
-    Starts sessions using either direct API-key auth or a pre-minted token.
-    """
+    """Internal client for Anam REST API."""
 
     def __init__(
         self,
@@ -49,8 +46,7 @@ class CoreApiClient:
         """Start a new streaming session.
 
         Args:
-            persona_config: The persona configuration for API-key auth. The
-                server-side token snapshot is used for session-token auth.
+            persona_config: The persona configuration for API-key auth.
             session_options: Additional session options.
 
         Returns:
