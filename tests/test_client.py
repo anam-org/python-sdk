@@ -302,9 +302,9 @@ class TestSessionOptions:
         assert options.to_dict()["regionPolicy"] == "strict"
 
     def test_to_dict_with_future_session_region(self) -> None:
-        options = SessionOptions(region="ap", region_policy="preferred")
+        options = SessionOptions(region="mars", region_policy="preferred")
 
-        assert options.to_dict()["region"] == "ap"
+        assert options.to_dict()["region"] == "mars"
         assert options.to_dict()["regionPolicy"] == "preferred"
 
     def test_region_type_accepts_future_values(self) -> None:
@@ -315,6 +315,13 @@ class TestSessionOptions:
 
         assert "region" not in result
         assert "regionPolicy" not in result
+
+    def test_invalid_region_policy_raises(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match='region_policy must be either "preferred" or "strict"',
+        ):
+            SessionOptions(region="eu", region_policy="fallback")  # type: ignore[arg-type]
 
     def test_strict_region_policy_requires_region(self) -> None:
         with pytest.raises(
@@ -405,7 +412,7 @@ class TestSessionInfo:
             **overrides,
         }
 
-    @pytest.mark.parametrize("region", ["us", "ap"])
+    @pytest.mark.parametrize("region", ["us", "mars"])
     def test_from_api_response_includes_served_region(self, region: str) -> None:
         info = SessionInfo.from_api_response(self.api_response(region=region))
 
@@ -436,7 +443,7 @@ class TestSessionRegionAccessors:
         )
         return client
 
-    @pytest.mark.parametrize("region", ["us", "ap"])
+    @pytest.mark.parametrize("region", ["us", "mars"])
     def test_accessors_return_served_region(self, region: str) -> None:
         client = self.client_with_response(region=region)
         session = Session(client)

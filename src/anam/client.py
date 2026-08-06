@@ -428,8 +428,8 @@ class AnamClient:
     def region(self) -> str | None:
         """Get the current session region.
 
-        Known values today are "eu" and "us"; additional regions may be introduced
-        over time. Treat unrecognized values as informational.
+        See https://docs.anam.ai for available regions; additional regions may be
+        introduced over time. Treat unrecognized values as informational.
         """
         return self._session_info.region if self._session_info else None
 
@@ -795,8 +795,8 @@ class Session:
     def region(self) -> str | None:
         """Get the session region.
 
-        Known values today are "eu" and "us"; additional regions may be introduced
-        over time. Treat unrecognized values as informational.
+        See https://docs.anam.ai for available regions; additional regions may be
+        introduced over time. Treat unrecognized values as informational.
         """
         return self._client.region
 

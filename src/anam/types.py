@@ -210,8 +210,8 @@ class SessionOptions:
         egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
         show_ai_avatar_disclosure: Show Anam's AI avatar disclosure watermark throughout
             the session. Defaults to Anam's default behavior, which is off.
-        region: Requested engine region. Known values today are "eu" and "us";
-            additional regions may be introduced over time.
+        region: Requested engine region. See https://docs.anam.ai for available
+            regions; additional regions may be introduced over time.
         region_policy: "preferred" permits cross-region capacity failover; "strict"
             keeps the session in the requested region.
     """
@@ -233,6 +233,11 @@ class SessionOptions:
             raise ValueError('video_quality must be either "high" or "auto"')
         if (self.video_width is None) != (self.video_height is None):
             raise ValueError("video_width and video_height must be provided together")
+        if self.region_policy is not None and self.region_policy not in {
+            "preferred",
+            "strict",
+        }:
+            raise ValueError('region_policy must be either "preferred" or "strict"')
         if self.region_policy == "strict" and self.region is None:
             raise ValueError('region_policy="strict" requires region to be set')
         for name, value in (
@@ -368,9 +373,9 @@ class SessionInfo:
     This is returned by the API when starting a session.
 
     Args:
-        region: Actual region that served the session. Known values today are "eu"
-            and "us"; additional regions may be introduced over time. Treat
-            unrecognized values as informational.
+        region: Actual region that served the session. See https://docs.anam.ai
+            for available regions; additional regions may be introduced over
+            time. Treat unrecognized values as informational.
     """
 
     session_id: str
