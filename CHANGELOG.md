@@ -6,6 +6,15 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.10.0 (2026-08-07)
+
+### Documentation
+
+- Remove session-token initialization guidance
+  ([#70](https://github.com/anam-org/python-sdk/pull/70),
+  [`2a23a63`](https://github.com/anam-org/python-sdk/commit/2a23a638808b3c5ccadfc1ed4b770ff4a9508c3d))
+
+
 ## v0.9.0-alpha.4 (2026-08-06)
 
 ### Features
