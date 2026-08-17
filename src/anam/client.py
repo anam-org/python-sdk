@@ -313,7 +313,7 @@ class AnamClient:
             end_of_speech = msg_data.get("end_of_speech", False)
             interrupted = msg_data.get("interrupted", False)
             timestamp = msg_data.get("timestamp", "")
-            utterance_id = msg_data.get("utterance_id") or None
+            utterance_id = self._extract_utterance_id(msg_data)
 
             # Create message ID similar to JS SDK: "{role}::{message_id}"
             stream_event_id = f"{role_str}::{message_id}"
@@ -364,6 +364,12 @@ class AnamClient:
         """Extract a turn correlation ID from backend event payloads."""
         correlation_id = data.get("user_action_correlation_id") or data.get("correlationId")
         return correlation_id if isinstance(correlation_id, str) else None
+
+    @staticmethod
+    def _extract_utterance_id(data: dict[str, Any]) -> str | None:
+        """Extract a persona utterance id from backend event payloads."""
+        utterance_id = data.get("utterance_id")
+        return utterance_id if isinstance(utterance_id, str) and utterance_id else None
 
     @staticmethod
     def _append_utterance(
