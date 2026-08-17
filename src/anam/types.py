@@ -266,6 +266,13 @@ class ClientOptions:
             the session to a specific engine pod / devspace / preview. Sent
             verbatim as the ``environment`` field of the session request; the
             backend ignores it for standard production routing.
+        dev_settings: Generic per-session ``devSettings`` overrides (optional),
+            e.g. ``{"low_latency_frame_output": True}`` to force a feature-flag
+            arm on a single session. Sent verbatim as the top-level
+            ``devSettings`` object of the session request, which the engine
+            resolves *ahead* of PostHog feature flags — useful for
+            testing/rollout without touching PostHog. Keys are provider-defined
+            and passed through unchanged. Omitted entirely for production.
     """
 
     api_base_url: str = "https://api.anam.ai"
@@ -273,6 +280,7 @@ class ClientOptions:
     ice_servers: list[dict[str, Any]] | None = None
     client_label: str | None = None
     environment: dict[str, str] | None = None
+    dev_settings: dict[str, Any] | None = None
 
 
 @dataclass

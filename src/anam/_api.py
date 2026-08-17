@@ -73,6 +73,11 @@ class CoreApiClient:
         # preview). Only sent when set; omitted entirely for production.
         if self._options.environment:
             body["environment"] = self._options.environment
+        # Generic per-session devSettings (e.g. force a feature-flag arm). Sent
+        # as the top-level `devSettings` object the engine resolves ahead of
+        # PostHog flags; only sent when set, omitted entirely for production.
+        if self._options.dev_settings:
+            body["devSettings"] = self._options.dev_settings
 
         logger.debug("Starting session at %s (direct API-key auth)", url)
 

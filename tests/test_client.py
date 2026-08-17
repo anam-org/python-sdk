@@ -88,6 +88,13 @@ class TestAnamClientInit:
     def test_environment_defaults_to_none(self) -> None:
         assert ClientOptions().environment is None
 
+    def test_dev_settings_defaults_to_none(self) -> None:
+        assert ClientOptions().dev_settings is None
+
+    def test_dev_settings_can_be_set(self) -> None:
+        options = ClientOptions(dev_settings={"low_latency_frame_output": True})
+        assert options.dev_settings == {"low_latency_frame_output": True}
+
 
 class TestCoreApiClientSessionBody:
     """The session request body carries engine routing overrides."""
@@ -150,6 +157,33 @@ class TestCoreApiClientSessionBody:
         await client.start_session(PersonaConfig(persona_id="p"), SessionOptions())
 
         assert "environment" not in captured["body"]
+
+    @pytest.mark.asyncio
+    async def test_dev_settings_is_sent_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from anam._api import CoreApiClient
+
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr("aiohttp.ClientSession", self._fake_session(captured))
+
+        dev_settings = {"low_latency_frame_output": True}
+        client = CoreApiClient("key", ClientOptions(dev_settings=dev_settings))
+        await client.start_session(PersonaConfig(persona_id="p"), SessionOptions())
+
+        assert captured["body"]["devSettings"] == dev_settings
+
+    @pytest.mark.asyncio
+    async def test_dev_settings_is_omitted_when_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from anam._api import CoreApiClient
+
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr("aiohttp.ClientSession", self._fake_session(captured))
+
+        client = CoreApiClient("key", ClientOptions())
+        await client.start_session(PersonaConfig(persona_id="p"), SessionOptions())
+
+        assert "devSettings" not in captured["body"]
 
 
 class TestAnamClientEvents:
