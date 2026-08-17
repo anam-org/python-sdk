@@ -389,11 +389,7 @@ class AnamClient:
                 id=previous[-1].id, content=previous[-1].content + event.content
             )
             return previous[:-1] + [merged_last]
-        content = (
-            event.content[1:]
-            if previous and event.content.startswith(" ")
-            else event.content
-        )
+        content = event.content[1:] if previous and event.content.startswith(" ") else event.content
         return previous + [MessageUtterance(id=event.utterance_id, content=content)]
 
     def _process_message_stream_event(self, event: MessageStreamEvent, timestamp: str) -> None:

@@ -401,9 +401,7 @@ class TestAnamClientUtterances:
         client.add_listener(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, handler)
 
         await client._handle_data_message(self._persona_chunk())
-        await client._handle_data_message(
-            self._persona_chunk(content_index=1, utterance_id="")
-        )
+        await client._handle_data_message(self._persona_chunk(content_index=1, utterance_id=""))
 
         assert handler.await_args_list[0].args[0].utterance_id is None
         assert handler.await_args_list[1].args[0].utterance_id is None
@@ -413,9 +411,7 @@ class TestAnamClientUtterances:
         """Consecutive chunks merge per-utterance; a new utterance id starts a new entry."""
         client = AnamClient(api_key="test-key", persona_id="test-persona")
 
-        await client._handle_data_message(
-            self._persona_chunk(content="Hel", utterance_id="uuid-a")
-        )
+        await client._handle_data_message(self._persona_chunk(content="Hel", utterance_id="uuid-a"))
         await client._handle_data_message(
             self._persona_chunk(content="lo.", content_index=1, utterance_id="uuid-a")
         )
