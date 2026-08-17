@@ -6,6 +6,22 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.11.0-alpha.1 (2026-08-17)
+
+### Bug Fixes
+
+- Preserve utterance leading whitespace
+  ([`05dd676`](https://github.com/anam-org/python-sdk/commit/05dd6760b89fecd860d29ec10c51ffac0d5fe49a))
+
+- Validate utterance_id is a string before use
+  ([`27f54a8`](https://github.com/anam-org/python-sdk/commit/27f54a897e89dc0260d2f6159a55d290c6c7b913))
+
+### Features
+
+- Support multi-utterance persona messages
+  ([`71de2f3`](https://github.com/anam-org/python-sdk/commit/71de2f3a1c4668750f67606b63f748050142de84))
+
+
 ## v0.10.0 (2026-08-07)
 
 ### Documentation
