@@ -297,6 +297,19 @@ class ClientOptions:
 
 
 @dataclass
+class MessageUtterance:
+    """A single utterance (speech bubble) within a persona message.
+
+    Attributes:
+        id: Id of the persona utterance, matching MessageStreamEvent.utterance_id.
+        content: The text content of this utterance.
+    """
+
+    id: str
+    content: str
+
+
+@dataclass
 class Message:
     """A message in the conversation.
 
@@ -306,6 +319,8 @@ class Message:
         content: The text content of the message.
         timestamp: When the message was sent (ISO format).
         interrupted: Whether the message was interrupted (for persona messages).
+        utterances: Per-utterance breakdown of content, in speaking order. Persona-only;
+            present only when the engine sends utterance ids.
     """
 
     id: str
@@ -313,6 +328,7 @@ class Message:
     content: str
     timestamp: str = ""
     interrupted: bool = False
+    utterances: list[MessageUtterance] | None = None
 
 
 @dataclass
@@ -331,6 +347,9 @@ class MessageStreamEvent:
         interrupted: Whether the message was interrupted (for persona messages).
         correlation_id: Correlation ID for this turn, matching early user speech events when
             provided by the backend.
+        utterance_id: Id of the persona utterance this chunk belongs to. Chunks sharing an
+            utterance_id form one utterance; a turn can contain several. None on user chunks
+            and older engines.
     """
 
     id: str
@@ -340,6 +359,7 @@ class MessageStreamEvent:
     end_of_speech: bool
     interrupted: bool = False
     correlation_id: str | None = None
+    utterance_id: str | None = None
 
 
 @dataclass

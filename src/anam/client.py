@@ -26,6 +26,7 @@ from .types import (
     Message,
     MessageRole,
     MessageStreamEvent,
+    MessageUtterance,
     PersonaConfig,
     SessionInfo,
     SessionOptions,
@@ -312,6 +313,7 @@ class AnamClient:
             end_of_speech = msg_data.get("end_of_speech", False)
             interrupted = msg_data.get("interrupted", False)
             timestamp = msg_data.get("timestamp", "")
+            utterance_id = msg_data.get("utterance_id") or None
 
             # Create message ID similar to JS SDK: "{role}::{message_id}"
             stream_event_id = f"{role_str}::{message_id}"
@@ -333,6 +335,7 @@ class AnamClient:
                 end_of_speech=end_of_speech,
                 interrupted=interrupted,
                 correlation_id=correlation_id,
+                utterance_id=utterance_id,
             )
             await self._emit(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, stream_event)
 
@@ -362,6 +365,26 @@ class AnamClient:
         correlation_id = data.get("user_action_correlation_id") or data.get("correlationId")
         return correlation_id if isinstance(correlation_id, str) else None
 
+    @staticmethod
+    def _append_utterance(
+        utterances: list[MessageUtterance] | None, event: MessageStreamEvent
+    ) -> list[MessageUtterance] | None:
+        """Fold a persona chunk into the message's per-utterance breakdown.
+
+        The engine prepends a joining space to the first chunk of each new utterance so the
+        turn-level content concatenates correctly; it is not part of the utterance itself, so
+        it is stripped here.
+        """
+        if not event.utterance_id:
+            return utterances
+        previous = utterances or []
+        if previous and previous[-1].id == event.utterance_id:
+            merged_last = MessageUtterance(
+                id=previous[-1].id, content=previous[-1].content + event.content
+            )
+            return previous[:-1] + [merged_last]
+        return previous + [MessageUtterance(id=event.utterance_id, content=event.content.lstrip())]
+
     def _process_message_stream_event(self, event: MessageStreamEvent, timestamp: str) -> None:
         """Process a message stream event and update message history."""
         # Find existing message with same ID (for both user and persona messages)
@@ -373,21 +396,31 @@ class AnamClient:
         if existing_index is not None:
             # Update existing message by appending new content
             existing = self._message_history[existing_index]
+            utterances = (
+                self._append_utterance(existing.utterances, event)
+                if event.role == MessageRole.ASSISTANT
+                else existing.utterances
+            )
             self._message_history[existing_index] = Message(
                 id=existing.id,
                 role=existing.role,
                 content=existing.content + event.content,
                 timestamp=existing.timestamp or timestamp,
                 interrupted=existing.interrupted or event.interrupted,
+                utterances=utterances,
             )
         else:
             # Add new message (first chunk)
+            utterances = (
+                self._append_utterance(None, event) if event.role == MessageRole.ASSISTANT else None
+            )
             new_message = Message(
                 id=event.id,
                 role=event.role,
                 content=event.content,
                 timestamp=timestamp,
                 interrupted=event.interrupted,
+                utterances=utterances,
             )
             self._message_history.append(new_message)
 

@@ -16,6 +16,7 @@ from anam import (
     EgressOptions,
     MessageRole,
     MessageStreamEvent,
+    MessageUtterance,
     PersonaConfig,
     Session,
     SessionOptions,
@@ -361,6 +362,97 @@ class TestAnamClientDataMessages:
         assert isinstance(stream_event, MessageStreamEvent)
         assert stream_event.role == MessageRole.USER
         assert stream_event.correlation_id == "corr-123"
+
+
+class TestAnamClientUtterances:
+    """Tests for multi-utterance persona message handling."""
+
+    @staticmethod
+    def _persona_chunk(**overrides: Any) -> dict[str, Any]:
+        chunk = {
+            "message_id": "turn-1",
+            "content_index": 0,
+            "content": "Hello",
+            "role": "persona",
+            "end_of_speech": False,
+            "interrupted": False,
+        }
+        chunk.update(overrides)
+        return {"messageType": "speechText", "data": chunk}
+
+    @pytest.mark.asyncio
+    async def test_utterance_id_exposed_on_stream_event(self) -> None:
+        """A persona chunk's utterance_id is passed through onto the stream event."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+        handler = AsyncMock()
+        client.add_listener(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, handler)
+
+        await client._handle_data_message(self._persona_chunk(utterance_id="uuid-a"))
+
+        stream_event = handler.await_args.args[0]
+        assert stream_event.utterance_id == "uuid-a"
+        assert stream_event.id == "persona::turn-1"
+
+    @pytest.mark.asyncio
+    async def test_missing_or_empty_utterance_id_omitted(self) -> None:
+        """Both a missing and an empty utterance_id collapse to None on the stream event."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+        handler = AsyncMock()
+        client.add_listener(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, handler)
+
+        await client._handle_data_message(self._persona_chunk())
+        await client._handle_data_message(
+            self._persona_chunk(content_index=1, utterance_id="")
+        )
+
+        assert handler.await_args_list[0].args[0].utterance_id is None
+        assert handler.await_args_list[1].args[0].utterance_id is None
+
+    @pytest.mark.asyncio
+    async def test_history_splits_utterances_keeps_turn_shape(self) -> None:
+        """Consecutive chunks merge per-utterance; a new utterance id starts a new entry."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+
+        await client._handle_data_message(
+            self._persona_chunk(content="Hel", utterance_id="uuid-a")
+        )
+        await client._handle_data_message(
+            self._persona_chunk(content="lo.", content_index=1, utterance_id="uuid-a")
+        )
+        # New utterance in the same turn: the engine prepends the joining space, which must
+        # survive verbatim in turn-level content but is stripped from the utterance itself.
+        await client._handle_data_message(
+            self._persona_chunk(
+                content=" Second thought.",
+                content_index=2,
+                utterance_id="uuid-b",
+                end_of_speech=True,
+            )
+        )
+
+        history = client.get_message_history()
+        assert len(history) == 1
+        message = history[0]
+        assert message.content == "Hello. Second thought."
+        assert message.utterances == [
+            MessageUtterance(id="uuid-a", content="Hello."),
+            MessageUtterance(id="uuid-b", content="Second thought."),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_history_shape_unchanged_without_utterance_ids(self) -> None:
+        """Messages built from chunks with no utterance_id keep utterances as None."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+
+        await client._handle_data_message(self._persona_chunk(content="Hello"))
+        await client._handle_data_message(
+            self._persona_chunk(content=" there.", content_index=1, end_of_speech=True)
+        )
+
+        history = client.get_message_history()
+        assert len(history) == 1
+        assert history[0].content == "Hello there."
+        assert history[0].utterances is None
 
 
 class TestPersonaConfig:
