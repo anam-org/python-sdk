@@ -377,9 +377,9 @@ class AnamClient:
     ) -> list[MessageUtterance] | None:
         """Fold a persona chunk into the message's per-utterance breakdown.
 
-        The engine prepends a joining space to the first chunk of each new utterance so the
-        turn-level content concatenates correctly; it is not part of the utterance itself, so
-        it is stripped here.
+        A joining space is prepended to each subsequent utterance so the turn-level content
+        concatenates correctly; remove only that separator while preserving all other leading
+        whitespace (including on the first utterance of a turn).
         """
         if not event.utterance_id:
             return utterances
@@ -389,7 +389,12 @@ class AnamClient:
                 id=previous[-1].id, content=previous[-1].content + event.content
             )
             return previous[:-1] + [merged_last]
-        return previous + [MessageUtterance(id=event.utterance_id, content=event.content.lstrip())]
+        content = (
+            event.content[1:]
+            if previous and event.content.startswith(" ")
+            else event.content
+        )
+        return previous + [MessageUtterance(id=event.utterance_id, content=content)]
 
     def _process_message_stream_event(self, event: MessageStreamEvent, timestamp: str) -> None:
         """Process a message stream event and update message history."""

@@ -454,6 +454,55 @@ class TestAnamClientUtterances:
         assert history[0].content == "Hello there."
         assert history[0].utterances is None
 
+    @pytest.mark.asyncio
+    async def test_history_preserves_non_separator_whitespace(self) -> None:
+        """Only a single leading joining space on non-first utterances is stripped."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+
+        await client._handle_data_message(
+            self._persona_chunk(content=" Leading", utterance_id="uuid-a")
+        )
+        await client._handle_data_message(
+            self._persona_chunk(
+                content="  Second",
+                content_index=1,
+                utterance_id="uuid-b",
+                end_of_speech=True,
+            )
+        )
+
+        history = client.get_message_history()
+        assert history[0].content == " Leading  Second"
+        assert history[0].utterances == [
+            MessageUtterance(id="uuid-a", content=" Leading"),
+            MessageUtterance(id="uuid-b", content=" Second"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_published_message_is_not_mutated_by_later_chunks(self) -> None:
+        """A Message snapshot handed to consumers stays frozen once later chunks arrive."""
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+
+        await client._handle_data_message(
+            self._persona_chunk(content="Hello", utterance_id="uuid-a", end_of_speech=True)
+        )
+        published_message = client.get_message_history()[0]
+
+        await client._handle_data_message(
+            self._persona_chunk(
+                content=" again",
+                content_index=1,
+                utterance_id="uuid-a",
+                end_of_speech=True,
+            )
+        )
+
+        assert published_message.content == "Hello"
+        assert published_message.utterances == [MessageUtterance(id="uuid-a", content="Hello")]
+        history = client.get_message_history()
+        assert history[0].content == "Hello again"
+        assert history[0].utterances == [MessageUtterance(id="uuid-a", content="Hello again")]
+
 
 class TestPersonaConfig:
     """Tests for PersonaConfig."""
