@@ -717,7 +717,7 @@ class Session:
             client=self._client,
         )
 
-    async def send_talk_stream(self, content: str) -> None:
+    async def send_talk_stream(self, content: str, utterance_id: str | None = None) -> None:
         """Send a single text message directly to TTS via WebSocket signalling.
 
         Convenience method for one-off messages. Sends text directly to TTS,
@@ -726,12 +726,16 @@ class Session:
 
         Args:
             content: The text for the avatar to speak.
+            utterance_id: Optional canonical UUID v4 string identifying the utterance. It
+                is returned on persona message stream events so callers can correlate spoken
+                output. Omitted from the wire message when None.
 
         Raises:
             SessionError: If not connected.
+            ValueError: If utterance_id is not a canonical UUID v4 string.
         """
         stream = self.create_talk_stream()
-        await stream.send(content, end_of_speech=True)
+        await stream.send(content, end_of_speech=True, utterance_id=utterance_id)
 
     def create_agent_audio_input_stream(
         self, config: AgentAudioInputConfig

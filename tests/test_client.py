@@ -3,7 +3,7 @@
 import json
 import math
 from typing import Any, get_type_hints
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
@@ -287,6 +287,23 @@ class TestSessionMessages:
         await session.send_message("Hello")
 
         client._streaming_client.send_user_message.assert_called_once_with("Hello")
+
+    @pytest.mark.asyncio
+    async def test_send_talk_stream_forwards_utterance_id(self) -> None:
+        client = AnamClient(api_key="test-key", persona_id="test-persona")
+        client._streaming_client = MagicMock()
+        client._streaming_client._signalling_client.send_talk_stream_input = AsyncMock()
+
+        session = Session(client)
+        await session.send_talk_stream("Hello", utterance_id="68fd86b6-0b3a-4f42-bf92-5866cd84f8ac")
+
+        client._streaming_client._signalling_client.send_talk_stream_input.assert_awaited_once_with(
+            content="Hello",
+            correlation_id=ANY,
+            start_of_speech=True,
+            end_of_speech=True,
+            utterance_id="68fd86b6-0b3a-4f42-bf92-5866cd84f8ac",
+        )
 
 
 class TestAnamClientDataMessages:

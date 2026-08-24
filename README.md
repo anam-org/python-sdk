@@ -349,6 +349,19 @@ async with client.connect() as session:
     talk_stream = session.create_talk_stream()
     await talk_stream.send("Hello", end_of_speech=False)
     await talk_stream.send(" world!", end_of_speech=True)
+
+    # Use canonical UUID v4 IDs to group chunks into separate utterances.
+    # The IDs are returned with persona message events.
+    talk_stream = session.create_talk_stream()
+    await talk_stream.send(
+        "First thought.",
+        utterance_id="68fd86b6-0b3a-4f42-bf92-5866cd84f8ac",
+    )
+    await talk_stream.send(
+        "Second thought.",
+        end_of_speech=True,
+        utterance_id="d990d82a-29a5-4874-b870-a9f07e024108",
+    )
     
     # Interrupt the avatar if speaking
     await session.interrupt()

@@ -1,6 +1,7 @@
 """Talk message stream for sending streaming text to TTS via WebSocket signalling."""
 
 import logging
+import uuid
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -27,7 +28,8 @@ class TalkMessageStream:
 
     Manages correlation_id internally so callers don't need to track it across
     chunks. All chunks in the same speech sequence share the same correlation_id,
-    which is used for interruption correlation.
+    which is used for interruption correlation. Callers can optionally identify
+    utterances within the sequence by passing utterance_id to send().
 
     Example:
         ```python
@@ -59,6 +61,7 @@ class TalkMessageStream:
         self._signalling_client = signalling_client
         self._client = client
         self._state = TalkMessageStreamState.UNSTARTED
+        self._last_utterance_id: str | None = None
         self._interrupt_handler = self._on_talk_stream_interrupted
         client.add_listener(AnamEvent.TALK_STREAM_INTERRUPTED, self._interrupt_handler)
 
@@ -86,22 +89,46 @@ class TalkMessageStream:
         """Current state of the stream."""
         return self._state
 
-    async def send(self, content: str, end_of_speech: bool = False) -> None:
+    async def send(
+        self,
+        content: str,
+        end_of_speech: bool = False,
+        utterance_id: str | None = None,
+    ) -> None:
         """Send a text chunk to TTS.
 
         Args:
             content: The text chunk to speak.
             end_of_speech: Whether this is the final chunk of the speech.
+            utterance_id: Optional canonical UUID v4 string identifying the utterance this
+                chunk belongs to. Reuse the same ID for consecutive chunks in one utterance;
+                changing it starts a new utterance without ending the speech sequence. The
+                most recent non-None value is reused for the terminator sent by end().
 
         Raises:
             RuntimeError: If the stream is not in an active state (already
                 ended or interrupted).
+            ValueError: If utterance_id is not a canonical UUID v4 string.
         """
         if self._state not in (
             TalkMessageStreamState.UNSTARTED,
             TalkMessageStreamState.STREAMING,
         ):
             raise RuntimeError(f"Talk stream is not in an active state: {self._state}")
+
+        if utterance_id is not None:
+            try:
+                parsed_utterance_id = uuid.UUID(utterance_id)
+            except (AttributeError, TypeError, ValueError):
+                parsed_utterance_id = None
+            if (
+                parsed_utterance_id is None
+                or parsed_utterance_id.version != 4
+                or str(parsed_utterance_id) != utterance_id
+            ):
+                raise ValueError(
+                    f"utterance_id must be a canonical UUID v4 string, got {utterance_id!r}"
+                )
 
         start_of_speech = self._state == TalkMessageStreamState.UNSTARTED
 
@@ -110,8 +137,11 @@ class TalkMessageStream:
             correlation_id=self._correlation_id,
             start_of_speech=start_of_speech,
             end_of_speech=end_of_speech,
+            utterance_id=utterance_id,
         )
 
+        if utterance_id is not None:
+            self._last_utterance_id = utterance_id
         self._state = TalkMessageStreamState.STREAMING
         if end_of_speech:
             self._state = TalkMessageStreamState.ENDED
@@ -122,6 +152,9 @@ class TalkMessageStream:
 
         Use when you've sent all content chunks but need to explicitly end
         the stream. No-op if the stream is already ended.
+
+        The terminator carries the most recent utterance_id passed to send(), so it
+        does not start a new untagged utterance.
         """
         if self._state == TalkMessageStreamState.ENDED:
             logger.debug("Talk stream is already ended via end of speech. No need to call end().")
@@ -136,6 +169,7 @@ class TalkMessageStream:
             correlation_id=self._correlation_id,
             start_of_speech=False,
             end_of_speech=True,
+            utterance_id=self._last_utterance_id,
         )
         self._state = TalkMessageStreamState.ENDED
         self._deactivate()
