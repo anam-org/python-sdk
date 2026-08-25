@@ -681,9 +681,16 @@ class Session:
     def create_talk_stream(self, correlation_id: str | None = None) -> TalkMessageStream:
         """Create a talk message stream for sending text chunks to TTS.
 
-        The stream manages correlation_id internally so you don't need to track
-        it across chunks. Use this for streaming LLM output. All chunks in the
-        same speech share one correlation_id for interruption handling.
+        The stream manages correlation_id internally so you don't need to track it
+        across chunks. Use this for streaming LLM output or for speech before and
+        after a short tool call. Set utterance_id on the first chunk of an utterance,
+        then omit it on continuation chunks. A new utterance_id queues the next
+        utterance after the current one while keeping both in the same speech sequence.
+        The server closes the stream after 15 seconds without a chunk containing text;
+        empty chunks do not reset that timeout, so use a new stream for longer tool
+        calls. All chunks in a stream share one correlation_id for interruption handling.
+        Cara-3 avatars silently ignore utterance IDs. Speech still plays, but the IDs do
+        not create utterance boundaries or appear on persona message events.
 
         Args:
             correlation_id: Optional ID. If not provided, a UUID is generated.
@@ -717,7 +724,7 @@ class Session:
             client=self._client,
         )
 
-    async def send_talk_stream(self, content: str) -> None:
+    async def send_talk_stream(self, content: str, utterance_id: str | None = None) -> None:
         """Send a single text message directly to TTS via WebSocket signalling.
 
         Convenience method for one-off messages. Sends text directly to TTS,
@@ -726,12 +733,17 @@ class Session:
 
         Args:
             content: The text for the avatar to speak.
+            utterance_id: Optional canonical UUID v4 string identifying the utterance. It
+                is returned on persona message stream events so callers can correlate spoken
+                output. Omitted from the wire message when None. Cara-3 avatars silently
+                ignore this value and do not return it.
 
         Raises:
             SessionError: If not connected.
+            ValueError: If utterance_id is not a canonical UUID v4 string.
         """
         stream = self.create_talk_stream()
-        await stream.send(content, end_of_speech=True)
+        await stream.send(content, end_of_speech=True, utterance_id=utterance_id)
 
     def create_agent_audio_input_stream(
         self, config: AgentAudioInputConfig

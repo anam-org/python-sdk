@@ -349,7 +349,7 @@ async with client.connect() as session:
     talk_stream = session.create_talk_stream()
     await talk_stream.send("Hello", end_of_speech=False)
     await talk_stream.send(" world!", end_of_speech=True)
-    
+
     # Interrupt the avatar if speaking
     await session.interrupt()
 
@@ -364,6 +364,66 @@ async with client.connect() as session:
     # Wait until the session ends
     await session.wait_until_closed()
 ```
+
+#### Speech across a tool call
+
+A talk stream can stay open during a short tool call. Give the speech before and after
+the tool call separate utterance IDs:
+
+> [!IMPORTANT]
+> `utterance_id` marks the start of an utterance, not an individual text chunk. Set it on
+> the first chunk, then omit it from the remaining chunks in that utterance. Set a new ID
+> only when the next utterance begins.
+
+```python
+from uuid import uuid4
+
+talk_stream = session.create_talk_stream()
+
+# Utterance A can begin playing while a short tool call runs.
+await talk_stream.send(
+    "Let me check ",
+    utterance_id=str(uuid4()),
+)
+await talk_stream.send("that for you.")  # Continues utterance A; no ID needed.
+
+tool_result_text = await run_tool_call()
+
+# Utterance B waits for A to finish, then continues with the result.
+await talk_stream.send(
+    tool_result_text,
+    end_of_speech=True,
+    utterance_id=str(uuid4()),
+)
+```
+
+Utterance B must be sent within 15 seconds of the last chunk that carried text. If the
+stream goes longer without text, the server closes it, ends the turn, emits a session
+warning, and rejects later chunks sent with the same correlation ID. Empty chunks do
+not reset the timeout. If a tool may take longer, end utterance A's stream and create a
+new talk stream for the result.
+
+The same ordering applies when both utterances are ready immediately. Send them with
+different IDs and the second waits for the first to finish playing:
+
+```python
+from uuid import uuid4
+
+talk_stream = session.create_talk_stream()
+await talk_stream.send("First utterance.", utterance_id=str(uuid4()))
+await talk_stream.send(
+    "Second utterance.",
+    end_of_speech=True,
+    utterance_id=str(uuid4()),
+)
+```
+
+IDs must be canonical UUID v4 strings and are returned with persona message events.
+
+> [!NOTE]
+> Cara-3 avatars ignore `utterance_id` without returning an error or warning. Speech still
+> plays, but the ID does not create an utterance boundary and is not returned with persona
+> message events.
 
 ### Director Notes
 

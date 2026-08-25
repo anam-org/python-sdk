@@ -336,6 +336,7 @@ class SignallingClient:
         correlation_id: str,
         start_of_speech: bool = True,
         end_of_speech: bool = True,
+        utterance_id: str | None = None,
     ) -> None:
         """Send talk stream input to make the avatar speak text directly.
 
@@ -347,16 +348,23 @@ class SignallingClient:
                 Callers should use TalkMessageStream which manages this.
             start_of_speech: Whether this is the start of a speech sequence.
             end_of_speech: Whether this is the end of a speech sequence.
+            utterance_id: Optional ID marking the first chunk of a new utterance. None
+                continues the current utterance; a different ID queues a new one after it.
+                Validated by TalkMessageStream.send(); not re-checked here.
         """
+        payload: dict[str, Any] = {
+            "content": content,
+            "startOfSpeech": start_of_speech,
+            "endOfSpeech": end_of_speech,
+            "correlationId": correlation_id,
+        }
+        if utterance_id is not None:
+            payload["utteranceId"] = utterance_id
+
         message = {
             "actionType": SignalAction.TALK_STREAM_INPUT.value,
             "sessionId": self._session_id,
-            "payload": {
-                "content": content,
-                "startOfSpeech": start_of_speech,
-                "endOfSpeech": end_of_speech,
-                "correlationId": correlation_id,
-            },
+            "payload": payload,
         }
         await self.send_message(message)
 

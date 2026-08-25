@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from anam import AnamEvent
+from anam._signalling import SignallingClient
 from anam._talk_message_stream import TalkMessageStream, TalkMessageStreamState
+from anam.types import SessionInfo
+
+UTTERANCE_A = "68fd86b6-0b3a-4f42-bf92-5866cd84f8ac"
+UTTERANCE_B = "d990d82a-29a5-4874-b870-a9f07e024108"
 
 
 @pytest.fixture
@@ -84,6 +89,7 @@ class TestTalkMessageStreamSend:
             correlation_id="test-correlation-123",
             start_of_speech=True,
             end_of_speech=False,
+            utterance_id=None,
         )
 
     @pytest.mark.asyncio
@@ -103,7 +109,57 @@ class TestTalkMessageStreamSend:
             correlation_id="test-correlation-123",
             start_of_speech=False,
             end_of_speech=False,
+            utterance_id=None,
         )
+
+    @pytest.mark.asyncio
+    async def test_forwards_utterance_id_for_each_chunk(
+        self,
+        stream: TalkMessageStream,
+        mock_signalling_client: MagicMock,
+    ) -> None:
+        """Each chunk can identify the utterance it belongs to."""
+        await stream.send("Hello", utterance_id=UTTERANCE_A)
+        await stream.send(" world", utterance_id=UTTERANCE_B)
+
+        assert mock_signalling_client.send_talk_stream_input.await_args_list[0].kwargs == {
+            "content": "Hello",
+            "correlation_id": "test-correlation-123",
+            "start_of_speech": True,
+            "end_of_speech": False,
+            "utterance_id": UTTERANCE_A,
+        }
+        assert mock_signalling_client.send_talk_stream_input.await_args_list[1].kwargs == {
+            "content": " world",
+            "correlation_id": "test-correlation-123",
+            "start_of_speech": False,
+            "end_of_speech": False,
+            "utterance_id": UTTERANCE_B,
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "",
+            "utterance-1",
+            "a8098c1a-f86e-11da-bd1a-00112444be1e",
+            UTTERANCE_A.upper(),
+            UTTERANCE_A.replace("-", ""),
+        ],
+    )
+    async def test_rejects_noncanonical_or_non_v4_utterance_id(
+        self,
+        stream: TalkMessageStream,
+        mock_signalling_client: MagicMock,
+        bad_id: str,
+    ) -> None:
+        """Invalid or noncanonical UUID v4 IDs are rejected before anything is sent."""
+        with pytest.raises(ValueError, match="canonical UUID v4"):
+            await stream.send("Hello", utterance_id=bad_id)
+
+        mock_signalling_client.send_talk_stream_input.assert_not_called()
+        assert stream.state == TalkMessageStreamState.UNSTARTED
 
     @pytest.mark.asyncio
     async def test_end_of_speech_transitions_to_ended(
@@ -167,8 +223,31 @@ class TestTalkMessageStreamEnd:
             correlation_id="test-correlation-123",
             start_of_speech=False,
             end_of_speech=True,
+            utterance_id=None,
         )
         assert stream.state == TalkMessageStreamState.ENDED
+
+    @pytest.mark.asyncio
+    async def test_end_reuses_last_utterance_id(
+        self,
+        stream: TalkMessageStream,
+        mock_signalling_client: MagicMock,
+    ) -> None:
+        """The terminator stays inside the utterance the last tagged chunk opened."""
+        await stream.send("Hello", utterance_id=UTTERANCE_A)
+        await stream.send(" world", utterance_id=UTTERANCE_B)
+        await stream.send(" again")
+        mock_signalling_client.reset_mock()
+
+        await stream.end()
+
+        mock_signalling_client.send_talk_stream_input.assert_called_once_with(
+            content="",
+            correlation_id="test-correlation-123",
+            start_of_speech=False,
+            end_of_speech=True,
+            utterance_id=UTTERANCE_B,
+        )
 
     @pytest.mark.asyncio
     async def test_end_when_already_ended_is_noop(
@@ -223,3 +302,51 @@ class TestTalkMessageStreamInterruption:
 
         assert stream.state == TalkMessageStreamState.UNSTARTED
         mock_anam_client.remove_listener.assert_not_called()
+
+
+class TestTalkMessageStreamSignalling:
+    """Tests for talk stream WebSocket payloads."""
+
+    @staticmethod
+    def signalling_client() -> SignallingClient:
+        return SignallingClient(
+            SessionInfo(
+                session_id="session-1",
+                engine_host="engine.example.com",
+                engine_protocol="https",
+                signalling_endpoint="/ws",
+                heartbeat_interval_seconds=5,
+                max_reconnection_attempts=5,
+            )
+        )
+
+    @pytest.mark.asyncio
+    async def test_includes_utterance_id_when_provided(self) -> None:
+        client = self.signalling_client()
+        client.send_message = AsyncMock()
+
+        await client.send_talk_stream_input(
+            content="Hello",
+            correlation_id="correlation-1",
+            utterance_id=UTTERANCE_A,
+        )
+
+        assert client.send_message.await_args.args[0]["payload"] == {
+            "content": "Hello",
+            "startOfSpeech": True,
+            "endOfSpeech": True,
+            "correlationId": "correlation-1",
+            "utteranceId": UTTERANCE_A,
+        }
+
+    @pytest.mark.asyncio
+    async def test_omits_utterance_id_when_not_provided(self) -> None:
+        client = self.signalling_client()
+        client.send_message = AsyncMock()
+
+        await client.send_talk_stream_input(
+            content="Hello",
+            correlation_id="correlation-1",
+        )
+
+        assert "utteranceId" not in client.send_message.await_args.args[0]["payload"]
