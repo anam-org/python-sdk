@@ -350,19 +350,6 @@ async with client.connect() as session:
     await talk_stream.send("Hello", end_of_speech=False)
     await talk_stream.send(" world!", end_of_speech=True)
 
-    # Use canonical UUID v4 IDs to group chunks into separate utterances.
-    # The IDs are returned with persona message events.
-    talk_stream = session.create_talk_stream()
-    await talk_stream.send(
-        "First thought.",
-        utterance_id="68fd86b6-0b3a-4f42-bf92-5866cd84f8ac",
-    )
-    await talk_stream.send(
-        "Second thought.",
-        end_of_speech=True,
-        utterance_id="d990d82a-29a5-4874-b870-a9f07e024108",
-    )
-    
     # Interrupt the avatar if speaking
     await session.interrupt()
 
@@ -377,6 +364,50 @@ async with client.connect() as session:
     # Wait until the session ends
     await session.wait_until_closed()
 ```
+
+#### Speech across a tool call
+
+A talk stream can stay open while your application runs a tool. Give the speech before
+and after the tool call separate utterance IDs:
+
+```python
+from uuid import uuid4
+
+talk_stream = session.create_talk_stream()
+
+# Utterance A can begin playing while the tool runs.
+await talk_stream.send(
+    "Let me check that for you.",
+    utterance_id=str(uuid4()),
+)
+
+tool_result_text = await run_tool_call()
+
+# Utterance B waits for A to finish, then continues with the result.
+await talk_stream.send(
+    tool_result_text,
+    end_of_speech=True,
+    utterance_id=str(uuid4()),
+)
+```
+
+The same ordering applies when both utterances are ready immediately. Send them with
+different IDs and the second waits for the first to finish playing:
+
+```python
+from uuid import uuid4
+
+talk_stream = session.create_talk_stream()
+await talk_stream.send("First utterance.", utterance_id=str(uuid4()))
+await talk_stream.send(
+    "Second utterance.",
+    end_of_speech=True,
+    utterance_id=str(uuid4()),
+)
+```
+
+Use the same ID for every chunk in one utterance and a new ID at each utterance boundary.
+IDs must be canonical UUID v4 strings and are returned with persona message events.
 
 ### Director Notes
 

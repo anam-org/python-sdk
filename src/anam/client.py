@@ -681,9 +681,11 @@ class Session:
     def create_talk_stream(self, correlation_id: str | None = None) -> TalkMessageStream:
         """Create a talk message stream for sending text chunks to TTS.
 
-        The stream manages correlation_id internally so you don't need to track
-        it across chunks. Use this for streaming LLM output. All chunks in the
-        same speech share one correlation_id for interruption handling.
+        The stream manages correlation_id internally so you don't need to track it
+        across chunks. Use this for streaming LLM output or for speech before and
+        after a tool call. A new utterance_id queues the next utterance after the
+        current one while keeping both in the same speech sequence. All chunks in
+        the sequence share one correlation_id for interruption handling.
 
         Args:
             correlation_id: Optional ID. If not provided, a UUID is generated.

@@ -29,10 +29,14 @@ class TalkMessageStream:
     Manages correlation_id internally so callers don't need to track it across
     chunks. All chunks in the same speech sequence share the same correlation_id,
     which is used for interruption correlation. Callers can optionally identify
-    utterances within the sequence by passing utterance_id to send().
+    utterances within the sequence by passing utterance_id to send(). A new ID queues
+    the next utterance after the current one, allowing the stream to stay open while
+    the application runs a tool.
 
     Example:
         ```python
+        import uuid
+
         # Streaming multiple chunks
         stream = session.create_talk_stream()
         for i, chunk in enumerate(llm_chunks):
@@ -41,6 +45,16 @@ class TalkMessageStream:
         # Single message (or use session.send_talk_stream for convenience)
         stream = session.create_talk_stream()
         await stream.send("Hello!", end_of_speech=True)
+
+        # Speech before and after a tool call
+        stream = session.create_talk_stream()
+        await stream.send("Let me check.", utterance_id=str(uuid.uuid4()))
+        tool_result_text = await run_tool_call()
+        await stream.send(
+            tool_result_text,
+            end_of_speech=True,
+            utterance_id=str(uuid.uuid4()),
+        )
         ```
     """
 
@@ -101,9 +115,11 @@ class TalkMessageStream:
             content: The text chunk to speak.
             end_of_speech: Whether this is the final chunk of the speech.
             utterance_id: Optional canonical UUID v4 string identifying the utterance this
-                chunk belongs to. Reuse the same ID for consecutive chunks in one utterance;
-                changing it starts a new utterance without ending the speech sequence. The
-                most recent non-None value is reused for the terminator sent by end().
+                chunk belongs to. Reuse the same ID for consecutive chunks in one utterance.
+                A new ID queues the next utterance after the current one without ending the
+                speech sequence. This allows speech before and after a tool call, or two
+                ready utterances that must play in order. The most recent non-None value is
+                reused for the terminator sent by end().
 
         Raises:
             RuntimeError: If the stream is not in an active state (already
