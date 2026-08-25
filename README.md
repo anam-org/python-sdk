@@ -420,6 +420,11 @@ await talk_stream.send(
 
 IDs must be canonical UUID v4 strings and are returned with persona message events.
 
+> [!NOTE]
+> Cara-3 avatars ignore `utterance_id` without returning an error or warning. Speech still
+> plays, but the ID does not create an utterance boundary and is not returned with persona
+> message events.
+
 ### Director Notes
 
 Director notes control how the avatar performs a conversation (how something is said, not just what is said). Set session defaults on `PersonaConfig(director_notes=...)`, then send runtime `director_note_cue` messages with `session.send_director_note_cue(...)`.

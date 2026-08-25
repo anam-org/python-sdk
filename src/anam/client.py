@@ -689,6 +689,8 @@ class Session:
         The server closes the stream after 15 seconds without a chunk containing text;
         empty chunks do not reset that timeout, so use a new stream for longer tool
         calls. All chunks in a stream share one correlation_id for interruption handling.
+        Cara-3 avatars silently ignore utterance IDs. Speech still plays, but the IDs do
+        not create utterance boundaries or appear on persona message events.
 
         Args:
             correlation_id: Optional ID. If not provided, a UUID is generated.
@@ -733,7 +735,8 @@ class Session:
             content: The text for the avatar to speak.
             utterance_id: Optional canonical UUID v4 string identifying the utterance. It
                 is returned on persona message stream events so callers can correlate spoken
-                output. Omitted from the wire message when None.
+                output. Omitted from the wire message when None. Cara-3 avatars silently
+                ignore this value and do not return it.
 
         Raises:
             SessionError: If not connected.

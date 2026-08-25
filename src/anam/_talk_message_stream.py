@@ -34,6 +34,8 @@ class TalkMessageStream:
     next utterance after the current one. This can keep speech in sequence around a short
     tool call, but the server closes a stream after 15 seconds without a chunk containing
     text. Empty chunks do not reset the timeout; use a new stream for longer tool calls.
+    Cara-3 avatars silently ignore utterance IDs. Speech still plays, but the IDs do not
+    create utterance boundaries and are not returned on persona message events.
 
     Example:
         ```python
@@ -124,7 +126,9 @@ class TalkMessageStream:
                 before and after a short tool call, or two ready utterances that must play
                 in order. The server closes the stream after 15 seconds without a chunk
                 containing text; empty chunks do not reset that timeout. The most recent
-                non-None value is reused for the terminator sent by end().
+                non-None value is reused for the terminator sent by end(). Cara-3 avatars
+                silently ignore this value, so it does not create a boundary or appear on
+                persona message events.
 
         Raises:
             RuntimeError: If the stream is not in an active state (already
