@@ -683,10 +683,12 @@ class Session:
 
         The stream manages correlation_id internally so you don't need to track it
         across chunks. Use this for streaming LLM output or for speech before and
-        after a tool call. Set utterance_id on the first chunk of an utterance, then
-        omit it on continuation chunks. A new utterance_id queues the next utterance
-        after the current one while keeping both in the same speech sequence. All
-        chunks in the sequence share one correlation_id for interruption handling.
+        after a short tool call. Set utterance_id on the first chunk of an utterance,
+        then omit it on continuation chunks. A new utterance_id queues the next
+        utterance after the current one while keeping both in the same speech sequence.
+        The server closes the stream after 15 seconds without a chunk containing text;
+        empty chunks do not reset that timeout, so use a new stream for longer tool
+        calls. All chunks in a stream share one correlation_id for interruption handling.
 
         Args:
             correlation_id: Optional ID. If not provided, a UUID is generated.

@@ -367,8 +367,8 @@ async with client.connect() as session:
 
 #### Speech across a tool call
 
-A talk stream can stay open while your application runs a tool. Give the speech before
-and after the tool call separate utterance IDs:
+A talk stream can stay open during a short tool call. Give the speech before and after
+the tool call separate utterance IDs:
 
 > [!IMPORTANT]
 > `utterance_id` marks the start of an utterance, not an individual text chunk. Set it on
@@ -380,7 +380,7 @@ from uuid import uuid4
 
 talk_stream = session.create_talk_stream()
 
-# Utterance A can begin playing while the tool runs.
+# Utterance A can begin playing while a short tool call runs.
 await talk_stream.send(
     "Let me check ",
     utterance_id=str(uuid4()),
@@ -396,6 +396,12 @@ await talk_stream.send(
     utterance_id=str(uuid4()),
 )
 ```
+
+Utterance B must be sent within 15 seconds of the last chunk that carried text. If the
+stream goes longer without text, the server closes it, ends the turn, emits a session
+warning, and rejects later chunks sent with the same correlation ID. Empty chunks do
+not reset the timeout. If a tool may take longer, end utterance A's stream and create a
+new talk stream for the result.
 
 The same ordering applies when both utterances are ready immediately. Send them with
 different IDs and the second waits for the first to finish playing:

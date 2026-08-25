@@ -31,8 +31,9 @@ class TalkMessageStream:
     which is used for interruption correlation. Callers can optionally identify
     utterances within the sequence by passing utterance_id to send(). Set an ID on the
     first chunk of an utterance, then omit it on continuation chunks. A new ID queues the
-    next utterance after the current one, allowing the stream to stay open while the
-    application runs a tool.
+    next utterance after the current one. This can keep speech in sequence around a short
+    tool call, but the server closes a stream after 15 seconds without a chunk containing
+    text. Empty chunks do not reset the timeout; use a new stream for longer tool calls.
 
     Example:
         ```python
@@ -47,7 +48,7 @@ class TalkMessageStream:
         stream = session.create_talk_stream()
         await stream.send("Hello!", end_of_speech=True)
 
-        # Speech before and after a tool call
+        # Speech before and after a short tool call
         stream = session.create_talk_stream()
         await stream.send("Let me ", utterance_id=str(uuid.uuid4()))
         await stream.send("check.")  # Continue the same utterance without an ID.
@@ -120,9 +121,10 @@ class TalkMessageStream:
                 chunk starts. Set it on the first chunk, not on every new text chunk; None
                 continues the current utterance. A new ID queues the next utterance after
                 the current one without ending the speech sequence. This allows speech
-                before and after a tool call, or two ready utterances that must play in
-                order. The most recent non-None value is reused for the terminator sent by
-                end().
+                before and after a short tool call, or two ready utterances that must play
+                in order. The server closes the stream after 15 seconds without a chunk
+                containing text; empty chunks do not reset that timeout. The most recent
+                non-None value is reused for the terminator sent by end().
 
         Raises:
             RuntimeError: If the stream is not in an active state (already
