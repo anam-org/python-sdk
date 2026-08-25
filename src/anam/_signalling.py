@@ -348,10 +348,9 @@ class SignallingClient:
                 Callers should use TalkMessageStream which manages this.
             start_of_speech: Whether this is the start of a speech sequence.
             end_of_speech: Whether this is the end of a speech sequence.
-            utterance_id: Optional ID for the utterance this chunk belongs to. Changing
-                this ID between chunks queues a new utterance after the current one without
-                ending the speech sequence. Validated by TalkMessageStream.send(); not
-                re-checked here.
+            utterance_id: Optional ID marking the first chunk of a new utterance. None
+                continues the current utterance; a different ID queues a new one after it.
+                Validated by TalkMessageStream.send(); not re-checked here.
         """
         payload: dict[str, Any] = {
             "content": content,

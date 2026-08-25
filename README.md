@@ -370,6 +370,11 @@ async with client.connect() as session:
 A talk stream can stay open while your application runs a tool. Give the speech before
 and after the tool call separate utterance IDs:
 
+> [!IMPORTANT]
+> `utterance_id` marks the start of an utterance, not an individual text chunk. Set it on
+> the first chunk, then omit it from the remaining chunks in that utterance. Set a new ID
+> only when the next utterance begins.
+
 ```python
 from uuid import uuid4
 
@@ -377,9 +382,10 @@ talk_stream = session.create_talk_stream()
 
 # Utterance A can begin playing while the tool runs.
 await talk_stream.send(
-    "Let me check that for you.",
+    "Let me check ",
     utterance_id=str(uuid4()),
 )
+await talk_stream.send("that for you.")  # Continues utterance A; no ID needed.
 
 tool_result_text = await run_tool_call()
 
@@ -406,7 +412,6 @@ await talk_stream.send(
 )
 ```
 
-Use the same ID for every chunk in one utterance and a new ID at each utterance boundary.
 IDs must be canonical UUID v4 strings and are returned with persona message events.
 
 ### Director Notes
