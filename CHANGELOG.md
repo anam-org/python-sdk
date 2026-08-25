@@ -6,6 +6,28 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.12.0-alpha.1 (2026-08-25)
+
+### Documentation
+
+- Clarify utterance IDs mark boundaries
+  ([`77704dd`](https://github.com/anam-org/python-sdk/commit/77704ddec39ce26c9897be1cdcca080f99e01d85))
+
+- Explain ordered talk stream utterances
+  ([`f9efb26`](https://github.com/anam-org/python-sdk/commit/f9efb2626c49b4223577cb97c7f9f5640f3c737a))
+
+- Note Cara-3 utterance ID behavior
+  ([`ef53659`](https://github.com/anam-org/python-sdk/commit/ef53659611a51a7d19b4d01c7e37952645ae6437))
+
+- Note talk stream idle timeout
+  ([`dc3f71e`](https://github.com/anam-org/python-sdk/commit/dc3f71efa3557c050c3578836b4bc7fd0d0ad4ad))
+
+### Features
+
+- Support utterance IDs in talk streams
+  ([`4a6c9d6`](https://github.com/anam-org/python-sdk/commit/4a6c9d6b87f1d6a750ae99bd921ffe1328e1c123))
+
+
 ## v0.11.0 (2026-08-18)
 
 
