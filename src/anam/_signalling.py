@@ -234,6 +234,22 @@ class SignallingClient:
         else:
             self._send_buffer.append(message)
 
+    async def send_end_session(self) -> None:
+        """Inform the backend to end the session gracefully. Best effort, as we are on the shutdown path."""
+        if not self._is_ws_open():
+            logger.debug("Skip sending endsession: signalling socket is not open")
+            return
+        message = {
+            "actionType": SignalAction.END_SESSION.value,
+            "sessionId": self._session_id,
+            "payload": {},
+        }
+        try:
+            await self._ws.send(json.dumps(message))  # type: ignore
+            logger.debug("Sent endsession for session %s", self._session_id)
+        except Exception as e:
+            logger.warning("Failed to send endsession: %s", e)
+
     async def send_offer(self, sdp: str, sdp_type: str) -> None:
         """Send WebRTC offer to the server.
 
