@@ -648,10 +648,10 @@ class StreamingClient:
         self._closing = True
         logger.debug("Closing streaming client")
 
-        # Close signalling.
+        # Close signalling
         if self._signalling_client:
             try:
-                # Send endsession first to inform the backend we will close the websocket.
+                # send_end_session first to inform the backend we will close the websocket intentionally.
                 await self._signalling_client.send_end_session()
             except Exception as e:
                 logger.warning("Error sending endsession: %s", e)
