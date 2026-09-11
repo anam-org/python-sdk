@@ -40,6 +40,7 @@ class SignallingClient:
 
     DEFAULT_HEARTBEAT_INTERVAL = 5
     DEFAULT_MAX_RECONNECTION_ATTEMPTS = 5
+    SHUTDOWN_TIMEOUT = 2.0
 
     def __init__(
         self,
@@ -236,6 +237,7 @@ class SignallingClient:
 
     async def send_end_session(self) -> None:
         """Inform the backend to end the session gracefully. Best effort, as we are on the shutdown path."""
+        self._stop_signal = True
         if not self._is_ws_open():
             logger.debug("Skip sending endsession: signalling socket is not open")
             return
@@ -245,8 +247,13 @@ class SignallingClient:
             "payload": {},
         }
         try:
-            await self._ws.send(json.dumps(message))  # type: ignore
+            await asyncio.wait_for(
+                self._ws.send(json.dumps(message)),  # type: ignore
+                timeout=self.SHUTDOWN_TIMEOUT,
+            )
             logger.debug("Sent endsession for session %s", self._session_id)
+        except asyncio.TimeoutError:
+            logger.warning("Timed out sending endsession")
         except Exception as e:
             logger.warning("Failed to send endsession: %s", e)
 
@@ -395,7 +402,14 @@ class SignallingClient:
                 pass
 
         if self._ws:
-            await self._ws.close()
-            self._ws = None
+            try:
+                await asyncio.wait_for(self._ws.close(), timeout=self.SHUTDOWN_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.warning("Timed out closing signalling socket; aborting transport")
+                transport = getattr(self._ws, "transport", None)
+                if transport is not None:
+                    transport.abort()
+            finally:
+                self._ws = None
 
         logger.debug("SignallingClient closed")
