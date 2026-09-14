@@ -82,6 +82,7 @@ class StreamingClient:
         self._user_audio_input_track: UserAudioInputTrack | None = None
         self._audio_transceiver = None  # Store transceiver for lazy track creation
         self._closing = False
+        self._server_ended = False
 
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
@@ -142,6 +143,8 @@ class StreamingClient:
         elif action_type == SignalAction.END_SESSION.value:
             reason = payload if isinstance(payload, str) else "Session ended by server"
             logger.info("Session ended by server: %s", reason)
+            # Server requested termination; do not echo endsession.
+            self._server_ended = True
             if self._on_connection_closed:
                 await self._on_connection_closed(ConnectionClosedCode.SERVER_CLOSED.value, reason)
             await self.close()
@@ -648,37 +651,45 @@ class StreamingClient:
         self._closing = True
         logger.debug("Closing streaming client")
 
-        # Close signalling
-        if self._signalling_client:
-            try:
-                await self._signalling_client.close()
-            except Exception as e:
-                logger.warning("Error closing signalling client: %s", e)
-            finally:
-                self._signalling_client = None
+        try:
+            # Close signalling
+            if self._signalling_client:
+                if not self._server_ended:
+                    try:
+                        # Notify the backend before closing the socket.
+                        await self._signalling_client.send_end_session()
+                    except Exception as e:
+                        logger.warning("Error sending endsession: %s", e)
+                try:
+                    await self._signalling_client.close()
+                except Exception as e:
+                    logger.warning("Error closing signalling client: %s", e)
+                finally:
+                    self._signalling_client = None
 
-        # Close user audio input track before closing peer connection
-        # This clears the audio queue and prevents recv() from generating more frames
-        if self._user_audio_input_track:
-            try:
-                self._user_audio_input_track.close()
-                logger.debug("Closed user audio input track")
-            except Exception as e:
-                logger.warning("Error closing user audio input track: %s", e)
-            finally:
-                self._user_audio_input_track = None
+            # Close user audio input track before closing peer connection
+            # This clears the audio queue and prevents recv() from generating more frames
+            if self._user_audio_input_track:
+                try:
+                    self._user_audio_input_track.close()
+                    logger.debug("Closed user audio input track")
+                except Exception as e:
+                    logger.warning("Error closing user audio input track: %s", e)
+                finally:
+                    self._user_audio_input_track = None
 
-        # Close peer connection
-        if self._peer_connection:
-            try:
-                await self._peer_connection.close()
-            except Exception as e:
-                logger.warning("Error closing peer connection: %s", e)
-            finally:
-                self._peer_connection = None
+            # Close peer connection
+            if self._peer_connection:
+                try:
+                    await self._peer_connection.close()
+                except Exception as e:
+                    logger.warning("Error closing peer connection: %s", e)
+                finally:
+                    self._peer_connection = None
 
-        self._closing = False
-        self._is_connected = False
+        finally:
+            self._closing = False
+            self._is_connected = False
         logger.debug("Streaming client closed")
 
     def send_user_audio(
