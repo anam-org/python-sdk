@@ -6,6 +6,15 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.12.0 (2026-10-01)
+
+### Chores
+
+- **deps**: Update vulnerable packages in uv.lock
+  ([#74](https://github.com/anam-org/python-sdk/pull/74),
+  [`fa8b2cf`](https://github.com/anam-org/python-sdk/commit/fa8b2cff30899fea4dd8c70a0babbb7192f8af61))
+
+
 ## v0.12.0-alpha.1 (2026-08-25)
 
 ### Documentation
