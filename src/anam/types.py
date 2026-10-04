@@ -173,28 +173,54 @@ class EgressDailyOptions:
 
 
 @dataclass
-class EgressOptions:
-    """Direct egress to a third-party real-time transport.
-
-    When set, the avatar's audio + video is published into the named
-    provider's room. The WebRTC peer connection still exists for signalling
-    (interrupts, status messages).
+class EgressWhipOptions:
+    """WHIP-specific egress target.
 
     Args:
-        mode: Egress provider. Only ``"daily"`` is currently supported.
-        daily: Required when ``mode`` is ``"daily"``.
+        url: WHIP HTTPS endpoint that accepts a ``sendonly`` SDP offer.
+        token: Optional bearer credential sent as ``Authorization: Bearer <token>``.
+            Omit when the credential is embedded in ``url``.
     """
 
-    mode: Literal["daily"]
-    daily: EgressDailyOptions
+    url: str
+    token: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"url": self.url}
+        if self.token:
+            result["token"] = self.token
+        return result
+
+
+@dataclass
+class EgressOptions:
+    """Direct egress of the avatar's audio + video to another transport.
+
+    For both ``"daily"`` and ``"whip"``, the avatar publishes to the named target
+    and the SDK WebRTC peer connection carries only signalling (interrupts,
+    status messages).
+
+    Args:
+        mode: Egress transport, ``"daily"`` or ``"whip"``.
+        daily: Required when ``mode`` is ``"daily"``.
+        whip: Required when ``mode`` is ``"whip"``.
+    """
+
+    mode: Literal["daily", "whip"]
+    daily: EgressDailyOptions | None = None
+    whip: EgressWhipOptions | None = None
 
     def __post_init__(self) -> None:
         if self.mode == "daily" and self.daily is None:
             raise ValueError('EgressOptions(mode="daily") requires a daily=... block')
+        if self.mode == "whip" and self.whip is None:
+            raise ValueError('EgressOptions(mode="whip") requires a whip=... block')
 
     def to_dict(self) -> dict[str, Any]:
-        if self.mode == "daily":
+        if self.mode == "daily" and self.daily is not None:
             return {"mode": "daily", "daily": self.daily.to_dict()}
+        if self.mode == "whip" and self.whip is not None:
+            return {"mode": "whip", "whip": self.whip.to_dict()}
         raise ValueError(f"Unsupported egress mode: {self.mode!r}")
 
 
@@ -207,7 +233,7 @@ class SessionOptions:
         video_quality: Video quality profile to pin the video quality. Supported values are "high" (default) and "auto".
         video_width: Requested video output width. Must be provided with video_height.
         video_height: Requested video output height. Must be provided with video_width.
-        egress: Optional direct egress to a third-party transport (e.g. Daily). See :class:`EgressOptions`.
+        egress: Optional egress to another transport (Daily room or WHIP endpoint). See :class:`EgressOptions`.
         show_ai_avatar_disclosure: Show Anam's AI avatar disclosure watermark throughout
             the session. Defaults to Anam's default behavior, which is off.
         region: Requested engine region. See https://docs.anam.ai for available

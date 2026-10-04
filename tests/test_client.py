@@ -14,6 +14,7 @@ from anam import (
     DirectorNotes,
     EgressDailyOptions,
     EgressOptions,
+    EgressWhipOptions,
     MessageRole,
     MessageStreamEvent,
     MessageUtterance,
@@ -674,6 +675,38 @@ class TestSessionOptions:
             "egress",
             "showAIAvatarDisclosure",
         ]
+
+    def test_whip_egress_serialises_url_and_token(self) -> None:
+        options = SessionOptions(
+            egress=EgressOptions(
+                mode="whip",
+                whip=EgressWhipOptions(
+                    url="https://g.webrtc.live-video.net:4443/v2/offer",
+                    token="stream-key",
+                ),
+            )
+        )
+
+        assert options.to_dict()["egress"] == {
+            "mode": "whip",
+            "whip": {
+                "url": "https://g.webrtc.live-video.net:4443/v2/offer",
+                "token": "stream-key",
+            },
+        }
+
+    def test_whip_egress_omits_absent_token(self) -> None:
+        egress = EgressOptions(mode="whip", whip=EgressWhipOptions(url="https://whip.example/pub"))
+
+        assert egress.to_dict() == {"mode": "whip", "whip": {"url": "https://whip.example/pub"}}
+
+    def test_whip_egress_requires_whip_block(self) -> None:
+        with pytest.raises(ValueError, match='EgressOptions\\(mode="whip"\\) requires a whip'):
+            EgressOptions(mode="whip")
+
+    def test_daily_egress_still_requires_daily_block(self) -> None:
+        with pytest.raises(ValueError, match='EgressOptions\\(mode="daily"\\) requires a daily'):
+            EgressOptions(mode="daily")
 
     def test_invalid_video_quality_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match='video_quality must be either "high" or "auto"'):

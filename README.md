@@ -70,7 +70,7 @@ asyncio.run(main())
 - 🤖 **Audio-passthrough** - Send TTS generated audio input and receive rendered synchronized audio/video avatar
 - 🗣️ **Direct text-to-speech** - Send text directly to TTS for immediate speech output (bypasses LLM processing)
 - 🎤 **Real-time user audio input** - Send raw audio samples (e.g. from microphone) to Anam for processing (turnkey solution: STT → LLM → TTS → Avatar)
-- 📤 **Direct egress** - (experimental) Publish the avatar's synchronised audio + video directly to a 3rd party video network provider. (currently supported providers: Daily)
+- 📤 **Direct egress** - (experimental) Publish the avatar's synchronised audio + video directly to a 3rd party transport (Daily rooms or WHIP ingest). The SDK connection stays open for signalling.
 - 📡 **Async iterator API** - Clean, Pythonic async/await patterns for continuous stream of audio/video frames
 - 🎯 **Event-driven API** - Simple decorator-based event handlers for discrete events
 - 📝 **Fully typed** - Complete type hints for IDE support
@@ -162,6 +162,55 @@ async with client.connect(session_options=session_options) as session:
 ```
 
 **Daily tokens.** Mint meeting tokens through your own Daily app (Daily REST API or a server you control); the SDK never does this for you. A Daily meeting token is bound to the room it was minted for, so the `token` you pass must be minted for the same `room_url` — passing a token minted for a different room will fail at join time with a 403. For public rooms (no token required) you can omit `token` entirely.
+
+## Egress to a WHIP endpoint
+
+> [!WARNING]
+> WHIP egress is experimental. Expect breaking changes between alphas.
+
+Like Daily egress, WHIP publishes the avatar's synchronised audio + video
+directly to a [WHIP](https://datatracker.ietf.org/doc/html/rfc9725) ingest —
+for example a live streaming platform or your own media server. The SDK's
+connection stays open for signalling; media goes straight from Anam to your
+WHIP endpoint.
+
+```python
+from anam import (
+    AnamClient,
+    EgressOptions,
+    EgressWhipOptions,
+    PersonaConfig,
+    SessionOptions,
+)
+
+client = AnamClient(
+    api_key="your-api-key",
+    persona_config=PersonaConfig(
+        avatar_id="your-avatar-id",
+        enable_audio_passthrough=True,
+    ),
+)
+
+session_options = SessionOptions(
+    egress=EgressOptions(
+        mode="whip",
+        whip=EgressWhipOptions(
+            url="https://whip.example/v2/offer",
+            token="your-bearer-token",  # Authorization: Bearer <token>
+        ),
+    ),
+)
+
+async with client.connect(session_options=session_options) as session:
+    # The avatar is now publishing to your WHIP endpoint.
+    await session.wait_until_closed()
+```
+
+**Endpoint requirements.** The avatar is published as H.264 video and Opus audio.
+The endpoint must accept a `sendonly` offer over HTTPS and authenticate with a
+bearer token (or with credentials embedded in `url`, in which case omit `token`).
+Keep the token out of client-side code: pass it from your server, the same way you
+would an API key.
 
 ## Output Video Dimensions
 
