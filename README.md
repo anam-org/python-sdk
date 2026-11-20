@@ -70,7 +70,8 @@ asyncio.run(main())
 - 🤖 **Audio-passthrough** - Send TTS generated audio input and receive rendered synchronized audio/video avatar
 - 🗣️ **Direct text-to-speech** - Send text directly to TTS for immediate speech output (bypasses LLM processing)
 - 🎤 **Real-time user audio input** - Send raw audio samples (e.g. from microphone) to Anam for processing (turnkey solution: STT → LLM → TTS → Avatar)
-- 📤 **Direct egress** - (experimental) Publish the avatar's synchronised audio + video directly to a 3rd party transport (Daily rooms or WHIP ingest). The SDK connection stays open for signalling.
+- 📤 **Direct egress** - Publish the avatar's synchronised audio + video directly to a 3rd party transport (currently supported providers: Daily) 
+- 🍨 **WHIP egress** - Publish the avatar's synchronised audio + video directly to a WHIP server (for example a live streaming platform or your own media server that serves as a proxy)
 - 📡 **Async iterator API** - Clean, Pythonic async/await patterns for continuous stream of audio/video frames
 - 🎯 **Event-driven API** - Simple decorator-based event handlers for discrete events
 - 📝 **Fully typed** - Complete type hints for IDE support
@@ -168,11 +169,33 @@ async with client.connect(session_options=session_options) as session:
 > [!WARNING]
 > WHIP egress is experimental. Expect breaking changes between alphas.
 
-Like Daily egress, WHIP publishes the avatar's synchronised audio + video
-directly to a [WHIP](https://datatracker.ietf.org/doc/html/rfc9725) ingest —
-for example a live streaming platform or your own media server. The SDK's
-connection stays open for signalling; media goes straight from Anam to your
-WHIP endpoint.
+WebRTC HTTP Ingest Protocol ([WHIP](https://datatracker.ietf.org/doc/html/rfc9725)) 
+is used to ingest WebRTC media streams into a media server. 
+Anam connects to a WHIP server and publishes the avatar's 
+synchronised audio + video directly to the WHIP server. The WHIP server acts as a 
+proxy and forwards the A/V tracks over their own trasport network to your end-users.
+Twitch, Livekit and many other providers natively support WHIP ingest.  
+
+The SDK still opens its WebSocket and WebRTC connection to Anam for signalling
+(session lifecycle, talk stream, interrupts, user audio). Avatar media goes
+straight from Anam to the WHIP endpoint — it is not returned over the SDK peer
+connection.
+
+WHIP egress works with any of these session shapes:
+
+* **Audio passthrough** — set `enable_audio_passthrough=True` and send TTS
+  chunks with `send_audio_chunk` / `end_sequence`.
+* **Talk stream** — set `llm_id="CUSTOMER_CLIENT_V1"` and drive speech with
+  `create_talk_stream()` / `talk()`.
+* **Turnkey** — leave passthrough off (default). Anam runs STT → LLM → TTS;
+  your app forwards user audio (e.g. microphone PCM) with `send_user_audio`.
+  The SDK does not capture a microphone itself — you capture samples and push
+  them in.
+
+Egress is orthogonal to that choice: set `SessionOptions.egress` the same way
+in all three cases. The example below only shows the WHIP block; configure
+`PersonaConfig` for whichever session shape you use.
+
 
 ```python
 from anam import (
@@ -187,7 +210,10 @@ client = AnamClient(
     api_key="your-api-key",
     persona_config=PersonaConfig(
         avatar_id="your-avatar-id",
-        enable_audio_passthrough=True,
+        # Optional per mode, e.g.:
+        # enable_audio_passthrough=True,          # passthrough
+        # llm_id="CUSTOMER_CLIENT_V1",            # talk stream
+        # voice_id="...", llm_id="...",           # turnkey ephemeral
     ),
 )
 
