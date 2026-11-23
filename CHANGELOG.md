@@ -6,6 +6,31 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.13.0-alpha.1 (2026-11-23)
+
+### Bug Fixes
+
+- **deps**: Drop Python 3.10 and bump dnspython to 2.9.2 for security advisories
+  ([#80](https://github.com/anam-org/python-sdk/pull/80),
+  [`a4db70c`](https://github.com/anam-org/python-sdk/commit/a4db70ceffc49dcc2930e1b54fd611a6526a3295))
+
+### Chores
+
+- **deps**: Bump aiohttp, multidict in uv.lock for security advisories
+  ([#78](https://github.com/anam-org/python-sdk/pull/78),
+  [`fad554a`](https://github.com/anam-org/python-sdk/commit/fad554a5ad86d527ba89d9f836fe05febbfc0417))
+
+### Continuous Integration
+
+- Remove low-risk/hot-fix auto-approve workflow (ENG-3724)
+  ([#76](https://github.com/anam-org/python-sdk/pull/76),
+  [`97ad34c`](https://github.com/anam-org/python-sdk/commit/97ad34c878b7c66ba54eaa71282320e63988e16f))
+
+### Breaking Changes
+
+- **deps**: Python 3.10 is no longer supported. The SDK now requires Python 3.11 or later.
+
+
 ## v0.12.0 (2026-10-01)
 
 ### Chores
