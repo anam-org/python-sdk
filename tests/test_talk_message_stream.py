@@ -1,12 +1,12 @@
 """Tests for TalkMessageStream."""
 
 import asyncio
+import json
 from typing import Any
 from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
-from anam import AnamEvent
 from anam._signalling import SignallingClient
 from anam._talk_message_stream import TalkMessageStream, TalkMessageStreamState
 from anam.types import SessionInfo
@@ -29,11 +29,8 @@ async def admit(**kwargs: Any) -> None:
 
 @pytest.fixture
 def mock_anam_client() -> MagicMock:
-    """Create a mock AnamClient with add_listener and remove_listener."""
-    client = MagicMock()
-    client.add_listener = MagicMock()
-    client.remove_listener = MagicMock()
-    return client
+    """Create a mock AnamClient."""
+    return MagicMock()
 
 
 @pytest.fixture
@@ -52,21 +49,18 @@ def stream(
 class TestTalkMessageStreamInit:
     """Tests for TalkMessageStream initialization."""
 
-    def test_registers_interrupt_listener(
+    def test_registers_with_signalling(
         self,
         mock_anam_client: MagicMock,
         mock_signalling_client: MagicMock,
     ) -> None:
-        """Test that stream registers for TALK_STREAM_INTERRUPTED on init."""
-        TalkMessageStream(
+        """Signalling marks the stream when it is interrupted or a chunk fails."""
+        stream = TalkMessageStream(
             correlation_id="cid-1",
             signalling_client=mock_signalling_client,
             client=mock_anam_client,
         )
-        mock_anam_client.add_listener.assert_called_once()
-        call_args = mock_anam_client.add_listener.call_args
-        assert call_args[0][0] == AnamEvent.TALK_STREAM_INTERRUPTED
-        assert callable(call_args[0][1])
+        mock_signalling_client.register_talk_stream.assert_called_once_with("cid-1", stream)
 
     def test_correlation_id_property(self, stream: TalkMessageStream) -> None:
         """Test correlation_id property returns the configured value."""
@@ -176,14 +170,12 @@ class TestTalkMessageStreamSend:
         self,
         stream: TalkMessageStream,
         mock_signalling_client: MagicMock,
-        mock_anam_client: MagicMock,
     ) -> None:
-        """Test send with end_of_speech=True transitions to ENDED and deactivates."""
+        """Test send with end_of_speech=True transitions to ENDED."""
         await stream.send("Done", end_of_speech=True)
 
         assert stream.state == TalkMessageStreamState.ENDED
         assert stream.is_active is False
-        mock_anam_client.remove_listener.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_send_after_ended_raises(
@@ -207,7 +199,7 @@ class TestTalkMessageStreamSend:
     ) -> None:
         """Test send raises RuntimeError when stream was interrupted."""
         await stream.send("Hello", end_of_speech=False)
-        stream._on_talk_stream_interrupted("test-correlation-123")
+        stream._mark_interrupted()
 
         with pytest.raises(RuntimeError, match="not in an active state"):
             await stream.send("More", end_of_speech=False)
@@ -288,32 +280,38 @@ class TestTalkMessageStreamEnd:
 
 
 class TestTalkMessageStreamInterruption:
-    """Tests for TALK_STREAM_INTERRUPTED handling."""
+    """Tests for server interruptions of a talk stream."""
 
-    def test_matching_correlation_id_sets_interrupted(
-        self,
-        stream: TalkMessageStream,
-        mock_anam_client: MagicMock,
-    ) -> None:
-        """Test interrupt event with matching correlation_id sets INTERRUPTED state."""
-        assert stream.state == TalkMessageStreamState.UNSTARTED
+    @staticmethod
+    def interrupt(signalling: SignallingClient, correlation_id: str) -> None:
+        signalling._handle_incoming(
+            json.dumps(
+                {
+                    "actionType": "talkinputstreaminterrupted",
+                    "sessionId": "session-1",
+                    "payload": {"correlationId": correlation_id},
+                }
+            )
+        )
 
-        stream._on_talk_stream_interrupted("test-correlation-123")
+    def test_matching_correlation_id_sets_interrupted(self, mock_anam_client: MagicMock) -> None:
+        """An interruption with the stream's correlation_id sets INTERRUPTED."""
+        signalling = TestTalkMessageStreamSignalling.signalling_client()
+        stream = TalkMessageStream("cid-1", signalling, mock_anam_client)
+
+        self.interrupt(signalling, "cid-1")
 
         assert stream.state == TalkMessageStreamState.INTERRUPTED
         assert stream.is_active is False
-        mock_anam_client.remove_listener.assert_called_once()
 
-    def test_non_matching_correlation_id_ignored(
-        self,
-        stream: TalkMessageStream,
-        mock_anam_client: MagicMock,
-    ) -> None:
-        """Test interrupt event with different correlation_id is ignored."""
-        stream._on_talk_stream_interrupted("other-correlation-456")
+    def test_non_matching_correlation_id_ignored(self, mock_anam_client: MagicMock) -> None:
+        """An interruption with a different correlation_id is ignored."""
+        signalling = TestTalkMessageStreamSignalling.signalling_client()
+        stream = TalkMessageStream("cid-1", signalling, mock_anam_client)
+
+        self.interrupt(signalling, "other-correlation-456")
 
         assert stream.state == TalkMessageStreamState.UNSTARTED
-        mock_anam_client.remove_listener.assert_not_called()
 
 
 class TestTalkMessageStreamSignalling:
@@ -348,6 +346,16 @@ class TestTalkMessageStreamSignalling:
             "correlationId": "correlation-1",
             "utteranceId": UTTERANCE_A,
         }
+
+    @pytest.mark.asyncio
+    async def test_interruption_drops_buffered_chunks_of_that_stream(self) -> None:
+        client = self.signalling_client()
+        await client.send_talk_stream_input(content="a", correlation_id="cid-1")
+        await client.send_talk_stream_input(content="b", correlation_id="cid-2")
+
+        TestTalkMessageStreamInterruption.interrupt(client, "cid-1")
+
+        assert [m["payload"]["correlationId"] for m in client._send_buffer] == ["cid-2"]
 
     @pytest.mark.asyncio
     async def test_omits_utterance_id_when_not_provided(self) -> None:

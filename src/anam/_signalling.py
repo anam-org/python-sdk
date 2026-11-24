@@ -27,6 +27,8 @@ class _Dispatch(NamedTuple):
 class TalkStreamTarget(Protocol):
     def _mark_delivery_failed(self) -> None: ...
 
+    def _mark_interrupted(self) -> None: ...
+
 
 async def _noop(*_: Any) -> None:
     return None
@@ -422,7 +424,9 @@ class SignallingClient:
             correlation_id = payload.get("correlationId") if isinstance(payload, dict) else None
             if isinstance(correlation_id, str):
                 self._interrupted_cids.add(correlation_id)
-                self._monitor.drop(correlation_id)
+                self._retire(correlation_id)
+                for stream in self._live_streams(correlation_id):
+                    stream._mark_interrupted()
         if self._on_message:
             self._enqueue(_Dispatch(functools.partial(self._on_message, data)))
 
@@ -442,11 +446,26 @@ class SignallingClient:
                 continue
             self._failed_cids.add(correlation_id)
             new.append(correlation_id)
-            for ref in list(self._talk_streams.get(correlation_id, [])):
-                stream = ref()
-                if stream is not None:
-                    stream._mark_delivery_failed()
+            self._retire(correlation_id)
+            for stream in self._live_streams(correlation_id):
+                stream._mark_delivery_failed()
         return new
+
+    def _retire(self, correlation_id: str) -> None:
+        """Forget the unconfirmed and buffered chunks of a stream that has ended.
+
+        A new stream that reuses the correlation id then cannot inherit them.
+        """
+        self._monitor.drop(correlation_id)
+        self._send_buffer[:] = [
+            message
+            for message in self._send_buffer
+            if _talk_correlation_id(message) != correlation_id
+        ]
+
+    def _live_streams(self, correlation_id: str) -> list[TalkStreamTarget]:
+        streams = (ref() for ref in self._talk_streams.get(correlation_id, []))
+        return [stream for stream in streams if stream is not None]
 
     def _queue_failures(self, correlation_ids: list[str]) -> None:
         callback = self._on_talk_stream_delivery_failed

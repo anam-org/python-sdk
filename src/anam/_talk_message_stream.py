@@ -8,7 +8,6 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from ._signalling import SignallingClient
-from .types import AnamEvent
 
 if TYPE_CHECKING:
     from .client import AnamClient
@@ -79,8 +78,9 @@ class TalkMessageStream:
 
         Args:
             correlation_id: ID to correlate this stream with interruptions.
-            signalling_client: Signalling client for sending messages.
-            client: AnamClient for registering interrupt listener.
+            signalling_client: Signalling client for sending messages. It marks the
+                stream when the server interrupts it or a chunk is not confirmed.
+            client: The AnamClient that owns the stream.
         """
         self._correlation_id = correlation_id
         self._signalling_client = signalling_client
@@ -88,21 +88,12 @@ class TalkMessageStream:
         self._state = TalkMessageStreamState.UNSTARTED
         self._last_utterance_id: str | None = None
         self._send_lock = asyncio.Lock()
-        self._interrupt_handler = self._on_talk_stream_interrupted
-        client.add_listener(AnamEvent.TALK_STREAM_INTERRUPTED, self._interrupt_handler)
         signalling_client.register_talk_stream(correlation_id, self)
 
     def _transition(self, state: TalkMessageStreamState) -> None:
         if self._state in _FINAL_STATES:
             return
         self._state = state
-        if state is not TalkMessageStreamState.STREAMING:
-            self._deactivate()
-
-    def _on_talk_stream_interrupted(self, correlation_id: str) -> None:
-        """Handle TALK_STREAM_INTERRUPTED event if it matches this stream."""
-        if correlation_id == self._correlation_id:
-            self._transition(TalkMessageStreamState.INTERRUPTED)
 
     @property
     def correlation_id(self) -> str:
@@ -224,6 +215,5 @@ class TalkMessageStream:
     def _mark_delivery_failed(self) -> None:
         self._transition(TalkMessageStreamState.DELIVERY_FAILED)
 
-    def _deactivate(self) -> None:
-        """Clean up listeners when stream ends or is interrupted."""
-        self._client.remove_listener(AnamEvent.TALK_STREAM_INTERRUPTED, self._interrupt_handler)
+    def _mark_interrupted(self) -> None:
+        self._transition(TalkMessageStreamState.INTERRUPTED)

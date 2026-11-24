@@ -1146,3 +1146,69 @@ async def test_cancel_after_talk_write_keeps_stream_state(
     payloads = [m["payload"] for _, m in engine.received_actions("talkstream")]
     assert [p["startOfSpeech"] for p in payloads] == [True, False]
     assert payloads[1]["utteranceId"] == utterance
+
+
+@pytest.mark.asyncio
+async def test_reused_id_after_refused_chunk_does_not_fail_again(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
+    failed = record(anam, AnamEvent.MESSAGE_DELIVERY_FAILED)
+    session = await anam.connect_async()
+    sc = signalling(anam)
+    await engine.send(
+        {"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {"sendsHeartbeatAcks": True}}
+    )
+    await engine.wait_for(lambda: sc._heartbeat_acks is HeartbeatAcks.YES)
+    engine.answer_heartbeats = False
+    old = session.create_talk_stream()
+    await old.send("one")
+    await engine.wait_for(sc._monitor.is_suspect)
+    await old.send("two")
+    await engine.wait_for(lambda: len(failed) == 1)
+
+    new = session.create_talk_stream(old.correlation_id)
+    engine.answer_heartbeats = True
+    await engine.drop("abort")
+    await round_trip_on(engine, 1)
+
+    assert new.state is TalkMessageStreamState.UNSTARTED
+    assert await stays(lambda: len(failed) == 1, 0.2)
+
+
+@pytest.mark.asyncio
+async def test_stream_created_after_interruption_receipt_is_not_interrupted(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    blocked = asyncio.Event()
+    release = asyncio.Event()
+
+    async def on_ready() -> None:
+        blocked.set()
+        await release.wait()
+
+    anam.add_listener(AnamEvent.SESSION_READY, on_ready)
+    interrupted = record(anam, AnamEvent.TALK_STREAM_INTERRUPTED)
+    session = await anam.connect_async()
+    sc = signalling(anam)
+    old = session.create_talk_stream()
+    await old.send("one")
+    await engine.send({"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {}})
+    await asyncio.wait_for(blocked.wait(), 2.0)
+    await engine.send(
+        {
+            "actionType": "talkinputstreaminterrupted",
+            "sessionId": SESSION_ID,
+            "payload": {"correlationId": old.correlation_id},
+        }
+    )
+    await engine.wait_for(lambda: old.correlation_id in sc._interrupted_cids)
+
+    new = session.create_talk_stream(old.correlation_id)
+    release.set()
+    await engine.wait_for(lambda: len(interrupted) == 1)
+
+    assert old.state is TalkMessageStreamState.INTERRUPTED
+    assert new.state is TalkMessageStreamState.UNSTARTED
+    await new.send("two")
+    assert new.state is TalkMessageStreamState.STREAMING
