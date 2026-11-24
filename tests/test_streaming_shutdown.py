@@ -87,6 +87,26 @@ async def test_server_end_session_does_not_echo(
 
 
 @pytest.mark.asyncio
+async def test_listener_raising_cancelled_error_does_not_stop_notification(
+    session_info: SessionInfo, signalling: MagicMock
+) -> None:
+    signalling.take_failures.return_value = ["cid-1"]
+    on_failed = AsyncMock(side_effect=asyncio.CancelledError)
+    on_closed = AsyncMock()
+    client = StreamingClient(
+        session_info, on_connection_closed=on_closed, on_talk_stream_delivery_failed=on_failed
+    )
+    client._signalling_client = signalling
+    client._started = True
+
+    client._terminate(ConnectionClosedCode.SERVER_CLOSED, "done")
+    await client.close()
+
+    on_failed.assert_awaited_once_with("cid-1")
+    on_closed.assert_awaited_once_with("server_closed", "done")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("state", [None, State.CONNECTING, State.CLOSING, State.CLOSED])
 async def test_end_session_skips_unavailable_socket(
     session_info: SessionInfo, websocket: MagicMock, state: State | None
