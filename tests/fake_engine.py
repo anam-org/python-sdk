@@ -34,7 +34,7 @@ class FakeEngine:
         self._server = await serve(
             self._handle, "127.0.0.1", 0, process_request=self._process_request
         )
-        self.port = self._server.sockets[0].getsockname()[1]
+        self.port = next(iter(self._server.sockets)).getsockname()[1]
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
@@ -90,6 +90,7 @@ class FakeEngine:
         elif action == "offer" and self.answer_offers != "none":
             sdp = CANNED_ANSWER_SDP
             if self.answer_offers == "aiortc":
+                assert isinstance(payload, dict)
                 sdp = await self._answer_with_aiortc(payload["connectionDescription"])
             await ws.send(
                 json.dumps(
@@ -124,6 +125,9 @@ class FakeEngine:
 
     async def send(self, message: dict[str, Any]) -> None:
         await self.connections[-1].send(json.dumps(message))
+
+    async def send_raw(self, data: str | bytes) -> None:
+        await self.connections[-1].send(data)
 
     def received_on(self, index: int, action: str | None = None) -> list[dict[str, Any]]:
         return [

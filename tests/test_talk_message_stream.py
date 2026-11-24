@@ -1,5 +1,6 @@
 """Tests for TalkMessageStream."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -346,3 +347,46 @@ class TestTalkMessageStreamSignalling:
         )
 
         assert "utteranceId" not in client._send_buffer[0]["payload"]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_waiting_calls_keep_stream_state(
+    stream: TalkMessageStream, mock_signalling_client: MagicMock
+) -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def send(**kwargs: object) -> None:
+        entered.set()
+        await release.wait()
+
+    mock_signalling_client.send_talk_stream_input.side_effect = send
+    first = asyncio.create_task(stream.send("hello"))
+    await asyncio.wait_for(entered.wait(), 1.0)
+    waiting = [
+        asyncio.create_task(stream.send("bye", end_of_speech=True)),
+        asyncio.create_task(stream.end()),
+    ]
+    await asyncio.sleep(0)
+    for task in waiting:
+        task.cancel()
+    await asyncio.gather(*waiting, return_exceptions=True)
+    release.set()
+    await first
+
+    assert stream.state is TalkMessageStreamState.STREAMING
+    assert mock_signalling_client.send_talk_stream_input.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_failure_during_send_is_not_overwritten(
+    stream: TalkMessageStream, mock_signalling_client: MagicMock
+) -> None:
+    async def send(**kwargs: object) -> None:
+        stream._mark_delivery_failed()
+
+    mock_signalling_client.send_talk_stream_input.side_effect = send
+
+    await stream.send("hello", end_of_speech=True)
+
+    assert stream.state is TalkMessageStreamState.DELIVERY_FAILED

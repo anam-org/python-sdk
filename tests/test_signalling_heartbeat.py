@@ -572,3 +572,91 @@ async def test_terminal_close_hands_buffered_talk_chunks_to_take_failures(
     assert client.take_failures(include_unconfirmed=True) == ["a", "b"]
     assert client._send_buffer == []
     assert failures == []
+
+
+@pytest.mark.asyncio
+async def test_interruption_behind_slow_listener_drops_later_chunks(
+    engine: FakeEngine,
+    make_client: ClientFactory,
+    failures: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
+    engine.answer_heartbeats = False
+    release = asyncio.Event()
+
+    async def slow(message: dict[str, Any]) -> None:
+        if message.get("actionType") == "block":
+            await release.wait()
+
+    on_message = AsyncMock(side_effect=slow)
+    client = make_client(on_message=on_message)
+    await client.connect()
+    await engine.send({"actionType": "block", "payload": {}})
+    await engine.wait_for(lambda: on_message.await_count == 1)
+
+    await talk(client, "a")
+    await engine.wait_for(lambda: talk_cids(engine) == ["a"])
+    await engine.send(
+        {
+            "actionType": "talkinputstreaminterrupted",
+            "sessionId": SESSION_ID,
+            "payload": {"correlationId": "a"},
+        }
+    )
+    await engine.wait_for(lambda: not client._monitor.is_tracked("a"))
+    await talk(client, "a")
+    await engine.drop("abort")
+    await round_trip_on(engine, 1)
+    release.set()
+    await sync_dispatch(engine, on_message)
+
+    assert talk_cids(engine) == ["a"]
+    assert failures == []
+
+
+async def stall_until_replaced(engine: FakeEngine, client: SignallingClient) -> None:
+    ws = client._ws
+    assert ws is not None
+    count = len(engine.connections)
+    ws.pause_writing()
+    stalled = asyncio.create_task(client.send_agent_audio_input_end())
+    await engine.wait_for(
+        lambda: len(engine.connections) == count + 1 or client.is_permanently_closed,
+        timeout=SignallingClient.WRITE_STALL_SECONDS + 0.5,
+    )
+    await asyncio.wait_for(stalled, 1.0)
+    if not client.is_permanently_closed:
+        await engine.wait_for(lambda: client._ws is not None and client._ws is not ws)
+
+
+@pytest.mark.asyncio
+async def test_write_stalls_after_stable_period_do_not_give_up(
+    engine: FakeEngine, make_client: ClientFactory
+) -> None:
+    on_end = Mock()
+    client = make_client(on_end=on_end, max_reconnection_attempts=1)
+    await client.connect()
+    await announce_acks(engine, client, False)
+
+    for _ in range(3):
+        await asyncio.sleep(SignallingClient.STABLE_CONNECTION_SECONDS + 0.05)
+        await stall_until_replaced(engine, client)
+
+    assert len(engine.connections) == 4
+    on_end.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_quick_write_stalls_give_up(engine: FakeEngine, make_client: ClientFactory) -> None:
+    on_end = Mock()
+    client = make_client(on_end=on_end, max_reconnection_attempts=1)
+    await client.connect()
+    await announce_acks(engine, client, False)
+
+    await stall_until_replaced(engine, client)
+    await stall_until_replaced(engine, client)
+
+    await engine.wait_for(lambda: on_end.call_count == 1)
+    on_end.assert_called_once_with(ConnectionClosedCode.SIGNALLING_FAILURE, ANY)
+    assert len(engine.connections) == 2

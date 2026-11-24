@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
@@ -77,7 +77,7 @@ async def drop_and_wait_for_gap(engine: FakeEngine, client: SignallingClient) ->
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["abort", "clean"])
 async def test_drop_reconnects_to_same_url(
-    engine: FakeEngine, make_client: ClientFactory, mode: str
+    engine: FakeEngine, make_client: ClientFactory, mode: Literal["abort", "clean"]
 ) -> None:
     on_open = AsyncMock()
     on_end = Mock()
@@ -414,3 +414,63 @@ async def test_close_while_reopened_socket_waits_for_lock(
 
     await engine.wait_for(lambda: all(ws.state.name == "CLOSED" for ws in engine.connections))
     assert owned_tasks_done(client)
+
+
+@pytest.mark.asyncio
+async def test_close_after_endsession_releases_socket(
+    engine: FakeEngine, make_client: ClientFactory
+) -> None:
+    on_end = Mock()
+    client = make_client(on_end=on_end)
+    await client.connect()
+
+    await engine.send({"actionType": "endsession", "payload": "done"})
+    await engine.wait_for(lambda: on_end.call_count == 1)
+    await client.close()
+
+    await engine.wait_for(lambda: engine.connections[0].state.name == "CLOSED")
+    assert client._ws is None
+    assert owned_tasks_done(client)
+
+
+@pytest.mark.asyncio
+async def test_undecodable_frames_are_skipped(
+    engine: FakeEngine, make_client: ClientFactory
+) -> None:
+    on_message = AsyncMock()
+    on_end = Mock()
+    client = make_client(on_message=on_message, on_end=on_end)
+    await client.connect()
+
+    await engine.send_raw(b"\xff\xfe")
+    await engine.send_raw("not json")
+    await engine.send_raw("[1, 2]")
+    await engine.send({"actionType": "after", "payload": {}})
+    await engine.wait_for(lambda: on_message.await_count == 1)
+
+    assert on_message.await_args is not None
+    assert on_message.await_args.args[0]["actionType"] == "after"
+    on_end.assert_not_called()
+    assert len(engine.connections) == 1
+
+
+@pytest.mark.asyncio
+async def test_supervisor_error_ends_with_signalling_failure(
+    engine: FakeEngine, make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    on_end = Mock()
+    client = make_client(on_end=on_end)
+    await client.connect()
+
+    async def broken(self: SignallingClient) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(SignallingClient, "_reconnect", broken)
+    await engine.drop("abort")
+    await engine.wait_for(lambda: on_end.call_count == 1)
+
+    on_end.assert_called_once_with(
+        ConnectionClosedCode.SIGNALLING_FAILURE, "Signalling failed unexpectedly"
+    )
+    assert client.is_permanently_closed
+    await engine.wait_for(lambda: owned_tasks_done(client))

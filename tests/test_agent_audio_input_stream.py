@@ -38,3 +38,38 @@ async def test_sequence_numbers_unique_under_concurrency() -> None:
     ]
     assert chunk_seqs == list(range(10)) + [0, 1]
     assert stream.get_sequence_number() == 2
+
+
+@pytest.mark.asyncio
+async def test_cancelled_waiting_calls_do_not_touch_sequence() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    signalling = MagicMock(spec=SignallingClient)
+
+    async def send_audio(payload: AgentAudioInputPayload) -> None:
+        entered.set()
+        await release.wait()
+
+    signalling.send_agent_audio_input.side_effect = send_audio
+    stream = AgentAudioInputStream(AgentAudioInputConfig(), signalling)
+
+    first = asyncio.create_task(stream.send_audio_chunk(b"\x00\x00"))
+    await asyncio.wait_for(entered.wait(), 1.0)
+    waiting = [
+        asyncio.create_task(stream.send_audio_chunk(b"\x00\x00")),
+        asyncio.create_task(stream.end_sequence()),
+    ]
+    await asyncio.sleep(0)
+    for task in waiting:
+        task.cancel()
+    await asyncio.gather(*waiting, return_exceptions=True)
+    release.set()
+    await first
+
+    assert stream.get_sequence_number() == 1
+    signalling.send_agent_audio_input_end.assert_not_awaited()
+    await stream.send_audio_chunk(b"\x00\x00")
+    chunk_seqs = [
+        call.args[0].sequence_number for call in signalling.send_agent_audio_input.call_args_list
+    ]
+    assert chunk_seqs == [0, 1]
