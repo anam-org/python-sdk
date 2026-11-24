@@ -323,15 +323,13 @@ class TestTalkMessageStreamSignalling:
     @pytest.mark.asyncio
     async def test_includes_utterance_id_when_provided(self) -> None:
         client = self.signalling_client()
-        client.send_message = AsyncMock()
-
         await client.send_talk_stream_input(
             content="Hello",
             correlation_id="correlation-1",
             utterance_id=UTTERANCE_A,
         )
 
-        assert client.send_message.await_args.args[0]["payload"] == {
+        assert client._send_buffer[0]["payload"] == {
             "content": "Hello",
             "startOfSpeech": True,
             "endOfSpeech": True,
@@ -342,11 +340,9 @@ class TestTalkMessageStreamSignalling:
     @pytest.mark.asyncio
     async def test_omits_utterance_id_when_not_provided(self) -> None:
         client = self.signalling_client()
-        client.send_message = AsyncMock()
-
         await client.send_talk_stream_input(
             content="Hello",
             correlation_id="correlation-1",
         )
 
-        assert "utteranceId" not in client.send_message.await_args.args[0]["payload"]
+        assert "utteranceId" not in client._send_buffer[0]["payload"]

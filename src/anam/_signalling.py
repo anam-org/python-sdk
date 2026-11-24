@@ -4,6 +4,7 @@ import asyncio
 import functools
 import json
 import logging
+import time
 from enum import Enum
 from typing import Any, Awaitable, Callable
 
@@ -11,6 +12,7 @@ from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 from websockets.protocol import State
 
+from ._heartbeat_monitor import HeartbeatMonitor
 from .types import AgentAudioInputPayload, SessionInfo
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,14 @@ class SignalAction(str, Enum):
     AGENT_AUDIO_INPUT_END = "agentaudioinputend"
 
 
+def _talk_correlation_id(message: dict[str, Any]) -> str | None:
+    if message.get("actionType") != SignalAction.TALK_STREAM_INPUT.value:
+        return None
+    payload = message.get("payload")
+    correlation_id = payload.get("correlationId") if isinstance(payload, dict) else None
+    return correlation_id if isinstance(correlation_id, str) else None
+
+
 class SignallingClient:
     """WebSocket client for signalling with Anam engine.
 
@@ -51,6 +61,11 @@ class SignallingClient:
     One supervisor task owns the connect, receive and reconnect loop. Application
     callbacks run in order on a separate dispatch task, so a slow callback cannot
     delay the receive loop.
+
+    Heartbeats carry a sequence number. When the engine answers them, an answer
+    confirms every talk-stream chunk written before that heartbeat. A chunk that is
+    not confirmed when its socket ends is reported as failed and never resent. A
+    socket whose heartbeats go unanswered, or whose write stalls, is replaced.
     """
 
     DEFAULT_HEARTBEAT_INTERVAL = 5
@@ -107,9 +122,21 @@ class SignallingClient:
         self._send_lock = asyncio.Lock()
         self._dispatch_queue: asyncio.Queue[_DispatchItem] = asyncio.Queue()
 
+        self._monitor = HeartbeatMonitor()
+        # None until sessionready says whether the engine answers heartbeats.
+        self._engine_sends_heartbeat_acks: bool | None = None
+        self._ever_opened = False
+        self._unanswered_replacements = 0
+        self._give_up = False
+        self._failed_cids: set[str] = set()
+        self._write_started: tuple[ClientConnection, float] | None = None
+        self._probe_wake = asyncio.Event()
+        self._watchdog_wake = asyncio.Event()
+
         self._run_task: asyncio.Task[None] | None = None
         self._dispatch_task: asyncio.Task[None] | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
+        self._watchdog_task: asyncio.Task[None] | None = None
 
         self._ws_url = self._construct_websocket_url()
         logger.info("SignallingClient WebSocket URL: %s", self._ws_url)
@@ -173,14 +200,19 @@ class SignallingClient:
                 raise
 
     def _owned_tasks(self) -> list[asyncio.Task[None]]:
-        tasks = (self._run_task, self._dispatch_task, self._heartbeat_task)
+        tasks = (self._run_task, self._dispatch_task, self._heartbeat_task, self._watchdog_task)
         return [task for task in tasks if task is not None]
 
     async def _activate(self, ws: ClientConnection) -> None:
-        """Make a freshly opened socket the current one: flush, then start heartbeats."""
+        """Make a freshly opened socket the current one: flush, then start heartbeats.
+
+        The watchdog starts first so that it also supervises a stalled flush.
+        """
+        self._watchdog_task = asyncio.create_task(self._watch(ws))
         try:
             async with self._send_lock:
                 self._ws = ws
+                self._ever_opened = True
                 await self._flush(ws)
         except asyncio.CancelledError:
             if self._ws is not ws:
@@ -189,14 +221,18 @@ class SignallingClient:
         self._heartbeat_task = asyncio.create_task(self._send_heartbeats(ws))
 
     async def _deactivate(self, ws: ClientConnection) -> None:
-        """Forget an ended socket and stop its tasks."""
+        """Forget an ended socket, stop its tasks and fail its unconfirmed chunks."""
         if self._ws is ws:
             self._ws = None
-        tasks = [task for task in (self._heartbeat_task,) if task is not None]
+        tasks = [task for task in (self._heartbeat_task, self._watchdog_task) if task is not None]
         self._heartbeat_task = None
+        self._watchdog_task = None
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        if self._write_started is not None and self._write_started[0] is ws:
+            self._write_started = None
+        self._queue_failures(self._monitor.reset())
 
     async def _supervise(self, ws: ClientConnection, opened_at: float) -> None:
         """Receive on the current socket; when it ends, reconnect or give up."""
@@ -208,6 +244,10 @@ class SignallingClient:
             if self._stop_signal or self._server_ended:
                 return
             logger.warning("Signalling socket closed: code=%s reason=%s", code, reason)
+            if self._give_up:
+                logger.error("Signalling socket replaced too often without an answer")
+                self._terminate(code, reason)
+                return
 
             if loop.time() - opened_at >= self.STABLE_CONNECTION_SECONDS:
                 self._connection_attempts = 0
@@ -254,9 +294,11 @@ class SignallingClient:
         return None
 
     def _terminate(self, code: int | None, reason: str) -> None:
-        """Give up for good; on_close runs last on the dispatch task."""
+        """Give up for good; failure reports and then on_close run on the dispatch task."""
         self._permanently_closed = True
+        buffered = [_talk_correlation_id(message) for message in self._send_buffer]
         self._send_buffer.clear()
+        self._queue_failures([cid for cid in buffered if cid is not None])
         on_close = self._on_close or _noop
         self._dispatch_queue.put_nowait((functools.partial(on_close, code, reason), True))
 
@@ -280,12 +322,66 @@ class SignallingClient:
             logger.error("Ignoring signalling message that is not an object")
             return
         action_type = str(data.get("actionType", "")).lower()
-        if action_type != SignalAction.HEARTBEAT.value:
-            logger.debug("Received signal: %s", action_type)
+        payload = data.get("payload")
+        if action_type == SignalAction.HEARTBEAT.value:
+            self._handle_heartbeat_answer(payload)
+            return
+        logger.debug("Received signal: %s", action_type)
         if action_type == SignalAction.END_SESSION.value:
             self._server_ended = True
+        elif action_type == SignalAction.SESSION_READY.value:
+            acks = isinstance(payload, dict) and payload.get("sendsHeartbeatAcks") is True
+            self._engine_sends_heartbeat_acks = acks
+            if not acks:
+                self._monitor.disable()
+        elif action_type == SignalAction.TALK_STREAM_INTERRUPTED.value:
+            correlation_id = payload.get("correlationId") if isinstance(payload, dict) else None
+            if isinstance(correlation_id, str):
+                self._monitor.drop(correlation_id)
         if self._on_message:
             self._dispatch_queue.put_nowait((functools.partial(self._on_message, data), False))
+
+    def _handle_heartbeat_answer(self, payload: Any) -> None:
+        seq = payload.get("seq") if isinstance(payload, dict) else None
+        # bool is an int subclass; a true "seq" is not an answer.
+        if type(seq) is not int:
+            return
+        if self._monitor.on_ack(seq) is not None:
+            self._unanswered_replacements = 0
+            self._watchdog_wake.set()
+
+    def _claim_failures(self, correlation_ids: list[str]) -> list[str]:
+        """Mark correlation IDs as failed; return the ones not reported before."""
+        new = []
+        for correlation_id in correlation_ids:
+            if correlation_id not in self._failed_cids:
+                self._failed_cids.add(correlation_id)
+                new.append(correlation_id)
+        return new
+
+    def _queue_failures(self, correlation_ids: list[str]) -> None:
+        """Report failures from an SDK task through the dispatcher, never inline."""
+        callback = self._on_talk_stream_delivery_failed
+        for correlation_id in self._claim_failures(correlation_ids):
+            if callback:
+                self._dispatch_queue.put_nowait(
+                    (functools.partial(callback, correlation_id), False)
+                )
+
+    async def _report_now(self, correlation_ids: list[str]) -> None:
+        """Report failures claimed by a send call, in the caller's task.
+
+        The dispatcher may already have ended after a terminal close, so send-path
+        reports do not go through it.
+        """
+        callback = self._on_talk_stream_delivery_failed
+        for correlation_id in correlation_ids:
+            if self._stop_signal or callback is None:
+                return
+            try:
+                await callback(correlation_id)
+            except Exception as e:
+                logger.error("Error handling talk stream delivery failure: %s", e)
 
     async def _dispatch(self) -> None:
         """Run application callbacks in order, away from the receive loop."""
@@ -299,24 +395,87 @@ class SignallingClient:
                 return
 
     async def _send_heartbeats(self, ws: ClientConnection) -> None:
-        """Send periodic heartbeat messages on one socket."""
-        heartbeat_message = {
-            "actionType": SignalAction.HEARTBEAT.value,
-            "sessionId": self._session_id,
-            "payload": "",
-        }
+        """Write a heartbeat on every beat, and early when a new talk chunk waits for one."""
+        next_beat = time.monotonic() + self._heartbeat_interval
         while True:
-            await asyncio.sleep(self._heartbeat_interval)
+            self._probe_wake.clear()
+            due = next_beat
+            probe_at = self._monitor.probe_due_at()
+            if probe_at is not None:
+                due = min(due, probe_at)
+            delay = due - time.monotonic()
+            if delay > 0:
+                try:
+                    await asyncio.wait_for(self._probe_wake.wait(), delay)
+                except asyncio.TimeoutError:
+                    pass
+                continue
             async with self._send_lock:
                 if self._stop_signal or ws.state is not State.OPEN:
                     return
+                seq = self._monitor.next_seq()
+                # Recorded before the write: the answer can arrive while send() waits on drain.
+                self._monitor.record_sent(seq)
+                self._watchdog_wake.set()
+                message = {
+                    "actionType": SignalAction.HEARTBEAT.value,
+                    "sessionId": self._session_id,
+                    "payload": {"seq": seq},
+                }
                 try:
-                    await self._write(ws, heartbeat_message)
+                    await self._write(ws, message)
                 except Exception as e:
                     logger.warning("Failed to send heartbeat: %s", e)
+            next_beat = time.monotonic() + self._heartbeat_interval
+
+    async def _watch(self, ws: ClientConnection) -> None:
+        """Replace a socket whose heartbeat is not answered or whose write stalls.
+
+        It never takes the send lock and never writes, so a stalled write cannot block it.
+        """
+        while True:
+            self._watchdog_wake.clear()
+            now = time.monotonic()
+            ack_deadline = self._monitor.ack_deadline()
+            stall_deadline = None
+            if self._write_started is not None and self._write_started[0] is ws:
+                stall_deadline = self._write_started[1] + self.WRITE_STALL_SECONDS
+            deadlines = [d for d in (ack_deadline, stall_deadline) if d is not None]
+            if not deadlines:
+                await self._watchdog_wake.wait()
+                continue
+            if min(deadlines) > now:
+                try:
+                    await asyncio.wait_for(self._watchdog_wake.wait(), min(deadlines) - now)
+                except asyncio.TimeoutError:
+                    pass
+                continue
+            if stall_deadline is not None and stall_deadline <= now:
+                logger.warning("Signalling write stalled; replacing the socket")
+            else:
+                failed = self._monitor.expire()
+                self._queue_failures(failed)
+                if self._engine_sends_heartbeat_acks is None and not failed:
+                    continue
+                logger.warning("Signalling heartbeat not answered; replacing the socket")
+            if self._unanswered_replacements >= self._max_reconnection_attempts:
+                self._give_up = True
+            else:
+                self._unanswered_replacements += 1
+            ws.transport.abort()
+            return
 
     async def _write(self, ws: ClientConnection, message: dict[str, Any]) -> None:
-        await ws.send(json.dumps(message))
+        self._write_started = (ws, time.monotonic())
+        self._watchdog_wake.set()
+        try:
+            await ws.send(json.dumps(message))
+        finally:
+            self._write_started = None
+
+    def _track(self, correlation_id: str) -> None:
+        self._monitor.track_chunk(correlation_id)
+        self._probe_wake.set()
 
     async def _flush(self, ws: ClientConnection) -> None:
         """Send buffered messages in order. The caller holds the send lock."""
@@ -325,20 +484,30 @@ class SignallingClient:
             if ws.state is not State.OPEN:
                 return
             message = self._send_buffer.pop(0)
+            correlation_id = _talk_correlation_id(message)
+            if correlation_id is not None:
+                if correlation_id in self._failed_cids:
+                    continue
+                if self._engine_sends_heartbeat_acks is not False:
+                    self._track(correlation_id)
             try:
                 await self._write(ws, message)
             except Exception as e:
                 # The bytes may have gone out, so the message is not buffered again.
                 logger.warning("Lost buffered %s message: %s", message.get("actionType"), e)
+                if correlation_id is not None and self._monitor.is_tracked(correlation_id):
+                    self._monitor.drop(correlation_id)
+                    self._queue_failures([correlation_id])
                 return
 
-    def _buffer(self, message: dict[str, Any]) -> None:
+    def _buffer(self, message: dict[str, Any]) -> list[str]:
+        """Buffer a message; return the correlation ID of an evicted talk chunk."""
         self._send_buffer.append(message)
         if len(self._send_buffer) <= self.SEND_BUFFER_LIMIT:
-            return
+            return []
         index = self._eviction_index()
         if index is None:
-            return
+            return []
         evicted = self._send_buffer.pop(index)
         if not self._buffer_overflowed:
             self._buffer_overflowed = True
@@ -346,6 +515,8 @@ class SignallingClient:
                 "Signalling send buffer is full; dropping the oldest %s message",
                 evicted.get("actionType"),
             )
+        correlation_id = _talk_correlation_id(evicted)
+        return self._claim_failures([correlation_id]) if correlation_id is not None else []
 
     def _eviction_index(self) -> int | None:
         """Oldest agent audio first, then the oldest message that is not an offer."""
@@ -377,14 +548,19 @@ class SignallingClient:
             if self.is_permanently_closed:
                 logger.debug("Dropping %s message: signalling is closed", message.get("actionType"))
                 return
-            ws = self._ws
-            if ws is None or ws.state is not State.OPEN:
-                self._buffer(message)
-                return
-            try:
-                await self._write(ws, message)
-            except Exception as e:
-                logger.warning("Failed to send %s message: %s", message.get("actionType"), e)
+            failed = await self._send_or_buffer(message)
+        await self._report_now(failed)
+
+    async def _send_or_buffer(self, message: dict[str, Any]) -> list[str]:
+        """Write to the open socket, or buffer. The caller holds the send lock."""
+        ws = self._ws
+        if ws is None or ws.state is not State.OPEN:
+            return self._buffer(message)
+        try:
+            await self._write(ws, message)
+        except Exception as e:
+            logger.warning("Failed to send %s message: %s", message.get("actionType"), e)
+        return []
 
     async def send_end_session(self) -> None:
         """Inform the backend to end the session gracefully. Best effort, as we are on the shutdown path."""
@@ -535,7 +711,39 @@ class SignallingClient:
             "sessionId": self._session_id,
             "payload": payload,
         }
-        await self.send_message(message)
+        failed: list[str] = []
+        async with self._send_lock:
+            if self._stop_signal:
+                logger.debug("Dropping talk stream chunk: signalling is closed")
+                return
+            if correlation_id in self._failed_cids:
+                logger.debug("Dropping talk stream chunk for a stream that already failed")
+                return
+            if self._permanently_closed:
+                failed = self._claim_failures([correlation_id])
+            elif self._engine_sends_heartbeat_acks is False or not self._ever_opened:
+                failed = await self._send_or_buffer(message)
+            elif self._engine_sends_heartbeat_acks is True and self._monitor.is_suspect():
+                logger.warning("Refusing talk stream chunk: the signalling socket looks dead")
+                failed = self._claim_failures([correlation_id])
+            elif self._ws is None or self._ws.state is not State.OPEN:
+                failed = self._claim_failures([correlation_id])
+            else:
+                failed = await self._write_tracked(self._ws, correlation_id, message)
+        await self._report_now(failed)
+
+    async def _write_tracked(
+        self, ws: ClientConnection, correlation_id: str, message: dict[str, Any]
+    ) -> list[str]:
+        self._track(correlation_id)
+        try:
+            await self._write(ws, message)
+        except Exception as e:
+            logger.warning("Failed to send talk stream chunk: %s", e)
+            if self._monitor.is_tracked(correlation_id):
+                self._monitor.drop(correlation_id)
+                return self._claim_failures([correlation_id])
+        return []
 
     async def close(self) -> None:
         """Close the connection for good. Idempotent and safe from inside a callback."""
