@@ -64,10 +64,13 @@ async def test_local_close_sends_end_session_before_signalling_close(
 async def test_server_end_session_does_not_echo(
     session_info: SessionInfo, signalling: MagicMock, reenter_close: bool
 ) -> None:
+    completed: list[bool] = []
+
     async def on_closed(code: str, reason: str | None) -> None:
         signalling.close.assert_awaited_once_with()
         if reenter_close:
             await asyncio.wait_for(client.close(), timeout=1.0)
+        completed.append(True)
 
     on_connection_closed = AsyncMock(side_effect=on_closed)
     client = StreamingClient(session_info, on_connection_closed=on_connection_closed)
@@ -78,6 +81,7 @@ async def test_server_end_session_does_not_echo(
     await client.close()
 
     on_connection_closed.assert_awaited_once_with("server_closed", "done")
+    assert completed == [True]
     signalling.send_end_session.assert_not_awaited()
     signalling.close.assert_awaited_once_with()
 

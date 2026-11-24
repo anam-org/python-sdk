@@ -40,6 +40,8 @@ class FakeEngine:
     async def __aexit__(self, *exc: Any) -> None:
         if self.hold_handshake is not None:
             self.hold_handshake.set()
+        if self.hold_heartbeat_answers is not None:
+            self.hold_heartbeat_answers.set()
         assert self._server is not None
         self._server.close()
         await self._server.wait_closed()
