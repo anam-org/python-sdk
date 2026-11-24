@@ -4,6 +4,8 @@ import asyncio
 import json
 from typing import Any, Callable, Literal
 
+from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
+from aiortc.mediastreams import VideoStreamTrack
 from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
@@ -28,6 +30,7 @@ class FakeEngine:
         self.drop_on_open = False
         self.answer_heartbeats = True
         self.answer_offers: Literal["none", "fake", "aiortc"] = "fake"
+        self.peers: list[RTCPeerConnection] = []
         self._server: Server | None = None
 
     async def __aenter__(self) -> "FakeEngine":
@@ -43,6 +46,8 @@ class FakeEngine:
         assert self._server is not None
         self._server.close()
         await self._server.wait_closed()
+        for peer in self.peers:
+            await peer.close()
 
     async def _process_request(
         self, connection: ServerConnection, request: Request
@@ -83,16 +88,34 @@ class FakeEngine:
                         }
                     )
                 )
-        elif action == "offer" and self.answer_offers == "fake":
+        elif action == "offer" and self.answer_offers != "none":
+            sdp = CANNED_ANSWER_SDP
+            if self.answer_offers == "aiortc":
+                sdp = await self._answer_with_aiortc(payload["connectionDescription"])
             await ws.send(
                 json.dumps(
                     {
                         "actionType": "answer",
                         "sessionId": SESSION_ID,
-                        "payload": {"sdp": CANNED_ANSWER_SDP, "type": "answer"},
+                        "payload": {"sdp": sdp, "type": "answer"},
                     }
                 )
             )
+
+    async def _answer_with_aiortc(self, offer: dict[str, str]) -> str:
+        """Answer with a real peer that sends video; one peer per offer (one per session)."""
+        peer = RTCPeerConnection(RTCConfiguration(iceServers=[]))
+        self.peers.append(peer)
+        await peer.setRemoteDescription(RTCSessionDescription(sdp=offer["sdp"], type=offer["type"]))
+        for transceiver in peer.getTransceivers():
+            if transceiver.kind == "video":
+                transceiver.sender.replaceTrack(VideoStreamTrack())
+                transceiver.direction = "sendonly"
+        await peer.setLocalDescription(await peer.createAnswer())
+        return peer.localDescription.sdp
+
+    async def close_peer(self) -> None:
+        await self.peers[-1].close()
 
     async def drop(self, mode: Literal["abort", "clean"] = "abort") -> None:
         """Drop the newest socket: abort makes the client see 1006, clean sends 1001."""

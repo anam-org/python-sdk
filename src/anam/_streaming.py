@@ -22,6 +22,7 @@ from av.video.frame import VideoFrame
 from ._agent_audio_input_stream import AgentAudioInputStream
 from ._signalling import SignalAction, SignallingClient
 from ._user_audio_input_track import UserAudioInputTrack
+from .errors import SessionError
 from .types import AgentAudioInputConfig, ConnectionClosedCode, SessionInfo
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ class StreamingClient:
         on_session_ready: Callable[[], Awaitable[None]] | None = None,
         on_talk_stream_interrupted: Callable[[str], Awaitable[None]] | None = None,
         custom_ice_servers: list[dict[str, Any]] | None = None,
+        on_talk_stream_delivery_failed: Callable[[str], Awaitable[None]] | None = None,
     ):
         """Initialize the streaming client.
 
@@ -51,10 +53,13 @@ class StreamingClient:
             session_info: Session information from API.
             on_message: Callback for data channel messages.
             on_connection_established: Callback when connected.
-            on_connection_closed: Callback when disconnected.
+            on_connection_closed: Callback when the session ends. Signalling drops that a
+                reconnect recovers do not call it.
             on_session_ready: Callback when sessionready signal is received (ready to receive TTS).
             on_talk_stream_interrupted: Callback(correlation_id) when talk stream is interrupted.
             custom_ice_servers: Custom ICE servers (optional).
+            on_talk_stream_delivery_failed: Callback(correlation_id) when a talk stream chunk
+                did not reach the engine.
         """
         self._session_info = session_info
         self._session_id = session_info.session_id
@@ -65,6 +70,7 @@ class StreamingClient:
         self._on_connection_closed = on_connection_closed
         self._on_session_ready = on_session_ready
         self._on_talk_stream_interrupted = on_talk_stream_interrupted
+        self._on_talk_stream_delivery_failed = on_talk_stream_delivery_failed
 
         # Configuration
         self._ice_servers = custom_ice_servers or session_info.ice_servers
@@ -83,6 +89,7 @@ class StreamingClient:
         self._audio_transceiver = None  # Store transceiver for lazy track creation
         self._closing = False
         self._server_ended = False
+        self._terminated = False
 
     async def connect(self, timeout: float = 30.0) -> None:
         """Start the streaming connection.
@@ -103,6 +110,7 @@ class StreamingClient:
             on_message=self._handle_signal_message,
             on_open=self._on_signalling_open,
             on_close=self._on_signalling_close,
+            on_talk_stream_delivery_failed=self._on_talk_stream_delivery_failed,
         )
 
         # Connect to signalling server
@@ -111,21 +119,40 @@ class StreamingClient:
         # Wait for WebRTC connection to be established
         try:
             await asyncio.wait_for(self._connection_ready.wait(), timeout=timeout)
-            logger.info("Streaming connection ready")
         except asyncio.TimeoutError:
             logger.warning("Connection timed out waiting for WebRTC, proceeding anyway")
+        if self._terminated:
+            raise SessionError("Session ended while connecting")
+        logger.info("Streaming connection ready")
+
+    def _mark_terminated(self) -> None:
+        """Stop a pending connect() at once instead of at its timeout.
+
+        Call it after the teardown, so connect() raises on a fully closed client.
+        """
+        self._terminated = True
+        if hasattr(self, "_connection_ready"):
+            self._connection_ready.set()
 
     async def _on_signalling_open(self) -> None:
-        """Handle signalling connection open."""
+        """Handle the first signalling open; reconnects keep the existing peer connection."""
+        if self._peer_connection is not None:
+            return
         logger.debug("Signalling connected, initializing peer connection")
         await self._init_peer_connection()
         await self._create_and_send_offer()
 
     async def _on_signalling_close(self, code: int | None, reason: str) -> None:
-        """Handle signalling connection close."""
+        """Handle the terminal signalling close: reconnect attempts are exhausted."""
         logger.warning("Signalling closed: %s %s", code, reason)
-        if self._on_connection_closed:
-            await self._on_connection_closed("signalling_closed", reason)
+        try:
+            if self._on_connection_closed:
+                await self._on_connection_closed(
+                    ConnectionClosedCode.SIGNALLING_FAILURE.value, reason or None
+                )
+            await self.close()
+        finally:
+            self._mark_terminated()
 
     async def _handle_signal_message(self, message: dict[str, Any]) -> None:
         """Handle incoming signalling messages."""
@@ -145,9 +172,14 @@ class StreamingClient:
             logger.info("Session ended by server: %s", reason)
             # Server requested termination; do not echo endsession.
             self._server_ended = True
-            if self._on_connection_closed:
-                await self._on_connection_closed(ConnectionClosedCode.SERVER_CLOSED.value, reason)
-            await self.close()
+            try:
+                if self._on_connection_closed:
+                    await self._on_connection_closed(
+                        ConnectionClosedCode.SERVER_CLOSED.value, reason
+                    )
+                await self.close()
+            finally:
+                self._mark_terminated()
 
         elif action_type == SignalAction.WARNING.value:
             logger.warning("Server warning: %s", payload)
@@ -320,9 +352,18 @@ class StreamingClient:
             if state == "closed":
                 # Only emit CONNECTION_CLOSED when the connection was lost (e.g. network)
                 if not self._closing and self._on_connection_closed:
-                    asyncio.create_task(
-                        self._on_connection_closed(ConnectionClosedCode.WEBRTC_FAILURE.value, None)
+                    # The receive loop sets server_ended before a queued endsession is handled,
+                    # so a peer close that races it still reports the real reason.
+                    signalling = self._signalling_client
+                    server_ended = self._server_ended or (
+                        signalling is not None and signalling.server_ended is True
                     )
+                    code = (
+                        ConnectionClosedCode.SERVER_CLOSED
+                        if server_ended
+                        else ConnectionClosedCode.WEBRTC_FAILURE
+                    )
+                    asyncio.create_task(self._on_connection_closed(code.value, None))
 
         @self._peer_connection.on("track")
         def on_track(track: MediaStreamTrack) -> None:
@@ -690,6 +731,7 @@ class StreamingClient:
         finally:
             self._closing = False
             self._is_connected = False
+            self._mark_terminated()
         logger.debug("Streaming client closed")
 
     def send_user_audio(

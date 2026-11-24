@@ -21,6 +21,7 @@ class TalkMessageStreamState(str, Enum):
     STREAMING = "streaming"
     INTERRUPTED = "interrupted"
     ENDED = "ended"
+    DELIVERY_FAILED = "delivery_failed"
 
 
 class TalkMessageStream:
@@ -132,7 +133,9 @@ class TalkMessageStream:
 
         Raises:
             RuntimeError: If the stream is not in an active state (already
-                ended or interrupted).
+                ended, interrupted or failed). A chunk that does not reach the engine
+                does not raise here: the client emits ``AnamEvent.MESSAGE_DELIVERY_FAILED``
+                and the stream moves to ``DELIVERY_FAILED``.
             ValueError: If utterance_id is not a canonical UUID v4 string.
         """
         if self._state not in (
@@ -157,6 +160,16 @@ class TalkMessageStream:
 
         start_of_speech = self._state == TalkMessageStreamState.UNSTARTED
 
+        # Set the state before the send: a delivery failure or an interrupt that arrives
+        # during the await must not be overwritten afterwards.
+        if utterance_id is not None:
+            self._last_utterance_id = utterance_id
+        if end_of_speech:
+            self._state = TalkMessageStreamState.ENDED
+            self._deactivate()
+        else:
+            self._state = TalkMessageStreamState.STREAMING
+
         await self._signalling_client.send_talk_stream_input(
             content=content,
             correlation_id=self._correlation_id,
@@ -164,13 +177,6 @@ class TalkMessageStream:
             end_of_speech=end_of_speech,
             utterance_id=utterance_id,
         )
-
-        if utterance_id is not None:
-            self._last_utterance_id = utterance_id
-        self._state = TalkMessageStreamState.STREAMING
-        if end_of_speech:
-            self._state = TalkMessageStreamState.ENDED
-            self._deactivate()
 
     async def end(self) -> None:
         """Signal end of speech with an empty chunk.
@@ -189,6 +195,8 @@ class TalkMessageStream:
             logger.warning("Talk stream is not in streaming state: %s", self._state)
             return
 
+        self._state = TalkMessageStreamState.ENDED
+        self._deactivate()
         await self._signalling_client.send_talk_stream_input(
             content="",
             correlation_id=self._correlation_id,
@@ -196,7 +204,18 @@ class TalkMessageStream:
             end_of_speech=True,
             utterance_id=self._last_utterance_id,
         )
-        self._state = TalkMessageStreamState.ENDED
+
+    def _mark_delivery_failed(self) -> None:
+        """Record that a chunk of this stream did not reach the engine.
+
+        This also applies after end(): the final chunk can fail once it is sent.
+        """
+        if self._state in (
+            TalkMessageStreamState.INTERRUPTED,
+            TalkMessageStreamState.DELIVERY_FAILED,
+        ):
+            return
+        self._state = TalkMessageStreamState.DELIVERY_FAILED
         self._deactivate()
 
     def _deactivate(self) -> None:

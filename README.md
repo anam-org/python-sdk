@@ -266,7 +266,7 @@ For best performance, we suggest using 24kHz mono audio. The provided audio is r
 Register callbacks for connection and message events using the `@client.on()` decorator:
 
 ```python
-from anam import AnamEvent, Message, MessageRole, MessageStreamEvent
+from anam import AnamEvent, Message, MessageDeliveryFailure, MessageRole, MessageStreamEvent
 
 @client.on(AnamEvent.CONNECTION_ESTABLISHED)
 async def on_connected():
@@ -275,8 +275,13 @@ async def on_connected():
 
 @client.on(AnamEvent.CONNECTION_CLOSED)
 async def on_closed(code: str, reason: str | None):
-    """Called when the connection is closed."""
+    """Called once, when the session ends."""
     print(f"Connection closed: {code} - {reason or 'No reason'}")
+
+@client.on(AnamEvent.MESSAGE_DELIVERY_FAILED)
+async def on_delivery_failed(failure: MessageDeliveryFailure):
+    """Called when a talk stream chunk did not reach the engine."""
+    print(f"Lost {failure.message_type} message {failure.correlation_id}")
 
 @client.on(AnamEvent.USER_SPEECH_STARTED)
 async def on_user_speech_started(correlation_id: str | None):
@@ -332,6 +337,33 @@ async def on_message_history_updated(messages: list[Message]):
     for msg in messages:
         print(f"  {msg.role}: {msg.content[:50]}...")
 ```
+
+### Connection loss and reconnects
+
+The SDK uses a WebSocket for signalling and a WebRTC peer connection for media. If the
+signalling WebSocket drops, the SDK opens a new WebSocket to the same address. The peer
+connection stays open, so video and audio continue. The SDK does not emit an event for a
+drop that a reconnect repairs.
+
+`CONNECTION_CLOSED` means that the session has ended. The SDK emits it one time for each
+session, with one of these codes:
+
+- `normal`: your application called `close()`.
+- `server_closed`: the engine ended the session.
+- `signalling_failure`: all reconnect attempts failed. The SDK closes the peer connection,
+  and frame iterators stop.
+- `webrtc_failure`: the peer connection closed.
+
+During a reconnect, the SDK keeps messages such as agent audio in a buffer and sends them
+when the new WebSocket opens. The engine does not replay messages that were lost on the
+old WebSocket. When the SDK cannot confirm that a talk stream chunk reached the engine,
+it emits `MESSAGE_DELIVERY_FAILED` with a `MessageDeliveryFailure`. The stream then moves to `TalkMessageStreamState.DELIVERY_FAILED`
+and `send()` raises `RuntimeError`. This can also occur after `end()`. To speak the text,
+create a new talk stream and send the text again.
+
+After a correlation ID fails, the SDK drops later chunks with that ID for the rest of
+the session. Default correlation IDs are unique. If you supply your own IDs, do not use
+an ID again after its stream failed.
 
 ### Session
 

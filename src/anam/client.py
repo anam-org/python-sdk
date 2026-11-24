@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import uuid
+import weakref
 from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable, TypeVar
 
@@ -24,6 +25,7 @@ from .types import (
     ClientOptions,
     ConnectionClosedCode,
     Message,
+    MessageDeliveryFailure,
     MessageRole,
     MessageStreamEvent,
     MessageUtterance,
@@ -165,6 +167,15 @@ class AnamClient:
         self._is_streaming = False
         self._message_history: list[Message] = []
 
+        # Per-session state, reset by connect_async
+        self._session: Session | None = None
+        self._session_generation = 0
+        self._connection_closed_emitted = False
+        self._session_ready_emitted = False
+        self._talk_streams: weakref.WeakValueDictionary[str, TalkMessageStream] = (
+            weakref.WeakValueDictionary()
+        )
+
     def on(self, event: AnamEvent) -> Callable[[T], T]:
         """Decorator to register an event handler.
 
@@ -209,7 +220,8 @@ class AnamClient:
 
     async def _emit(self, event: AnamEvent, *args: Any, **kwargs: Any) -> None:
         """Emit an event to all registered callbacks."""
-        for callback in self._event_callbacks[event]:
+        # A copy, so a listener that removes itself does not skip the next one.
+        for callback in list(self._event_callbacks[event]):
             try:
                 result = callback(*args, **kwargs)
                 if asyncio.iscoroutine(result):
@@ -263,6 +275,12 @@ class AnamClient:
             raise SessionError("Already connected. Call close() first.")
 
         logger.info("Connecting to Anam...")
+        self._session_generation += 1
+        self._session = None
+        self._connection_closed_emitted = False
+        self._session_ready_emitted = False
+        self._talk_streams = weakref.WeakValueDictionary()
+        self._message_history = []
 
         # Create API client and start session
         self._api_client = CoreApiClient(
@@ -276,22 +294,47 @@ class AnamClient:
             session_options=session_options,
         )
 
-        # Create streaming client with callbacks
-        self._streaming_client = StreamingClient(
-            session_info=self._session_info,
-            on_message=self._handle_data_message,
-            on_connection_established=self._handle_connection_established,
-            on_connection_closed=self._handle_connection_closed,
-            on_session_ready=self._handle_session_ready,
-            on_talk_stream_interrupted=self._handle_talk_stream_interrupted,
-            custom_ice_servers=self._options.ice_servers,
-        )
+        def for_this_session(
+            handler: Callable[..., Awaitable[None]],
+        ) -> Callable[..., Awaitable[None]]:
+            # A closed StreamingClient can still fire late callbacks; they must not
+            # change the state of a newer session.
+            async def call(*args: Any) -> None:
+                if streaming_client is self._streaming_client:
+                    await handler(*args)
 
-        # Connect
-        await self._streaming_client.connect()
+            return call
+
+        streaming_client = StreamingClient(
+            session_info=self._session_info,
+            on_message=for_this_session(self._handle_data_message),
+            on_connection_established=for_this_session(self._handle_connection_established),
+            on_connection_closed=for_this_session(self._handle_connection_closed),
+            on_session_ready=for_this_session(self._handle_session_ready),
+            on_talk_stream_interrupted=for_this_session(self._handle_talk_stream_interrupted),
+            custom_ice_servers=self._options.ice_servers,
+            on_talk_stream_delivery_failed=for_this_session(
+                self._handle_talk_stream_delivery_failed
+            ),
+        )
+        self._streaming_client = streaming_client
+
+        try:
+            await streaming_client.connect()
+            if self._connection_closed_emitted:
+                raise SessionError("Session closed during startup")
+        except BaseException:
+            generation = self._session_generation
+            if self._streaming_client is streaming_client:
+                self._streaming_client = None
+            await streaming_client.close()
+            if generation == self._session_generation:
+                self._session_info = None
+            raise
         self._is_streaming = True
 
-        return Session(self)
+        self._session = Session(self)
+        return self._session
 
     async def _handle_data_message(self, data: dict[str, Any]) -> None:
         """Handle data channel message."""
@@ -437,17 +480,38 @@ class AnamClient:
         await self._emit(AnamEvent.CONNECTION_ESTABLISHED)
 
     async def _handle_session_ready(self) -> None:
-        """Handle session ready (signalling: ready to receive user audio or TTS)."""
+        """Handle session ready (signalling: ready to receive user audio or TTS).
+
+        The engine can send sessionready again on a reconnected socket; emit it once per session.
+        """
+        if self._session_ready_emitted:
+            return
+        self._session_ready_emitted = True
         await self._emit(AnamEvent.SESSION_READY)
 
     async def _handle_talk_stream_interrupted(self, correlation_id: str) -> None:
         """Handle talk stream interrupted signal from server."""
         await self._emit(AnamEvent.TALK_STREAM_INTERRUPTED, correlation_id)
 
+    async def _handle_talk_stream_delivery_failed(self, correlation_id: str) -> None:
+        """Mark the stream failed before listeners run, so they see its final state."""
+        stream = self._talk_streams.get(correlation_id)
+        if stream is not None:
+            stream._mark_delivery_failed()
+        await self._emit(
+            AnamEvent.MESSAGE_DELIVERY_FAILED,
+            MessageDeliveryFailure("talk_stream", correlation_id),
+        )
+
     async def _handle_connection_closed(self, code: str, reason: str | None) -> None:
-        """Handle connection closed."""
-        logger.debug("Connection closed")
+        """Report the end of the session once, whatever closes it first."""
+        if self._connection_closed_emitted:
+            return
+        self._connection_closed_emitted = True
+        logger.debug("Connection closed: %s", code)
         self._is_streaming = False
+        if self._session is not None:
+            self._session._mark_closed()
         await self._emit(AnamEvent.CONNECTION_CLOSED, code, reason)
 
     def create_agent_audio_input_stream(
@@ -470,14 +534,22 @@ class AnamClient:
 
     async def close(self) -> None:
         """Close the connection and clean up resources."""
-        if self._streaming_client and self.is_streaming:
-            self._is_streaming = False
+        streaming_client = self._streaming_client
+        if streaming_client is None:
+            return
+        generation = self._session_generation
+        # Release the client before the CONNECTION_CLOSED listeners run: a listener may
+        # call connect_async, and that new session must survive the rest of this close.
+        self._streaming_client = None
+        if self._is_streaming:
             await self._handle_connection_closed(ConnectionClosedCode.NORMAL.value, None)
-            await self._streaming_client.close()
-            self._streaming_client = None
+        else:
+            self._connection_closed_emitted = True
+        await streaming_client.close()
+        if generation == self._session_generation:
             self._session_info = None
             self._message_history.clear()
-            logger.info("Client closed")
+        logger.info("Client closed")
 
     @property
     def is_streaming(self) -> bool:
@@ -562,9 +634,6 @@ class Session:
         self._closed = False
         self._close_event = asyncio.Event()
 
-        # Listen for connection close
-        client.add_listener(AnamEvent.CONNECTION_CLOSED, self._on_closed)
-
     def _get_persona_config(self) -> PersonaConfig:
         if not self._client:
             raise SessionError("Client not found")
@@ -572,8 +641,8 @@ class Session:
             raise SessionError("Persona configuration not found")
         return self._client._persona_config
 
-    async def _on_closed(self, code: str, reason: str | None) -> None:
-        """Handle connection closed."""
+    def _mark_closed(self) -> None:
+        """Mark the session closed; the client calls this before CONNECTION_CLOSED listeners run."""
         self._closed = True
         self._close_event.set()
 
@@ -718,11 +787,13 @@ class Session:
         if correlation_id is None or correlation_id.strip() == "":
             correlation_id = str(uuid.uuid4())
 
-        return TalkMessageStream(
+        stream = TalkMessageStream(
             correlation_id=correlation_id,
             signalling_client=signalling_client,
             client=self._client,
         )
+        self._client._talk_streams[correlation_id] = stream
+        return stream
 
     async def send_talk_stream(self, content: str, utterance_id: str | None = None) -> None:
         """Send a single text message directly to TTS via WebSocket signalling.
