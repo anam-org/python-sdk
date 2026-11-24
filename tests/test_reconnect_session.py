@@ -1,10 +1,11 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
+from aiortc import RTCPeerConnection
 
 from anam import (
     AnamClient,
@@ -16,7 +17,7 @@ from anam import (
 )
 from anam._api import CoreApiClient
 from anam._heartbeat_monitor import HeartbeatMonitor
-from anam._signalling import SignallingClient
+from anam._signalling import HeartbeatAcks, SignallingClient
 from anam._streaming import StreamingClient
 from anam.client import Session
 from anam.errors import SessionError
@@ -277,6 +278,7 @@ async def test_endsession_then_clean_close_no_reconnect(
 
 @pytest.mark.asyncio
 async def test_terminal_during_connect_raises(engine: FakeEngine, anam: AnamClient) -> None:
+    closed = record(anam, AnamEvent.CONNECTION_CLOSED)
     engine.answer_offers = "none"
     connecting = asyncio.create_task(anam.connect_async())
     await engine.wait_for(lambda: len(engine.received_actions("offer")) == 1)
@@ -287,6 +289,7 @@ async def test_terminal_during_connect_raises(engine: FakeEngine, anam: AnamClie
         await asyncio.wait_for(connecting, 3.0)
     assert anam.is_streaming is False
     assert anam._streaming_client is None
+    assert closed == []
 
 
 @pytest.mark.asyncio
@@ -420,9 +423,9 @@ async def test_endsession_racing_peer_close_reports_server_closed(
 
     await peer_connected(engine, anam)
     await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+    await engine.wait_for(lambda: sc.server_ended)
     await engine.close_peer()
     await asyncio.wait_for(session.wait_until_closed(), 2.0)
-    assert sc.server_ended
     release.set()
 
     await engine.wait_for(lambda: all_tasks_done(sc))
@@ -487,3 +490,287 @@ async def test_close_during_connect_stops_it(engine: FakeEngine, anam: AnamClien
     assert anam.is_streaming is False
     assert anam.session_id is None
     assert closed == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("gate", ["create_offer", "send_offer"])
+async def test_close_while_offer_is_built_raises_session_error(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch, gate: str
+) -> None:
+    closed = record(anam, AnamEvent.CONNECTION_CLOSED)
+    reached = asyncio.Event()
+    release = asyncio.Event()
+    target: Any = RTCPeerConnection if gate == "create_offer" else SignallingClient
+    name = "createOffer" if gate == "create_offer" else "send_offer"
+    original = getattr(target, name)
+
+    async def gated(self: Any, *args: Any, **kwargs: Any) -> Any:
+        reached.set()
+        await release.wait()
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(target, name, gated)
+    connecting = asyncio.create_task(anam.connect_async())
+    await asyncio.wait_for(reached.wait(), 2.0)
+    sc = anam._streaming_client
+    assert sc is not None
+
+    closing = asyncio.create_task(anam.close())
+    await engine.wait_for(lambda: sc._peer_connection is None)
+    release.set()
+    await asyncio.wait_for(closing, 2.0)
+
+    with pytest.raises(SessionError):
+        await asyncio.wait_for(connecting, 3.0)
+    assert sc._peer_connection is None
+    assert sc._signalling_client is None
+    assert closed == []
+
+
+@pytest.mark.asyncio
+async def test_session_ready_replayed_after_reconnect_emits_once(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    ready = record(anam, AnamEvent.SESSION_READY)
+    interrupted = record(anam, AnamEvent.TALK_STREAM_INTERRUPTED)
+    await anam.connect_async()
+    await engine.send({"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {}})
+    await engine.wait_for(lambda: ready == [()])
+
+    await engine.drop("abort")
+    await round_trip_on(engine, 1)
+    await engine.send({"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {}})
+    await engine.send(
+        {
+            "actionType": "talkinputstreaminterrupted",
+            "sessionId": SESSION_ID,
+            "payload": {"correlationId": "sync"},
+        }
+    )
+    await engine.wait_for(lambda: interrupted == [("sync",)])
+
+    assert ready == [()]
+
+
+async def end_session(engine: FakeEngine, ending: str) -> str:
+    if ending == "endsession":
+        await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+        return "server_closed"
+    await exhaust_retries(engine)
+    return "signalling_failure"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ending", ["endsession", "retries"])
+async def test_async_close_listeners_finish_with_context_manager(
+    engine: FakeEngine, anam: AnamClient, ending: str
+) -> None:
+    finished: list[str] = []
+
+    def listener(name: str) -> Callable[[str, str | None], Awaitable[None]]:
+        async def on_closed(code: str, reason: str | None) -> None:
+            await asyncio.sleep(0.05)
+            finished.append(f"{name}:{code}")
+
+        return on_closed
+
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, listener("a"))
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, listener("b"))
+    started = asyncio.Event()
+
+    async def run() -> None:
+        async with anam.connect() as session:
+            started.set()
+            await session.wait_until_closed()
+
+    runner = asyncio.create_task(run())
+    await asyncio.wait_for(started.wait(), 5.0)
+    code = await end_session(engine, ending)
+
+    await asyncio.wait_for(runner, 3.0)
+    assert finished == [f"a:{code}", f"b:{code}"]
+
+
+@pytest.mark.asyncio
+async def test_listener_gathering_session_close_finishes(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    done: list[str] = []
+    session = await anam.connect_async()
+
+    async def on_closed(code: str, reason: str | None) -> None:
+        await asyncio.gather(session.close())
+        done.append(code)
+
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, on_closed)
+    await exhaust_retries(engine)
+
+    await engine.wait_for(lambda: done == ["signalling_failure"])
+    assert anam._streaming_client is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ending", ["endsession", "retries", "close"])
+async def test_listener_joining_frame_reader_finishes(
+    engine: FakeEngine, anam: AnamClient, ending: str
+) -> None:
+    session = await anam.connect_async()
+    frames = session.video_frames()
+    await asyncio.wait_for(frames.__anext__(), 5.0)
+    reader = asyncio.create_task(drain(frames))
+    joined: list[str] = []
+
+    async def on_closed(code: str, reason: str | None) -> None:
+        await reader
+        joined.append(code)
+
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, on_closed)
+    if ending == "close":
+        await asyncio.wait_for(anam.close(), 3.0)
+        code = "normal"
+    else:
+        code = await end_session(engine, ending)
+
+    await engine.wait_for(lambda: joined == [code], timeout=3.0)
+
+
+@pytest.mark.asyncio
+async def test_failure_handler_resending_does_not_recurse(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    session = await anam.connect_async()
+    stream = session.create_talk_stream()
+    seen: list[MessageDeliveryFailure] = []
+    rejected: list[str] = []
+    ticks = 0
+
+    async def on_failed(failure: MessageDeliveryFailure) -> None:
+        seen.append(failure)
+        try:
+            await stream.send("again")
+        except RuntimeError:
+            rejected.append(failure.correlation_id)
+
+    async def tick() -> None:
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await asyncio.sleep(0)
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
+    ticker = asyncio.create_task(tick())
+    try:
+        await drop_and_wait_for_gap(engine, anam)
+        before = ticks
+        await stream.send("hello")
+        await engine.wait_for(lambda: len(seen) == 1)
+
+        assert ticks > before
+        assert rejected == [stream.correlation_id]
+        assert await stays(lambda: len(seen) == 1, 0.1)
+    finally:
+        ticker.cancel()
+    end_gap(engine)
+    await round_trip_on(engine, 1)
+    assert engine.received_actions("talkstream") == []
+
+
+@pytest.mark.asyncio
+async def test_close_during_backoff_stops_reconnect_before_listeners(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(SignallingClient, "RECONNECT_BACKOFF_SECONDS", 0.5)
+    await anam.connect_async()
+    sc = signalling(anam)
+    release = asyncio.Event()
+    attempts_at_listener: list[int] = []
+
+    async def on_closed(code: str, reason: str | None) -> None:
+        attempts_at_listener.append(engine.connect_attempts)
+        await release.wait()
+
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, on_closed)
+    await engine.drop("abort")
+    await engine.wait_for(lambda: sc._ws is None)
+    first = asyncio.create_task(anam.close())
+    await engine.wait_for(lambda: attempts_at_listener == [1])
+    second = asyncio.create_task(anam.close())
+
+    assert sc.is_permanently_closed
+    assert await stays(lambda: engine.connect_attempts == 1 and not second.done(), 0.7)
+    release.set()
+    await asyncio.wait_for(asyncio.gather(first, second), 2.0)
+    assert all_tasks_done(sc)
+    assert anam._streaming_client is None
+
+
+@pytest.mark.asyncio
+async def test_failed_startup_leaves_replacement_session_alone(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    closed = record(anam, AnamEvent.CONNECTION_CLOSED)
+    engine.answer_offers = "none"
+    first = asyncio.create_task(anam.connect_async())
+    await engine.wait_for(lambda: len(engine.received_actions("offer")) == 1)
+    first_client = anam._streaming_client
+    assert first_client is not None
+
+    engine.answer_offers = "aiortc"
+    second = await anam.connect_async()
+    await first_client.close()
+
+    with pytest.raises(SessionError):
+        await asyncio.wait_for(first, 3.0)
+    assert second.is_active
+    assert anam.is_streaming
+    assert anam.session_id == SESSION_ID
+    assert anam._streaming_client not in (None, first_client)
+    assert closed == []
+
+
+@pytest.mark.asyncio
+async def test_failure_marks_every_stream_and_new_stream_reuses_id(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    failed = record(anam, AnamEvent.MESSAGE_DELIVERY_FAILED)
+    session = await anam.connect_async()
+    first = session.create_talk_stream("shared")
+    second = session.create_talk_stream("shared")
+
+    await drop_and_wait_for_gap(engine, anam)
+    await first.send("hello")
+    assert first.state is TalkMessageStreamState.DELIVERY_FAILED
+    assert second.state is TalkMessageStreamState.DELIVERY_FAILED
+    await engine.wait_for(lambda: len(failed) == 1)
+    end_gap(engine)
+    await round_trip_on(engine, 1)
+
+    third = session.create_talk_stream("shared")
+    await third.send("again")
+    await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
+    assert third.state is TalkMessageStreamState.STREAMING
+    assert await stays(lambda: len(failed) == 1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_buffered_chunk_reported_before_webrtc_failure(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    events: list[str] = []
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, lambda failure: events.append("failed"))
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
+    session = await anam.connect_async()
+    sc = signalling(anam)
+    await engine.send({"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {}})
+    await engine.wait_for(lambda: sc._heartbeat_acks is HeartbeatAcks.NO)
+    await peer_connected(engine, anam)
+
+    await drop_and_wait_for_gap(engine, anam)
+    stream = session.create_talk_stream()
+    await stream.send("hello")
+    assert len(sc._send_buffer) == 1
+    await engine.close_peer()
+
+    await engine.wait_for(lambda: "webrtc_failure" in events)
+    assert events == ["failed", "webrtc_failure"]
+    assert stream.state is TalkMessageStreamState.DELIVERY_FAILED

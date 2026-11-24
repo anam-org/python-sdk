@@ -107,6 +107,8 @@ class StreamingClient:
             timeout: Maximum time to wait for connection (seconds).
         """
         logger.info("Starting streaming connection for session: %s", self._session_id)
+        if self._end is not None:
+            raise SessionError("Session ended while connecting")
 
         # Create signalling client
         self._signalling_client = SignallingClient(
@@ -118,7 +120,13 @@ class StreamingClient:
         )
 
         # Connect to signalling server
-        await self._signalling_client.connect()
+        try:
+            await self._signalling_client.connect()
+        except Exception as e:
+            if self._end is None:
+                raise
+            # The teardown closed the peer connection under the offer.
+            logger.debug("Signalling open failed after the session ended: %s", e)
 
         # Wait for WebRTC connection to be established
         try:
@@ -147,12 +155,8 @@ class StreamingClient:
     async def _finish(self) -> None:
         assert self._end is not None
         code, reason = self._end
-        if code is ConnectionClosedCode.NORMAL:
-            await self._notify(code, reason)
-            await self._teardown(send_end_session=True)
-        else:
-            await self._teardown(send_end_session=code is not ConnectionClosedCode.SERVER_CLOSED)
-            await self._notify(code, reason)
+        await self._teardown(send_end_session=code is not ConnectionClosedCode.SERVER_CLOSED)
+        await self._notify(code, reason)
         self._finished = True
 
     async def _notify(self, code: ConnectionClosedCode, reason: str | None) -> None:
@@ -723,7 +727,6 @@ class StreamingClient:
             finally:
                 self._signalling_client = None
 
-        # Close user audio input track before closing peer connection
         # This clears the audio queue and prevents recv() from generating more frames
         if self._user_audio_input_track:
             try:

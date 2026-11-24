@@ -515,8 +515,8 @@ class SignallingClient:
                 continue
             if stalled_since is not None and stall_deadline is not None and stall_deadline <= now:
                 logger.warning("Signalling write stalled; replacing the socket")
-                # Without acks nothing else resets the count. Only time before the stall
-                # counts: an engine that never acks gets no reset from open time alone.
+                # Without acks only a stable period resets the count. Measure it up to the
+                # start of the stall, so that the stall time does not count as stable.
                 if stalled_since - opened_at >= self.STABLE_CONNECTION_SECONDS:
                     self._unanswered_replacements = 0
             else:
@@ -630,7 +630,6 @@ class SignallingClient:
     async def send_end_session(self) -> None:
         """Inform the backend to end the session gracefully. Best effort, as we are on the shutdown path."""
         self.stop()
-        self._send_buffer.clear()
         ws = self._ws
         if ws is None or ws.state is not State.OPEN:
             logger.debug("Skip sending endsession: signalling socket is not open")
