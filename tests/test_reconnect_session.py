@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
@@ -1212,3 +1212,38 @@ async def test_stream_created_after_interruption_receipt_is_not_interrupted(
     assert new.state is TalkMessageStreamState.UNSTARTED
     await new.send("two")
     assert new.state is TalkMessageStreamState.STREAMING
+
+
+@pytest.mark.asyncio
+async def test_first_frame_after_session_end_does_not_reconnect(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    established = record(anam, AnamEvent.CONNECTION_ESTABLISHED)
+    closed = record(anam, AnamEvent.CONNECTION_CLOSED)
+    await anam.connect_async()
+    await peer_connected(engine, anam)
+    await engine.wait_for(lambda: len(established) == 1)
+    streaming = anam._streaming_client
+    assert streaming is not None
+    waiting = asyncio.Event()
+    release = asyncio.Event()
+
+    class HeldTrack:
+        async def recv(self) -> Any:
+            waiting.set()
+            await release.wait()
+            return MagicMock(width=16, height=16)
+
+    monkeypatch.setattr(streaming, "_video_track", HeldTrack())
+    frames = streaming.video_frames()
+    reader = asyncio.ensure_future(anext(frames))
+    await asyncio.wait_for(waiting.wait(), 2.0)
+    await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+    await engine.wait_for(lambda: len(closed) == 1)
+
+    release.set()
+    await asyncio.wait_for(reader, 2.0)
+    await frames.aclose()
+
+    assert not streaming.is_connected
+    assert await stays(lambda: len(established) == 1, 0.1)

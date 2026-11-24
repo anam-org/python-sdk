@@ -381,11 +381,7 @@ class StreamingClient:
             state = self._peer_connection.iceConnectionState
             logger.debug("ICE connection state: %s", state)
             if state in ("connected", "completed"):
-                if not self._is_connected:
-                    self._is_connected = True
-                    self._connection_ready.set()
-                    if self._on_connection_established:
-                        asyncio.create_task(self._on_connection_established())
+                self._mark_connected()
             elif state == "failed":
                 logger.error(
                     "ICE connection failed - check TURN/STUN server configuration and network connectivity"
@@ -459,6 +455,14 @@ class StreamingClient:
             except json.JSONDecodeError as e:
                 logger.error("Failed to parse data channel message: %s", e)
 
+    def _mark_connected(self) -> None:
+        if self._is_connected or self._end is not None:
+            return
+        self._is_connected = True
+        self._connection_ready.set()
+        if self._on_connection_established:
+            asyncio.create_task(self._on_connection_established())
+
     async def video_frames(self) -> AsyncIterator[VideoFrame]:
         """Get video frames as an async iterator.
 
@@ -489,11 +493,7 @@ class StreamingClient:
                 if frame_count == 1:
                     logger.info("First video frame received: %dx%d", frame.width, frame.height)
                     # Signal connection established on first actual frame
-                    if not self._is_connected:
-                        self._is_connected = True
-                        self._connection_ready.set()
-                        if self._on_connection_established:
-                            asyncio.create_task(self._on_connection_established())
+                    self._mark_connected()
 
                 yield frame
 
@@ -542,11 +542,7 @@ class StreamingClient:
                     logger.debug("Audio frame format: %s", frame.format.name)
                     logger.debug("Audio frame samples: %d", frame.samples)
                     # Signal connection established on first audio frame if video hasn't yet
-                    if not self._is_connected:
-                        self._is_connected = True
-                        self._connection_ready.set()
-                        if self._on_connection_established:
-                            asyncio.create_task(self._on_connection_established())
+                    self._mark_connected()
 
                 yield frame
 
