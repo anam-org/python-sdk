@@ -350,8 +350,10 @@ session, with one of these codes:
 
 - `normal`: your application called `close()`.
 - `server_closed`: the engine ended the session.
-- `signalling_failure`: all reconnect attempts failed. The SDK closes the peer connection,
-  and frame iterators stop.
+- `signalling_failure`: the SDK could not keep the signalling WebSocket connected. Each
+  drop uses one reconnect attempt, also when the reconnect succeeds. A WebSocket that
+  stays open for 5 seconds resets the count. The SDK closes the peer connection, and
+  frame iterators stop.
 - `webrtc_failure`: the peer connection closed.
 
 `close()` returns after the SDK has torn down the session and the `CONNECTION_CLOSED`
@@ -373,7 +375,10 @@ raise `RuntimeError`, and the stream state does not change.
 During a reconnect, the SDK keeps messages such as agent audio in a buffer and sends them
 when the new WebSocket opens. The engine does not replay messages that were lost on the
 old WebSocket. When the SDK cannot confirm that a talk stream chunk reached the engine,
-it emits `MESSAGE_DELIVERY_FAILED` with a `MessageDeliveryFailure`. Delivery is
+it emits `MESSAGE_DELIVERY_FAILED` with a `MessageDeliveryFailure`. This includes a
+chunk that you send while no WebSocket is open. An engine that does not confirm
+heartbeats gives the SDK no confirmation; for such an engine the SDK keeps talk stream
+chunks in the buffer and does not emit this event. Delivery is
 unconfirmed, not proven lost: the chunk can still have reached the engine. The stream
 moves to `TalkMessageStreamState.DELIVERY_FAILED` and `send()` raises `RuntimeError`.
 This can also occur after `end()`. To speak the text, create a new talk stream and send
