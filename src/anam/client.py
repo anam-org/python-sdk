@@ -937,7 +937,7 @@ class Session:
         """Wait until the session is closed.
 
         This is useful for keeping the session alive until
-        the server closes it or an error occurs. It returns when the teardown is done.
+        the server closes it or an error occurs. It returns when the session has ended.
         The MESSAGE_DELIVERY_FAILED and CONNECTION_CLOSED listeners of the session can
         still be running then.
         """
