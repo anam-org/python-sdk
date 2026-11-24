@@ -1,5 +1,3 @@
-"""Sequenced heartbeat bookkeeping for talk-stream delivery tracking."""
-
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -14,23 +12,11 @@ class _PendingHeartbeat:
 @dataclass
 class _UnconfirmedChunk:
     correlation_id: str
-    # The first heartbeat written after the chunk; its answer confirms the chunk.
     confirmed_by: int
     tracked_at: float
 
 
 class HeartbeatMonitor:
-    """Match heartbeat answers to the talk-stream chunks written before them.
-
-    The engine answers a heartbeat from the loop that reads client messages, so the
-    answer to heartbeat N proves that everything written before heartbeat N arrived.
-    A half-open socket accepts writes without error, so an answer is the only proof
-    that a chunk got through. Chunks are never resent: an unconfirmed chunk fails.
-
-    The monitor is synchronous and owns no timers. The caller reads the deadlines and
-    drives the writes.
-    """
-
     ACK_TIMEOUT_SECONDS = 3.0
     SUSPECT_AFTER_SECONDS = 1.5
     PROBE_COALESCE_SECONDS = 0.1
@@ -38,8 +24,6 @@ class HeartbeatMonitor:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
         self.enabled = True
-        # Never reset: an answer replayed onto a new socket must not confirm chunks
-        # written to it.
         self._next_seq = 0
         self._pending: list[_PendingHeartbeat] = []
         self._unconfirmed: list[_UnconfirmedChunk] = []

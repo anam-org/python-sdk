@@ -1,5 +1,3 @@
-"""Tests for agent audio input sequence numbering."""
-
 import asyncio
 from unittest.mock import MagicMock
 

@@ -1,5 +1,3 @@
-"""Tests for the heartbeat monitor state machine."""
-
 import pytest
 
 from anam._heartbeat_monitor import HeartbeatMonitor

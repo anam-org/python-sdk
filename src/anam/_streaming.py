@@ -53,13 +53,9 @@ class StreamingClient:
             session_info: Session information from API.
             on_message: Callback for data channel messages.
             on_connection_established: Callback when connected.
-            on_connection_closed: Callback when the session ends. Signalling drops that a
-                reconnect recovers do not call it.
             on_session_ready: Callback when sessionready signal is received (ready to receive TTS).
             on_talk_stream_interrupted: Callback(correlation_id) when talk stream is interrupted.
             custom_ice_servers: Custom ICE servers (optional).
-            on_talk_stream_delivery_failed: Callback(correlation_id) when a talk stream chunk
-                did not reach the engine.
         """
         self._session_info = session_info
         self._session_id = session_info.session_id
@@ -126,16 +122,11 @@ class StreamingClient:
         logger.info("Streaming connection ready")
 
     def _mark_terminated(self) -> None:
-        """Stop a pending connect() at once instead of at its timeout.
-
-        Call it after the teardown, so connect() raises on a fully closed client.
-        """
         self._terminated = True
         if hasattr(self, "_connection_ready"):
             self._connection_ready.set()
 
     async def _on_signalling_open(self) -> None:
-        """Handle the first signalling open; reconnects keep the existing peer connection."""
         if self._peer_connection is not None:
             return
         logger.debug("Signalling connected, initializing peer connection")
@@ -143,7 +134,6 @@ class StreamingClient:
         await self._create_and_send_offer()
 
     async def _on_signalling_close(self, code: int | None, reason: str) -> None:
-        """Handle the terminal signalling close: reconnect attempts are exhausted."""
         logger.warning("Signalling closed: %s %s", code, reason)
         try:
             if self._on_connection_closed:
@@ -352,8 +342,6 @@ class StreamingClient:
             if state == "closed":
                 # Only emit CONNECTION_CLOSED when the connection was lost (e.g. network)
                 if not self._closing and self._on_connection_closed:
-                    # The receive loop sets server_ended before a queued endsession is handled,
-                    # so a peer close that races it still reports the real reason.
                     signalling = self._signalling_client
                     server_ended = self._server_ended or (
                         signalling is not None and signalling.server_ended is True

@@ -1,5 +1,3 @@
-"""Sequenced heartbeats, talk-chunk confirmation and half-open socket replacement."""
-
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -111,8 +109,7 @@ def end_gap(engine: FakeEngine) -> None:
 
 
 async def sync_dispatch(engine: FakeEngine, client: SignallingClient) -> None:
-    """Wait until the client dispatched everything the engine sent before this point."""
-    on_message: AsyncMock = client._on_message  # type: ignore[assignment]
+    on_message: AsyncMock = client._on_message
     await engine.send({"actionType": "sync", "payload": {}})
     await engine.wait_for(
         lambda: any(call.args[0].get("actionType") == "sync" for call in on_message.call_args_list)
@@ -269,7 +266,7 @@ async def test_unanswered_replacements_capped(
     await announce_acks(engine, client, True)
     engine.answer_heartbeats = False
 
-    await engine.wait_for(lambda: client._on_close.await_count == 1, timeout=5.0)  # type: ignore[union-attr]
+    await engine.wait_for(lambda: client._on_close.await_count == 1, timeout=5.0)
 
     assert len(engine.connections) == 3
     assert client.is_permanently_closed
@@ -318,7 +315,7 @@ async def test_ack_parsing_rejects_non_int_seq(
     await sync_dispatch(engine, client)
 
     assert any(hb.seq <= last for hb in client._monitor._pending)
-    forwarded = [call.args[0]["actionType"] for call in client._on_message.call_args_list]  # type: ignore[union-attr]
+    forwarded = [call.args[0]["actionType"] for call in client._on_message.call_args_list]
     assert forwarded == ["sync"]
 
     await engine.send(
@@ -372,7 +369,7 @@ async def test_interrupted_stream_not_reported(
     await round_trip_on(engine, 1)
 
     assert await stays(lambda: failures == [], 0.1)
-    forwarded = [call.args[0]["actionType"] for call in client._on_message.call_args_list]  # type: ignore[union-attr]
+    forwarded = [call.args[0]["actionType"] for call in client._on_message.call_args_list]
     assert "talkinputstreaminterrupted" in forwarded
 
 

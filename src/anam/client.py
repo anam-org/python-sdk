@@ -167,7 +167,6 @@ class AnamClient:
         self._is_streaming = False
         self._message_history: list[Message] = []
 
-        # Per-session state, reset by connect_async
         self._session: Session | None = None
         self._session_generation = 0
         self._connection_closed_emitted = False
@@ -220,7 +219,6 @@ class AnamClient:
 
     async def _emit(self, event: AnamEvent, *args: Any, **kwargs: Any) -> None:
         """Emit an event to all registered callbacks."""
-        # A copy, so a listener that removes itself does not skip the next one.
         for callback in list(self._event_callbacks[event]):
             try:
                 result = callback(*args, **kwargs)
@@ -297,8 +295,6 @@ class AnamClient:
         def for_this_session(
             handler: Callable[..., Awaitable[None]],
         ) -> Callable[..., Awaitable[None]]:
-            # A closed StreamingClient can still fire late callbacks; they must not
-            # change the state of a newer session.
             async def call(*args: Any) -> None:
                 if streaming_client is self._streaming_client:
                     await handler(*args)
@@ -480,10 +476,7 @@ class AnamClient:
         await self._emit(AnamEvent.CONNECTION_ESTABLISHED)
 
     async def _handle_session_ready(self) -> None:
-        """Handle session ready (signalling: ready to receive user audio or TTS).
-
-        The engine can send sessionready again on a reconnected socket; emit it once per session.
-        """
+        """Handle session ready (signalling: ready to receive user audio or TTS)."""
         if self._session_ready_emitted:
             return
         self._session_ready_emitted = True
@@ -494,7 +487,6 @@ class AnamClient:
         await self._emit(AnamEvent.TALK_STREAM_INTERRUPTED, correlation_id)
 
     async def _handle_talk_stream_delivery_failed(self, correlation_id: str) -> None:
-        """Mark the stream failed before listeners run, so they see its final state."""
         stream = self._talk_streams.get(correlation_id)
         if stream is not None:
             stream._mark_delivery_failed()
@@ -504,7 +496,6 @@ class AnamClient:
         )
 
     async def _handle_connection_closed(self, code: str, reason: str | None) -> None:
-        """Report the end of the session once, whatever closes it first."""
         if self._connection_closed_emitted:
             return
         self._connection_closed_emitted = True
@@ -538,8 +529,6 @@ class AnamClient:
         if streaming_client is None:
             return
         generation = self._session_generation
-        # Release the client before the CONNECTION_CLOSED listeners run: a listener may
-        # call connect_async, and that new session must survive the rest of this close.
         self._streaming_client = None
         if self._is_streaming:
             await self._handle_connection_closed(ConnectionClosedCode.NORMAL.value, None)
@@ -642,7 +631,6 @@ class Session:
         return self._client._persona_config
 
     def _mark_closed(self) -> None:
-        """Mark the session closed; the client calls this before CONNECTION_CLOSED listeners run."""
         self._closed = True
         self._close_event.set()
 

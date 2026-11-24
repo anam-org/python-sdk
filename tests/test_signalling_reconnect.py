@@ -1,5 +1,3 @@
-"""Signalling socket reconnect, ordered writes and callback dispatch against a fake engine."""
-
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -83,12 +81,12 @@ async def test_drop_reconnects_to_same_url(
     client = make_client()
     await client.connect()
 
-    await engine.drop(mode)  # type: ignore[arg-type]
+    await engine.drop(mode)
     await engine.wait_for(lambda: bool(engine.received_on(1)))
 
     assert engine.paths == [f"/ws?session_id={SESSION_ID}"] * 2
-    client._on_close.assert_not_awaited()  # type: ignore[union-attr]
-    client._on_open.assert_awaited_once()  # type: ignore[union-attr]
+    client._on_close.assert_not_awaited()
+    client._on_open.assert_awaited_once()
     assert not client.is_permanently_closed
 
 
@@ -101,10 +99,10 @@ async def test_retries_exhausted_calls_on_close_once(
 
     engine.refuse_new = True
     await engine.drop("abort")
-    await engine.wait_for(lambda: client._on_close.await_count == 1)  # type: ignore[union-attr]
+    await engine.wait_for(lambda: client._on_close.await_count == 1)
 
     assert await stays(lambda: engine.connect_attempts == 1 + 3, 0.1)
-    client._on_close.assert_awaited_once()  # type: ignore[union-attr]
+    client._on_close.assert_awaited_once()
     assert client.is_permanently_closed
 
 
@@ -117,10 +115,10 @@ async def test_open_then_drop_still_exhausts(
 
     engine.drop_on_open = True
     await engine.drop("abort")
-    await engine.wait_for(lambda: client._on_close.await_count == 1)  # type: ignore[union-attr]
+    await engine.wait_for(lambda: client._on_close.await_count == 1)
 
     assert await stays(lambda: engine.connect_attempts == 1 + 3, 0.1)
-    client._on_close.assert_awaited_once()  # type: ignore[union-attr]
+    client._on_close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -136,7 +134,7 @@ async def test_stable_socket_resets_attempts(
         await engine.wait_for(lambda index=index: bool(engine.received_on(index)))
 
     assert len(engine.connections) == 5
-    client._on_close.assert_not_awaited()  # type: ignore[union-attr]
+    client._on_close.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -187,7 +185,7 @@ async def test_close_from_on_close_callback_does_not_hang(
 
     engine.refuse_new = True
     await engine.drop("abort")
-    await engine.wait_for(lambda: client._on_close.await_count == 1)  # type: ignore[union-attr]
+    await engine.wait_for(lambda: client._on_close.await_count == 1)
     await engine.wait_for(lambda: owned_tasks_done(client))
 
 
@@ -222,7 +220,7 @@ async def test_endsession_then_clean_close_does_not_reconnect(
 
     assert await stays(lambda: engine.connect_attempts == 1, 0.3)
     assert client.server_ended
-    client._on_close.assert_not_awaited()  # type: ignore[union-attr]
+    client._on_close.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -353,7 +351,7 @@ async def test_buffer_cleared_on_terminal_close(
     engine.refuse_new = True
     assert engine.hold_handshake is not None
     engine.hold_handshake.set()
-    await engine.wait_for(lambda: client._on_close.await_count == 1)  # type: ignore[union-attr]
+    await engine.wait_for(lambda: client._on_close.await_count == 1)
 
     assert client._send_buffer == []
     await client.send_agent_audio_input(audio(2))

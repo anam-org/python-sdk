@@ -17,7 +17,6 @@ from .types import AgentAudioInputPayload, SessionInfo
 
 logger = logging.getLogger(__name__)
 
-# A dispatch item: the callback to run, and whether the dispatcher stops after it.
 _DispatchItem = tuple[Callable[[], Awaitable[None]], bool]
 
 
@@ -52,20 +51,8 @@ def _talk_correlation_id(message: dict[str, Any]) -> str | None:
 class SignallingClient:
     """WebSocket client for signalling with Anam engine.
 
-    Handles the WebSocket connection for WebRTC signalling, including offer/answer
-    exchange and ICE candidate trickling. When the socket drops, the client reconnects
-    to the same URL with a bounded number of attempts; the engine swaps the new socket
-    into the running session. Messages sent while no socket is open wait in a bounded
-    buffer and go out in order on the next socket.
-
-    One supervisor task owns the connect, receive and reconnect loop. Application
-    callbacks run in order on a separate dispatch task, so a slow callback cannot
-    delay the receive loop.
-
-    Heartbeats carry a sequence number. When the engine answers them, an answer
-    confirms every talk-stream chunk written before that heartbeat. A chunk that is
-    not confirmed when its socket ends is reported as failed and never resent. A
-    socket whose heartbeats go unanswered, or whose write stalls, is replaced.
+    Handles the WebSocket connection for WebRTC signalling,
+    including offer/answer exchange and ICE candidate trickling.
     """
 
     DEFAULT_HEARTBEAT_INTERVAL = 5
@@ -73,7 +60,6 @@ class SignallingClient:
     SHUTDOWN_TIMEOUT = 2.0
     RECONNECT_BACKOFF_SECONDS = 0.1
     STABLE_CONNECTION_SECONDS = 5.0
-    # The engine purges a session after 15 s without a socket.
     RECONNECT_OPEN_TIMEOUT_SECONDS = 5.0
     WRITE_STALL_SECONDS = 3.0
     SEND_BUFFER_LIMIT = 2000
@@ -90,13 +76,6 @@ class SignallingClient:
 
         Args:
             session_info: Session information from API.
-            on_message: Callback for received messages. Runs on the dispatch task, in
-                order.
-            on_open: Callback when the first socket opens. Reconnects do not call it.
-            on_close: Callback when the connection is lost for good because the
-                reconnect attempts ran out. A local close() does not call it.
-            on_talk_stream_delivery_failed: Callback with the correlation ID of a talk
-                stream that lost a chunk. Called at most once per correlation ID.
         """
         self._session_info = session_info
         self._session_id = session_info.session_id
@@ -123,7 +102,6 @@ class SignallingClient:
         self._dispatch_queue: asyncio.Queue[_DispatchItem] = asyncio.Queue()
 
         self._monitor = HeartbeatMonitor()
-        # None until sessionready says whether the engine answers heartbeats.
         self._engine_sends_heartbeat_acks: bool | None = None
         self._ever_opened = False
         self._unanswered_replacements = 0
@@ -162,20 +140,13 @@ class SignallingClient:
 
     @property
     def is_permanently_closed(self) -> bool:
-        """True once no socket will open again: after close() or exhausted retries."""
         return self._permanently_closed or self._stop_signal
 
     @property
     def server_ended(self) -> bool:
-        """True once the engine sent endsession."""
         return self._server_ended
 
     async def connect(self) -> None:
-        """Open the first socket and start the signalling tasks.
-
-        Raises:
-            Exception: If the first socket cannot open. The first connect is not retried.
-        """
         logger.debug("Connecting to signalling server")
         try:
             ws = await connect(self._ws_url, close_timeout=2.0)
@@ -204,10 +175,6 @@ class SignallingClient:
         return [task for task in tasks if task is not None]
 
     async def _activate(self, ws: ClientConnection) -> None:
-        """Make a freshly opened socket the current one: flush, then start heartbeats.
-
-        The watchdog starts first so that it also supervises a stalled flush.
-        """
         self._watchdog_task = asyncio.create_task(self._watch(ws))
         try:
             async with self._send_lock:
@@ -221,7 +188,6 @@ class SignallingClient:
         self._heartbeat_task = asyncio.create_task(self._send_heartbeats(ws))
 
     async def _deactivate(self, ws: ClientConnection) -> None:
-        """Forget an ended socket, stop its tasks and fail its unconfirmed chunks."""
         if self._ws is ws:
             self._ws = None
         tasks = [task for task in (self._heartbeat_task, self._watchdog_task) if task is not None]
@@ -235,7 +201,6 @@ class SignallingClient:
         self._queue_failures(self._monitor.reset())
 
     async def _supervise(self, ws: ClientConnection, opened_at: float) -> None:
-        """Receive on the current socket; when it ends, reconnect or give up."""
         loop = asyncio.get_running_loop()
         while True:
             await self._receive(ws)
@@ -263,7 +228,6 @@ class SignallingClient:
             await self._activate(ws)
 
     async def _reconnect(self) -> ClientConnection | None:
-        """Open a new socket to the same URL within the retry budget."""
         while self._connection_attempts <= self._max_reconnection_attempts:
             delay = self.RECONNECT_BACKOFF_SECONDS * self._connection_attempts
             logger.info(
@@ -294,7 +258,6 @@ class SignallingClient:
         return None
 
     def _terminate(self, code: int | None, reason: str) -> None:
-        """Give up for good; failure reports and then on_close run on the dispatch task."""
         self._permanently_closed = True
         buffered = [_talk_correlation_id(message) for message in self._send_buffer]
         self._send_buffer.clear()
@@ -303,7 +266,6 @@ class SignallingClient:
         self._dispatch_queue.put_nowait((functools.partial(on_close, code, reason), True))
 
     async def _receive(self, ws: ClientConnection) -> None:
-        """Read until the socket ends. A clean close ends the iterator without an error."""
         try:
             async for raw in ws:
                 if self._stop_signal:
@@ -351,7 +313,6 @@ class SignallingClient:
             self._watchdog_wake.set()
 
     def _claim_failures(self, correlation_ids: list[str]) -> list[str]:
-        """Mark correlation IDs as failed; return the ones not reported before."""
         new = []
         for correlation_id in correlation_ids:
             if correlation_id not in self._failed_cids:
@@ -360,7 +321,6 @@ class SignallingClient:
         return new
 
     def _queue_failures(self, correlation_ids: list[str]) -> None:
-        """Report failures from an SDK task through the dispatcher, never inline."""
         callback = self._on_talk_stream_delivery_failed
         for correlation_id in self._claim_failures(correlation_ids):
             if callback:
@@ -369,11 +329,6 @@ class SignallingClient:
                 )
 
     async def _report_now(self, correlation_ids: list[str]) -> None:
-        """Report failures claimed by a send call, in the caller's task.
-
-        The dispatcher may already have ended after a terminal close, so send-path
-        reports do not go through it.
-        """
         callback = self._on_talk_stream_delivery_failed
         for correlation_id in correlation_ids:
             if self._stop_signal or callback is None:
@@ -384,7 +339,6 @@ class SignallingClient:
                 logger.error("Error handling talk stream delivery failure: %s", e)
 
     async def _dispatch(self) -> None:
-        """Run application callbacks in order, away from the receive loop."""
         while not self._stop_signal:
             call, last = await self._dispatch_queue.get()
             try:
@@ -395,7 +349,6 @@ class SignallingClient:
                 return
 
     async def _send_heartbeats(self, ws: ClientConnection) -> None:
-        """Write a heartbeat on every beat, and early when a new talk chunk waits for one."""
         next_beat = time.monotonic() + self._heartbeat_interval
         while True:
             self._probe_wake.clear()
@@ -414,7 +367,7 @@ class SignallingClient:
                 if self._stop_signal or ws.state is not State.OPEN:
                     return
                 seq = self._monitor.next_seq()
-                # Recorded before the write: the answer can arrive while send() waits on drain.
+                # websockets writes the frame before awaiting drain, so the ack can arrive first.
                 self._monitor.record_sent(seq)
                 self._watchdog_wake.set()
                 message = {
@@ -429,10 +382,6 @@ class SignallingClient:
             next_beat = time.monotonic() + self._heartbeat_interval
 
     async def _watch(self, ws: ClientConnection) -> None:
-        """Replace a socket whose heartbeat is not answered or whose write stalls.
-
-        It never takes the send lock and never writes, so a stalled write cannot block it.
-        """
         while True:
             self._watchdog_wake.clear()
             now = time.monotonic()
@@ -478,7 +427,6 @@ class SignallingClient:
         self._probe_wake.set()
 
     async def _flush(self, ws: ClientConnection) -> None:
-        """Send buffered messages in order. The caller holds the send lock."""
         self._buffer_overflowed = False
         while self._send_buffer and not self.is_permanently_closed:
             if ws.state is not State.OPEN:
@@ -493,7 +441,7 @@ class SignallingClient:
             try:
                 await self._write(ws, message)
             except Exception as e:
-                # The bytes may have gone out, so the message is not buffered again.
+                # websockets may have written the frame before raising; resending could duplicate it.
                 logger.warning("Lost buffered %s message: %s", message.get("actionType"), e)
                 if correlation_id is not None and self._monitor.is_tracked(correlation_id):
                     self._monitor.drop(correlation_id)
@@ -501,7 +449,6 @@ class SignallingClient:
                 return
 
     def _buffer(self, message: dict[str, Any]) -> list[str]:
-        """Buffer a message; return the correlation ID of an evicted talk chunk."""
         self._send_buffer.append(message)
         if len(self._send_buffer) <= self.SEND_BUFFER_LIMIT:
             return []
@@ -519,7 +466,6 @@ class SignallingClient:
         return self._claim_failures([correlation_id]) if correlation_id is not None else []
 
     def _eviction_index(self) -> int | None:
-        """Oldest agent audio first, then the oldest message that is not an offer."""
         actions = [message.get("actionType") for message in self._send_buffer]
         if SignalAction.AGENT_AUDIO_INPUT.value in actions:
             return actions.index(SignalAction.AGENT_AUDIO_INPUT.value)
@@ -530,9 +476,6 @@ class SignallingClient:
 
     async def send_message(self, message: dict[str, Any]) -> None:
         """Send a message, or buffer it until a socket is open.
-
-        A write that fails on an open socket is not retried: the bytes may have been
-        delivered, and a repeated offer would restart ICE.
 
         Args:
             message: The message to send.
@@ -552,7 +495,6 @@ class SignallingClient:
         await self._report_now(failed)
 
     async def _send_or_buffer(self, message: dict[str, Any]) -> list[str]:
-        """Write to the open socket, or buffer. The caller holds the send lock."""
         ws = self._ws
         if ws is None or ws.state is not State.OPEN:
             return self._buffer(message)
@@ -746,7 +688,6 @@ class SignallingClient:
         return []
 
     async def close(self) -> None:
-        """Close the connection for good. Idempotent and safe from inside a callback."""
         self._stop_signal = True
         self._send_buffer.clear()
 

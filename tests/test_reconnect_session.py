@@ -1,5 +1,3 @@
-"""Session-level behaviour across signalling reconnects, against a fake engine with real WebRTC."""
-
 import asyncio
 from collections.abc import AsyncIterator
 from typing import Any

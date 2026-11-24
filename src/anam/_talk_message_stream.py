@@ -160,8 +160,6 @@ class TalkMessageStream:
 
         start_of_speech = self._state == TalkMessageStreamState.UNSTARTED
 
-        # Set the state before the send: a delivery failure or an interrupt that arrives
-        # during the await must not be overwritten afterwards.
         if utterance_id is not None:
             self._last_utterance_id = utterance_id
         if end_of_speech:
@@ -206,10 +204,6 @@ class TalkMessageStream:
         )
 
     def _mark_delivery_failed(self) -> None:
-        """Record that a chunk of this stream did not reach the engine.
-
-        This also applies after end(): the final chunk can fail once it is sent.
-        """
         if self._state in (
             TalkMessageStreamState.INTERRUPTED,
             TalkMessageStreamState.DELIVERY_FAILED,

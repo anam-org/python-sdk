@@ -1,5 +1,3 @@
-"""A local WebSocket server that plays the Anam engine's signalling role in tests."""
-
 import asyncio
 import json
 from typing import Any, Callable, Literal
@@ -17,8 +15,6 @@ CANNED_ANSWER_SDP = "v=0\r\n"
 
 
 class FakeEngine:
-    """Accepts signalling sockets, records what the client sends and answers heartbeats."""
-
     def __init__(self) -> None:
         self.port = 0
         self.connections: list[ServerConnection] = []
@@ -103,7 +99,6 @@ class FakeEngine:
             )
 
     async def _answer_with_aiortc(self, offer: dict[str, str]) -> str:
-        """Answer with a real peer that sends video; one peer per offer (one per session)."""
         peer = RTCPeerConnection(RTCConfiguration(iceServers=[]))
         self.peers.append(peer)
         await peer.setRemoteDescription(RTCSessionDescription(sdp=offer["sdp"], type=offer["type"]))
@@ -118,7 +113,6 @@ class FakeEngine:
         await self.peers[-1].close()
 
     async def drop(self, mode: Literal["abort", "clean"] = "abort") -> None:
-        """Drop the newest socket: abort makes the client see 1006, clean sends 1001."""
         ws = self.connections[-1]
         if mode == "abort":
             ws.transport.abort()
@@ -145,7 +139,6 @@ class FakeEngine:
 
 
 async def wait_for(predicate: Callable[[], bool], timeout: float = 2.0) -> None:
-    """Poll a predicate until it holds; fail the test on timeout."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while not predicate():
@@ -155,7 +148,6 @@ async def wait_for(predicate: Callable[[], bool], timeout: float = 2.0) -> None:
 
 
 async def stays(predicate: Callable[[], bool], duration: float) -> bool:
-    """Check that a predicate holds for a whole bounded window (for negative assertions)."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + duration
     while loop.time() < deadline:
