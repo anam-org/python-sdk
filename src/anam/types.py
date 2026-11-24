@@ -32,10 +32,12 @@ class AnamEvent(str, Enum):
 
 @dataclass(frozen=True)
 class MessageDeliveryFailure:
-    """A message that the SDK accepted but that did not reach the engine.
+    """A message that the SDK accepted but could not confirm at the engine.
 
-    Emitted with ``AnamEvent.MESSAGE_DELIVERY_FAILED``. The engine does not replay
-    messages lost on a dropped signalling connection, so the application must resend.
+    Emitted with ``AnamEvent.MESSAGE_DELIVERY_FAILED``. Delivery is unconfirmed, not
+    proven lost: the engine can have received the message. The engine does not replay
+    messages from a dropped signalling connection. If the application sends the text
+    again, the avatar can speak it twice.
     """
 
     message_type: Literal["talk_stream"]

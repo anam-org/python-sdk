@@ -280,8 +280,8 @@ async def on_closed(code: str, reason: str | None):
 
 @client.on(AnamEvent.MESSAGE_DELIVERY_FAILED)
 async def on_delivery_failed(failure: MessageDeliveryFailure):
-    """Called when a talk stream chunk did not reach the engine."""
-    print(f"Lost {failure.message_type} message {failure.correlation_id}")
+    """Called when the SDK cannot confirm that a talk stream chunk reached the engine."""
+    print(f"Unconfirmed {failure.message_type} message {failure.correlation_id}")
 
 @client.on(AnamEvent.USER_SPEECH_STARTED)
 async def on_user_speech_started(correlation_id: str | None):
@@ -357,13 +357,14 @@ session, with one of these codes:
 During a reconnect, the SDK keeps messages such as agent audio in a buffer and sends them
 when the new WebSocket opens. The engine does not replay messages that were lost on the
 old WebSocket. When the SDK cannot confirm that a talk stream chunk reached the engine,
-it emits `MESSAGE_DELIVERY_FAILED` with a `MessageDeliveryFailure`. The stream then moves to `TalkMessageStreamState.DELIVERY_FAILED`
-and `send()` raises `RuntimeError`. This can also occur after `end()`. To speak the text,
-create a new talk stream and send the text again.
+it emits `MESSAGE_DELIVERY_FAILED` with a `MessageDeliveryFailure`. Delivery is
+unconfirmed, not proven lost: the chunk can still have reached the engine. The stream
+moves to `TalkMessageStreamState.DELIVERY_FAILED` and `send()` raises `RuntimeError`.
+This can also occur after `end()`. To speak the text, create a new talk stream and send
+the text again. If the first chunk reached the engine, the avatar speaks the text twice.
 
-After a correlation ID fails, the SDK drops later chunks with that ID for the rest of
-the session. Default correlation IDs are unique. If you supply your own IDs, do not use
-an ID again after its stream failed.
+When the session ends, the SDK emits the pending `MESSAGE_DELIVERY_FAILED` events
+before `CONNECTION_CLOSED`.
 
 ### Session
 
