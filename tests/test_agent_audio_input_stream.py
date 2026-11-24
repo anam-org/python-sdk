@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,12 +15,14 @@ async def test_sequence_numbers_unique_under_concurrency() -> None:
     sent: list[int | str] = []
     signalling = MagicMock(spec=SignallingClient)
 
-    async def send_audio(payload: AgentAudioInputPayload) -> None:
+    async def send_audio(payload: AgentAudioInputPayload, admitted: Callable[[], None]) -> None:
         await release.wait()
+        admitted()
         sent.append(payload.sequence_number)
 
-    async def send_end() -> None:
+    async def send_end(admitted: Callable[[], None]) -> None:
         await release.wait()
+        admitted()
         sent.append("end")
 
     signalling.send_agent_audio_input.side_effect = send_audio
@@ -46,9 +49,10 @@ async def test_cancelled_waiting_calls_do_not_touch_sequence() -> None:
     release = asyncio.Event()
     signalling = MagicMock(spec=SignallingClient)
 
-    async def send_audio(payload: AgentAudioInputPayload) -> None:
+    async def send_audio(payload: AgentAudioInputPayload, admitted: Callable[[], None]) -> None:
         entered.set()
         await release.wait()
+        admitted()
 
     signalling.send_agent_audio_input.side_effect = send_audio
     stream = AgentAudioInputStream(AgentAudioInputConfig(), signalling)

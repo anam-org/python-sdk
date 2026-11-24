@@ -8,6 +8,7 @@ import pytest_asyncio
 from aiortc import RTCPeerConnection
 
 from anam import (
+    AgentAudioInputConfig,
     AnamClient,
     AnamEvent,
     Message,
@@ -1044,3 +1045,104 @@ async def test_watchdog_cap_ends_with_signalling_failure_before_listeners(
 
     await engine.wait_for(lambda: len(events) == 2, timeout=5.0)
     assert events == ["failed", "signalling_failure"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ending", ["endsession", "close"])
+async def test_talk_stream_rejects_sends_after_session_end(
+    engine: FakeEngine, anam: AnamClient, ending: str
+) -> None:
+    closed = record(anam, AnamEvent.CONNECTION_CLOSED)
+    failed = record(anam, AnamEvent.MESSAGE_DELIVERY_FAILED)
+    session = await anam.connect_async()
+    sc = signalling(anam)
+    stream = session.create_talk_stream()
+    await stream.send("one")
+    await engine.wait_for(lambda: not sc._monitor.is_tracked(stream.correlation_id))
+    if ending == "endsession":
+        await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+        await engine.wait_for(lambda: len(closed) == 1)
+    else:
+        await anam.close()
+
+    with pytest.raises(RuntimeError):
+        await stream.send("two")
+    with pytest.raises(RuntimeError):
+        await stream.end()
+    assert stream.state is TalkMessageStreamState.STREAMING
+    assert sc._dispatch_queue.empty()
+    assert await stays(lambda: failed == [], 0.1)
+
+
+def stall_after_write(monkeypatch: pytest.MonkeyPatch, action: str) -> tuple[asyncio.Event, asyncio.Event]:
+    written = asyncio.Event()
+    release = asyncio.Event()
+    original = SignallingClient._write
+
+    async def write(self: SignallingClient, ws: Any, message: dict[str, Any]) -> None:
+        await original(self, ws, message)
+        if message["actionType"] == action and not release.is_set():
+            written.set()
+            await release.wait()
+
+    monkeypatch.setattr(SignallingClient, "_write", write)
+    return written, release
+
+
+async def cancel_after_write(
+    call: Awaitable[None], written: asyncio.Event, release: asyncio.Event
+) -> None:
+    task = asyncio.ensure_future(call)
+    await asyncio.wait_for(written.wait(), 2.0)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    release.set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancelled", ["chunk", "end"])
+async def test_cancel_after_audio_write_keeps_sequence(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch, cancelled: str
+) -> None:
+    session = await anam.connect_async()
+    audio = session.create_agent_audio_input_stream(AgentAudioInputConfig())
+    if cancelled == "chunk":
+        written, release = stall_after_write(monkeypatch, "agentaudioinput")
+        await cancel_after_write(audio.send_audio_chunk(b"\x00\x00"), written, release)
+        expected = [0, 1]
+    else:
+        await audio.send_audio_chunk(b"\x00\x00")
+        written, release = stall_after_write(monkeypatch, "agentaudioinputend")
+        await cancel_after_write(audio.end_sequence(), written, release)
+        expected = [0, 0]
+    await audio.send_audio_chunk(b"\x00\x00")
+
+    await engine.wait_for(lambda: len(engine.received_actions("agentaudioinput")) == 2)
+    seqs = [m["payload"]["sequenceNumber"] for _, m in engine.received_actions("agentaudioinput")]
+    assert seqs == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("end_of_speech", [False, True])
+async def test_cancel_after_talk_write_keeps_stream_state(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch, end_of_speech: bool
+) -> None:
+    session = await anam.connect_async()
+    stream = session.create_talk_stream()
+    written, release = stall_after_write(monkeypatch, "talkstream")
+    utterance = "68fd86b6-0b3a-4f42-bf92-5866cd84f8ac"
+    await cancel_after_write(
+        stream.send("one", end_of_speech=end_of_speech, utterance_id=utterance), written, release
+    )
+
+    if end_of_speech:
+        assert stream.state is TalkMessageStreamState.ENDED
+        with pytest.raises(RuntimeError):
+            await stream.send("two")
+        return
+    assert stream.state is TalkMessageStreamState.STREAMING
+    await stream.end()
+    await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 2)
+    payloads = [m["payload"] for _, m in engine.received_actions("talkstream")]
+    assert [p["startOfSpeech"] for p in payloads] == [True, False]
+    assert payloads[1]["utteranceId"] == utterance

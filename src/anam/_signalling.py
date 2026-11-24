@@ -608,11 +608,15 @@ class SignallingClient:
                 return index
         return None
 
-    async def send_message(self, message: dict[str, Any]) -> None:
+    async def send_message(
+        self, message: dict[str, Any], admitted: Callable[[], None] | None = None
+    ) -> None:
         """Send a message, or buffer it until a socket is open.
 
         Args:
             message: The message to send.
+            admitted: Called when the message is accepted, before the write starts. A
+                cancellation after this point does not stop the message.
         """
         # Convert enum to string if needed
         if "actionType" in message and isinstance(message["actionType"], SignalAction):
@@ -625,6 +629,8 @@ class SignallingClient:
             if self.is_permanently_closed:
                 logger.debug("Dropping %s message: signalling is closed", message.get("actionType"))
                 return
+            if admitted is not None:
+                admitted()
             await self._send_or_buffer(message)
 
     async def _send_or_buffer(self, message: dict[str, Any]) -> None:
@@ -709,11 +715,14 @@ class SignallingClient:
         }
         await self.send_message(message)
 
-    async def send_agent_audio_input(self, payload: AgentAudioInputPayload) -> None:
+    async def send_agent_audio_input(
+        self, payload: AgentAudioInputPayload, admitted: Callable[[], None] | None = None
+    ) -> None:
         """Send agent audio input message to the server.
 
         Args:
             payload: The audio input payload.
+            admitted: See send_message().
         """
         # Convert to camelCase to match backend expectations
         message = {
@@ -735,19 +744,22 @@ class SignallingClient:
             logger.warning(
                 f"Sample rate {payload.sample_rate}Hz is high. Latency is negatively affected for minimal audio quality gain. Consider resampling to 24kHz"
             )
-        await self.send_message(message)
+        await self.send_message(message, admitted)
 
-    async def send_agent_audio_input_end(self) -> None:
+    async def send_agent_audio_input_end(self, admitted: Callable[[], None] | None = None) -> None:
         """Send agent audio input end signal to the server.
 
         Signals the end of the current audio sequence/turn.
+
+        Args:
+            admitted: See send_message().
         """
         message = {
             "actionType": SignalAction.AGENT_AUDIO_INPUT_END.value,
             "sessionId": self._session_id,
             "payload": {},
         }
-        await self.send_message(message)
+        await self.send_message(message, admitted)
 
     async def send_talk_stream_input(
         self,
@@ -756,6 +768,7 @@ class SignallingClient:
         start_of_speech: bool = True,
         end_of_speech: bool = True,
         utterance_id: str | None = None,
+        admitted: Callable[[], None] | None = None,
     ) -> None:
         """Send talk stream input to make the avatar speak text directly.
 
@@ -770,6 +783,10 @@ class SignallingClient:
             utterance_id: Optional ID marking the first chunk of a new utterance. None
                 continues the current utterance; a different ID queues a new one after it.
                 Validated by TalkMessageStream.send(); not re-checked here.
+            admitted: See send_message().
+
+        Raises:
+            RuntimeError: If the session has ended.
         """
         payload: dict[str, Any] = {
             "content": content,
@@ -786,11 +803,11 @@ class SignallingClient:
             "payload": payload,
         }
         async with self._send_lock:
-            if self._permanently_closed:
-                self._queue_failures([correlation_id])
-            elif self._stop_signal:
-                logger.debug("Dropping talk stream chunk: signalling is closed")
-            elif self._is_dead_stream(correlation_id):
+            if self.is_permanently_closed:
+                raise RuntimeError("Cannot send a talk stream chunk: the session has ended")
+            if admitted is not None:
+                admitted()
+            if self._is_dead_stream(correlation_id):
                 logger.debug("Dropping talk stream chunk for an interrupted or failed stream")
             elif self._heartbeat_acks is HeartbeatAcks.NO or not self._ever_opened:
                 await self._send_or_buffer(message)

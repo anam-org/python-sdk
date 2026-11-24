@@ -1,6 +1,7 @@
 """Talk message stream for sending streaming text to TTS via WebSocket signalling."""
 
 import asyncio
+import functools
 import logging
 import uuid
 from enum import Enum
@@ -145,7 +146,8 @@ class TalkMessageStream:
 
         Raises:
             RuntimeError: If the stream is not in an active state (already
-                ended, interrupted or failed). A chunk that does not reach the engine
+                ended, interrupted or failed), or if the session has ended. The stream
+                state does not change in the second case. A chunk that does not reach the engine
                 does not raise here: the client emits ``AnamEvent.MESSAGE_DELIVERY_FAILED``
                 and the stream moves to ``DELIVERY_FAILED``.
             ValueError: If utterance_id is not a canonical UUID v4 string.
@@ -165,6 +167,13 @@ class TalkMessageStream:
                     f"utterance_id must be a canonical UUID v4 string, got {utterance_id!r}"
                 )
 
+        def admitted() -> None:
+            if utterance_id is not None:
+                self._last_utterance_id = utterance_id
+            self._transition(
+                TalkMessageStreamState.ENDED if end_of_speech else TalkMessageStreamState.STREAMING
+            )
+
         async with self._send_lock:
             self._require_active()
             await self._signalling_client.send_talk_stream_input(
@@ -173,11 +182,7 @@ class TalkMessageStream:
                 start_of_speech=self._state == TalkMessageStreamState.UNSTARTED,
                 end_of_speech=end_of_speech,
                 utterance_id=utterance_id,
-            )
-            if utterance_id is not None:
-                self._last_utterance_id = utterance_id
-            self._transition(
-                TalkMessageStreamState.ENDED if end_of_speech else TalkMessageStreamState.STREAMING
+                admitted=admitted,
             )
 
     def _require_active(self) -> None:
@@ -192,6 +197,9 @@ class TalkMessageStream:
 
         The terminator carries the most recent utterance_id passed to send(), so it
         does not start a new untagged utterance.
+
+        Raises:
+            RuntimeError: If the session has ended.
         """
         async with self._send_lock:
             if self._state == TalkMessageStreamState.ENDED:
@@ -210,8 +218,8 @@ class TalkMessageStream:
                 start_of_speech=False,
                 end_of_speech=True,
                 utterance_id=self._last_utterance_id,
+                admitted=functools.partial(self._transition, TalkMessageStreamState.ENDED),
             )
-            self._transition(TalkMessageStreamState.ENDED)
 
     def _mark_delivery_failed(self) -> None:
         self._transition(TalkMessageStreamState.DELIVERY_FAILED)

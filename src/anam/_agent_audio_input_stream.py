@@ -77,8 +77,7 @@ class AgentAudioInputStream:
                 channels=self._config.channels,
                 sequence_number=self._sequence_number,
             )
-            await self._signalling_client.send_agent_audio_input(payload)
-            self._sequence_number += 1
+            await self._signalling_client.send_agent_audio_input(payload, self._advance_sequence)
 
     async def end_sequence(self) -> None:
         """Signal end of the current audio sequence/turn.
@@ -86,8 +85,13 @@ class AgentAudioInputStream:
         Sends AGENT_AUDIO_INPUT_END signal message and resets sequence number.
         """
         async with self._send_lock:
-            await self._signalling_client.send_agent_audio_input_end()
-            self._sequence_number = 0
+            await self._signalling_client.send_agent_audio_input_end(self._reset_sequence)
+
+    def _advance_sequence(self) -> None:
+        self._sequence_number += 1
+
+    def _reset_sequence(self) -> None:
+        self._sequence_number = 0
 
     def get_sequence_number(self) -> int:
         """Get the current sequence number.

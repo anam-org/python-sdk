@@ -1,7 +1,8 @@
 """Tests for TalkMessageStream."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
@@ -18,8 +19,12 @@ UTTERANCE_B = "d990d82a-29a5-4874-b870-a9f07e024108"
 def mock_signalling_client() -> MagicMock:
     """Create a mock SignallingClient with async send_talk_stream_input."""
     client = MagicMock()
-    client.send_talk_stream_input = AsyncMock()
+    client.send_talk_stream_input = AsyncMock(side_effect=admit)
     return client
+
+
+async def admit(**kwargs: Any) -> None:
+    kwargs["admitted"]()
 
 
 @pytest.fixture
@@ -91,6 +96,7 @@ class TestTalkMessageStreamSend:
             start_of_speech=True,
             end_of_speech=False,
             utterance_id=None,
+            admitted=ANY,
         )
 
     @pytest.mark.asyncio
@@ -111,6 +117,7 @@ class TestTalkMessageStreamSend:
             start_of_speech=False,
             end_of_speech=False,
             utterance_id=None,
+            admitted=ANY,
         )
 
     @pytest.mark.asyncio
@@ -129,6 +136,7 @@ class TestTalkMessageStreamSend:
             "start_of_speech": True,
             "end_of_speech": False,
             "utterance_id": UTTERANCE_A,
+            "admitted": ANY,
         }
         assert mock_signalling_client.send_talk_stream_input.await_args_list[1].kwargs == {
             "content": " world",
@@ -136,6 +144,7 @@ class TestTalkMessageStreamSend:
             "start_of_speech": False,
             "end_of_speech": False,
             "utterance_id": UTTERANCE_B,
+            "admitted": ANY,
         }
 
     @pytest.mark.asyncio
@@ -225,6 +234,7 @@ class TestTalkMessageStreamEnd:
             start_of_speech=False,
             end_of_speech=True,
             utterance_id=None,
+            admitted=ANY,
         )
         assert stream.state == TalkMessageStreamState.ENDED
 
@@ -248,6 +258,7 @@ class TestTalkMessageStreamEnd:
             start_of_speech=False,
             end_of_speech=True,
             utterance_id=UTTERANCE_B,
+            admitted=ANY,
         )
 
     @pytest.mark.asyncio
@@ -356,9 +367,10 @@ async def test_cancelled_waiting_calls_keep_stream_state(
     entered = asyncio.Event()
     release = asyncio.Event()
 
-    async def send(**kwargs: object) -> None:
+    async def send(**kwargs: Any) -> None:
         entered.set()
         await release.wait()
+        kwargs["admitted"]()
 
     mock_signalling_client.send_talk_stream_input.side_effect = send
     first = asyncio.create_task(stream.send("hello"))
@@ -382,8 +394,9 @@ async def test_cancelled_waiting_calls_keep_stream_state(
 async def test_failure_during_send_is_not_overwritten(
     stream: TalkMessageStream, mock_signalling_client: MagicMock
 ) -> None:
-    async def send(**kwargs: object) -> None:
+    async def send(**kwargs: Any) -> None:
         stream._mark_delivery_failed()
+        kwargs["admitted"]()
 
     mock_signalling_client.send_talk_stream_input.side_effect = send
 
