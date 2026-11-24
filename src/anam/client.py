@@ -299,17 +299,40 @@ class AnamClient:
 
             return call
 
+        session: Session | None = None
+
+        def torn_down() -> None:
+            if generation == self._session_generation:
+                self._is_streaming = False
+            if session is not None:
+                session._mark_closed()
+
+        closed_emitted = False
+
+        async def connection_closed(code: str, reason: str | None) -> None:
+            nonlocal closed_emitted
+            if closed_emitted:
+                return
+            closed_emitted = True
+            if generation == self._session_generation:
+                await self._handle_connection_closed(code, reason)
+            elif session is not None:
+                # The app holds this session, so it gets its terminal event even after a
+                # newer session started; the client state belongs to the newer one.
+                await self._emit(AnamEvent.CONNECTION_CLOSED, code, reason)
+
         streaming_client = StreamingClient(
             session_info=self._session_info,
             on_message=for_this_session(self._handle_data_message),
             on_connection_established=for_this_session(self._handle_connection_established),
-            on_connection_closed=for_this_session(self._handle_connection_closed),
+            on_connection_closed=connection_closed,
             on_session_ready=for_this_session(self._handle_session_ready),
             on_talk_stream_interrupted=for_this_session(self._handle_talk_stream_interrupted),
             custom_ice_servers=self._options.ice_servers,
             on_talk_stream_delivery_failed=for_this_session(
                 self._handle_talk_stream_delivery_failed
             ),
+            on_torn_down=torn_down,
         )
         self._streaming_client = streaming_client
 
@@ -326,8 +349,9 @@ class AnamClient:
             raise
         self._is_streaming = True
 
-        self._session = Session(self, generation)
-        return self._session
+        session = Session(self, generation)
+        self._session = session
+        return session
 
     async def _handle_data_message(self, data: dict[str, Any]) -> None:
         """Handle data channel message."""

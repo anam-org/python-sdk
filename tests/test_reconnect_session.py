@@ -1279,3 +1279,56 @@ async def test_stale_session_close_keeps_replacement_session(
     assert not session.is_active
     assert new_session.is_active
     assert anam.is_streaming
+
+
+@pytest.mark.asyncio
+async def test_failure_listener_waiting_for_close_is_released(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    events: list[str] = []
+    session = await anam.connect_async()
+
+    async def on_failed(failure: MessageDeliveryFailure) -> None:
+        events.append("failed")
+        async with asyncio.timeout(2.0):
+            await session.wait_until_closed()
+        events.append("released")
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
+    await drop_and_wait_for_gap(engine, anam)
+    await session.create_talk_stream().send("hello")
+    await engine.wait_for(lambda: events == ["failed"])
+    engine.refuse_new = True
+    end_gap(engine)
+
+    await engine.wait_for(lambda: "signalling_failure" in events, timeout=3.0)
+    assert events == ["failed", "released", "signalling_failure"]
+
+
+@pytest.mark.asyncio
+async def test_failure_listener_that_reconnects_gets_close_event_for_old_session(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    closed = record(anam, AnamEvent.CONNECTION_CLOSED)
+    replacement: list[Session] = []
+    session = await anam.connect_async()
+
+    async def on_failed(failure: MessageDeliveryFailure) -> None:
+        if replacement:
+            return
+        await session.close()
+        end_gap(engine)
+        replacement.append(await anam.connect_async())
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
+    await drop_and_wait_for_gap(engine, anam)
+    await session.create_talk_stream().send("hello")
+    await engine.wait_for(lambda: len(replacement) == 1, timeout=5.0)
+
+    await engine.wait_for(lambda: len(closed) == 1)
+    assert closed == [("normal", None)]
+    assert not session.is_active
+    assert replacement[0].is_active
+    assert anam.is_streaming
+    assert await stays(lambda: len(closed) == 1, 0.1)

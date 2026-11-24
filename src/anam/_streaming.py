@@ -65,6 +65,7 @@ class StreamingClient:
         on_talk_stream_interrupted: Callable[[str], Awaitable[None]] | None = None,
         custom_ice_servers: list[dict[str, Any]] | None = None,
         on_talk_stream_delivery_failed: Callable[[str], Awaitable[None]] | None = None,
+        on_torn_down: Callable[[], None] | None = None,
     ):
         """Initialize the streaming client.
 
@@ -75,6 +76,10 @@ class StreamingClient:
             on_session_ready: Callback when sessionready signal is received (ready to receive TTS).
             on_talk_stream_interrupted: Callback(correlation_id) when talk stream is interrupted.
             custom_ice_servers: Custom ICE servers (optional).
+            on_talk_stream_delivery_failed: Callback(correlation_id) for a talk stream whose
+                delivery is unconfirmed.
+            on_torn_down: Called once media and signalling are torn down, before the failure
+                and CONNECTION_CLOSED listeners run.
         """
         self._session_info = session_info
         self._session_id = session_info.session_id
@@ -86,6 +91,7 @@ class StreamingClient:
         self._on_session_ready = on_session_ready
         self._on_talk_stream_interrupted = on_talk_stream_interrupted
         self._on_talk_stream_delivery_failed = on_talk_stream_delivery_failed
+        self._on_torn_down = on_torn_down
 
         # Configuration
         self._ice_servers = custom_ice_servers or session_info.ice_servers
@@ -179,6 +185,8 @@ class StreamingClient:
         assert self._end is not None
         code, reason = self._end
         await self._start_teardown()
+        if self._on_torn_down is not None:
+            self._on_torn_down()
         await self._notify(code, reason)
         self._finished = True
 
