@@ -138,7 +138,6 @@ class SignallingClient:
         self._heartbeat_acks = HeartbeatAcks.UNKNOWN
         self._ever_opened = False
         self._unanswered_replacements = 0
-        self._give_up = False
         self._failed_cids: set[str] = set()
         self._interrupted_cids: set[str] = set()
         self._talk_streams: dict[str, list[weakref.ref[TalkStreamTarget]]] = {}
@@ -335,11 +334,6 @@ class SignallingClient:
                 return
             reason = ws.close_reason or None
             logger.warning("Signalling socket closed: code=%s reason=%s", ws.close_code, reason)
-            if self._give_up:
-                logger.error("Signalling socket replaced too often without an answer")
-                self._end(ConnectionClosedCode.SIGNALLING_FAILURE, reason)
-                return
-
             if time.monotonic() - opened_at >= self.STABLE_CONNECTION_SECONDS:
                 self._connection_attempts = 0
             self._connection_attempts += 1
@@ -542,7 +536,8 @@ class SignallingClient:
                     continue
                 logger.warning("Signalling heartbeat not answered; replacing the socket")
             if self._unanswered_replacements >= self._max_reconnection_attempts:
-                self._give_up = True
+                logger.error("Signalling socket replaced too often without an answer")
+                self._end(ConnectionClosedCode.SIGNALLING_FAILURE, None)
             else:
                 self._unanswered_replacements += 1
             ws.transport.abort()

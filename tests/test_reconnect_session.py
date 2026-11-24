@@ -1017,3 +1017,30 @@ async def test_failure_listener_in_flight_can_close(engine: FakeEngine, anam: An
 
     await engine.wait_for(lambda: "normal" in events, timeout=3.0)
     assert events == ["failed", "closed", "normal"]
+
+
+@pytest.mark.asyncio
+async def test_watchdog_cap_ends_with_signalling_failure_before_listeners(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "SUSPECT_AFTER_SECONDS", 10.0)
+    events: list[str] = []
+    session = await anam.connect_async()
+    sc = signalling(anam)
+
+    async def on_failed(failure: MessageDeliveryFailure) -> None:
+        events.append("failed")
+        await session.close()
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
+    await engine.send(
+        {"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {"sendsHeartbeatAcks": True}}
+    )
+    await engine.wait_for(lambda: sc._heartbeat_acks is HeartbeatAcks.YES)
+    engine.answer_heartbeats = False
+    await engine.wait_for(lambda: len(engine.connections) == 3 and sc._ws is not None)
+    await session.create_talk_stream().send("hello")
+
+    await engine.wait_for(lambda: len(events) == 2, timeout=5.0)
+    assert events == ["failed", "signalling_failure"]
