@@ -1247,3 +1247,25 @@ async def test_first_frame_after_session_end_does_not_reconnect(
 
     assert not streaming.is_connected
     assert await stays(lambda: len(established) == 1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_stale_session_close_keeps_replacement_session(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    replacement: list[asyncio.Task[Session]] = []
+
+    def on_closed(code: str, reason: str | None) -> None:
+        if not replacement:
+            replacement.append(asyncio.create_task(anam.connect_async()))
+
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, on_closed)
+    async with anam.connect() as session:
+        await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+        await session.wait_until_closed()
+        await engine.wait_for(lambda: len(replacement) == 1)
+        new_session = await asyncio.wait_for(replacement[0], 5.0)
+
+    assert not session.is_active
+    assert new_session.is_active
+    assert anam.is_streaming

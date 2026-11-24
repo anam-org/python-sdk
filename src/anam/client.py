@@ -326,7 +326,7 @@ class AnamClient:
             raise
         self._is_streaming = True
 
-        self._session = Session(self)
+        self._session = Session(self, generation)
         return self._session
 
     async def _handle_data_message(self, data: dict[str, Any]) -> None:
@@ -612,13 +612,16 @@ class Session:
     use as an async context manager.
     """
 
-    def __init__(self, client: AnamClient):
+    def __init__(self, client: AnamClient, generation: int | None = None):
         """Initialize the session.
 
         Args:
             client: The parent AnamClient.
+            generation: The connect_async() call that created this session. None means
+                the current one.
         """
         self._client = client
+        self._generation = client._session_generation if generation is None else generation
         self._closed = False
         self._close_event = asyncio.Event()
 
@@ -912,15 +915,19 @@ class Session:
         """Close the session.
 
         Waits like AnamClient.close(), including for the CONNECTION_CLOSED listeners.
+        When the client has started a newer session, only this session is marked closed.
         """
-        self._closed = True
-        self._close_event.set()
-        await self._client.close()
+        self._mark_closed()
+        if self._is_current():
+            await self._client.close()
+
+    def _is_current(self) -> bool:
+        return self._generation == self._client._session_generation
 
     @property
     def is_active(self) -> bool:
         """Check if the session is still active."""
-        return not self._closed and self._client.is_streaming
+        return not self._closed and self._is_current() and self._client.is_streaming
 
     @property
     def session_id(self) -> str | None:
