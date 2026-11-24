@@ -1061,6 +1061,7 @@ async def test_talk_stream_rejects_sends_after_session_end(
     session = await anam.connect_async()
     sc = signalling(anam)
     stream = session.create_talk_stream()
+    unstarted = session.create_talk_stream()
     await stream.send("one")
     await engine.wait_for(lambda: not sc._monitor.is_tracked(stream.correlation_id))
     if ending == "endsession":
@@ -1073,7 +1074,10 @@ async def test_talk_stream_rejects_sends_after_session_end(
         await stream.send("two")
     with pytest.raises(RuntimeError):
         await stream.end()
+    with pytest.raises(RuntimeError):
+        await unstarted.end()
     assert stream.state is TalkMessageStreamState.STREAMING
+    assert unstarted.state is TalkMessageStreamState.UNSTARTED
     assert sc._dispatch_queue.empty()
     assert await stays(lambda: failed == [], 0.1)
 
@@ -1332,3 +1336,40 @@ async def test_failure_listener_that_reconnects_gets_close_event_for_old_session
     assert replacement[0].is_active
     assert anam.is_streaming
     assert await stays(lambda: len(closed) == 1, 0.1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("call", ["send", "end"])
+async def test_chunk_waiting_for_lock_is_dropped_after_interruption(
+    engine: FakeEngine, anam: AnamClient, call: str
+) -> None:
+    failed = record(anam, AnamEvent.MESSAGE_DELIVERY_FAILED)
+    session = await anam.connect_async()
+    sc = signalling(anam)
+    old = session.create_talk_stream()
+    await old.send("one")
+    await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
+
+    await sc._send_lock.acquire()
+    try:
+        waiting = asyncio.create_task(old.send("two") if call == "send" else old.end())
+        await asyncio.sleep(0)
+        await engine.send(
+            {
+                "actionType": "talkinputstreaminterrupted",
+                "sessionId": SESSION_ID,
+                "payload": {"correlationId": old.correlation_id},
+            }
+        )
+        await engine.wait_for(lambda: old.state is TalkMessageStreamState.INTERRUPTED)
+        new = session.create_talk_stream(old.correlation_id)
+    finally:
+        sc._send_lock.release()
+    await asyncio.wait_for(waiting, 2.0)
+
+    await new.send("three")
+    await engine.wait_for(lambda: len(engine.received_actions("talkstream")) >= 2)
+    contents = [m["payload"]["content"] for _, m in engine.received_actions("talkstream")]
+    assert contents == ["one", "three"]
+    assert new.state is TalkMessageStreamState.STREAMING
+    assert failed == []

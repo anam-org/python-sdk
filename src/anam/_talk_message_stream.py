@@ -1,7 +1,6 @@
 """Talk message stream for sending streaming text to TTS via WebSocket signalling."""
 
 import asyncio
-import functools
 import logging
 import uuid
 from enum import Enum
@@ -158,12 +157,15 @@ class TalkMessageStream:
                     f"utterance_id must be a canonical UUID v4 string, got {utterance_id!r}"
                 )
 
-        def admitted() -> None:
+        def admitted() -> bool:
+            if not self.is_active:
+                return False
             if utterance_id is not None:
                 self._last_utterance_id = utterance_id
             self._transition(
                 TalkMessageStreamState.ENDED if end_of_speech else TalkMessageStreamState.STREAMING
             )
+            return True
 
         async with self._send_lock:
             self._require_active()
@@ -184,15 +186,17 @@ class TalkMessageStream:
         """Signal end of speech with an empty chunk.
 
         Use when you've sent all content chunks but need to explicitly end
-        the stream. No-op if the stream is already ended.
+        the stream. No-op if the stream is already ended and the session is open.
 
         The terminator carries the most recent utterance_id passed to send(), so it
         does not start a new untagged utterance.
 
         Raises:
-            RuntimeError: If the session has ended.
+            RuntimeError: If the session has ended, in every stream state.
         """
         async with self._send_lock:
+            if self._signalling_client.is_permanently_closed:
+                raise RuntimeError("Cannot end a talk stream: the session has ended")
             if self._state == TalkMessageStreamState.ENDED:
                 logger.debug(
                     "Talk stream is already ended via end of speech. No need to call end()."
@@ -209,8 +213,14 @@ class TalkMessageStream:
                 start_of_speech=False,
                 end_of_speech=True,
                 utterance_id=self._last_utterance_id,
-                admitted=functools.partial(self._transition, TalkMessageStreamState.ENDED),
+                admitted=self._admit_end,
             )
+
+    def _admit_end(self) -> bool:
+        if self._state != TalkMessageStreamState.STREAMING:
+            return False
+        self._transition(TalkMessageStreamState.ENDED)
+        return True
 
     def _mark_delivery_failed(self) -> None:
         self._transition(TalkMessageStreamState.DELIVERY_FAILED)

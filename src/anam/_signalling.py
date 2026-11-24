@@ -787,7 +787,7 @@ class SignallingClient:
         start_of_speech: bool = True,
         end_of_speech: bool = True,
         utterance_id: str | None = None,
-        admitted: Callable[[], None] | None = None,
+        admitted: Callable[[], bool] | None = None,
     ) -> None:
         """Send talk stream input to make the avatar speak text directly.
 
@@ -802,7 +802,10 @@ class SignallingClient:
             utterance_id: Optional ID marking the first chunk of a new utterance. None
                 continues the current utterance; a different ID queues a new one after it.
                 Validated by TalkMessageStream.send(); not re-checked here.
-            admitted: See send_message().
+            admitted: Called under the send lock before the chunk is written or buffered.
+                It returns False when the originating stream can no longer send, and the
+                chunk is then dropped. A replacement stream with the same correlation id
+                does not make it live again.
 
         Raises:
             RuntimeError: If the session has ended.
@@ -824,9 +827,7 @@ class SignallingClient:
         async with self._send_lock:
             if self.is_permanently_closed:
                 raise RuntimeError("Cannot send a talk stream chunk: the session has ended")
-            if admitted is not None:
-                admitted()
-            if self._is_dead_stream(correlation_id):
+            if (admitted is not None and not admitted()) or self._is_dead_stream(correlation_id):
                 logger.debug("Dropping talk stream chunk for an interrupted or failed stream")
             elif self._heartbeat_acks is HeartbeatAcks.NO or not self._ever_opened:
                 await self._send_or_buffer(message)

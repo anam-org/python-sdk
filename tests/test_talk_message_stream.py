@@ -19,6 +19,7 @@ UTTERANCE_B = "d990d82a-29a5-4874-b870-a9f07e024108"
 def mock_signalling_client() -> MagicMock:
     """Create a mock SignallingClient with async send_talk_stream_input."""
     client = MagicMock()
+    client.is_permanently_closed = False
     client.send_talk_stream_input = AsyncMock(side_effect=admit)
     return client
 
