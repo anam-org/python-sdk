@@ -14,9 +14,7 @@ def monitor(clock: list[float]) -> HeartbeatMonitor:
 
 
 def send_heartbeat(monitor: HeartbeatMonitor) -> int:
-    seq = monitor.next_seq()
-    monitor.record_sent(seq)
-    return seq
+    return monitor.start_heartbeat()
 
 
 def test_ack_confirms_chunks_written_before_heartbeat(monitor: HeartbeatMonitor) -> None:
@@ -24,7 +22,7 @@ def test_ack_confirms_chunks_written_before_heartbeat(monitor: HeartbeatMonitor)
     seq = send_heartbeat(monitor)
 
     assert monitor.on_ack(seq) is not None
-    assert monitor.reset() == []
+    assert monitor.abandon() == []
 
 
 def test_ack_does_not_confirm_chunks_written_after_heartbeat(monitor: HeartbeatMonitor) -> None:
@@ -33,7 +31,7 @@ def test_ack_does_not_confirm_chunks_written_after_heartbeat(monitor: HeartbeatM
 
     monitor.on_ack(seq)
 
-    assert monitor.reset() == ["b"]
+    assert monitor.abandon() == ["b"]
 
 
 def test_unknown_seq_confirms_nothing(monitor: HeartbeatMonitor) -> None:
@@ -41,7 +39,7 @@ def test_unknown_seq_confirms_nothing(monitor: HeartbeatMonitor) -> None:
     send_heartbeat(monitor)
 
     assert monitor.on_ack(99) is None
-    assert monitor.reset() == ["a"]
+    assert monitor.abandon() == ["a"]
 
 
 def test_ack_returns_round_trip_time(monitor: HeartbeatMonitor, clock: list[float]) -> None:
@@ -62,14 +60,14 @@ def test_ack_clears_earlier_pending_heartbeats(monitor: HeartbeatMonitor) -> Non
     assert monitor.on_ack(first) is None
 
 
-def test_expire_fails_unconfirmed_once_and_dedupes(monitor: HeartbeatMonitor) -> None:
+def test_abandon_fails_unconfirmed_once_and_dedupes(monitor: HeartbeatMonitor) -> None:
     monitor.track_chunk("a")
     monitor.track_chunk("a")
     monitor.track_chunk("b")
     send_heartbeat(monitor)
 
-    assert monitor.expire() == ["a", "b"]
-    assert monitor.expire() == []
+    assert monitor.abandon() == ["a", "b"]
+    assert monitor.abandon() == []
     assert monitor.ack_deadline() is None
 
 
@@ -116,7 +114,7 @@ def test_drop_prevents_failure(monitor: HeartbeatMonitor) -> None:
     monitor.drop("a")
 
     assert not monitor.is_tracked("a")
-    assert monitor.reset() == ["b"]
+    assert monitor.abandon() == ["b"]
 
 
 def test_disabled_tracks_nothing(monitor: HeartbeatMonitor, clock: list[float]) -> None:
@@ -133,28 +131,27 @@ def test_disabled_tracks_nothing(monitor: HeartbeatMonitor, clock: list[float]) 
     assert not monitor.is_suspect()
     assert not monitor.needs_probe()
     assert monitor.ack_deadline() is None
-    assert monitor.expire() == []
-    assert monitor.reset() == []
+    assert monitor.abandon() == []
 
 
-def test_seq_never_resets_after_reset(monitor: HeartbeatMonitor) -> None:
+def test_seq_never_resets_after_abandon(monitor: HeartbeatMonitor) -> None:
     first = send_heartbeat(monitor)
-    monitor.reset()
+    monitor.abandon()
     second = send_heartbeat(monitor)
     monitor.disable()
 
     assert second == first + 1
-    assert monitor.next_seq() == second + 1
+    assert monitor.start_heartbeat() == second + 1
 
 
-def test_stale_ack_after_reset_confirms_nothing(monitor: HeartbeatMonitor) -> None:
+def test_stale_ack_after_abandon_confirms_nothing(monitor: HeartbeatMonitor) -> None:
     old = send_heartbeat(monitor)
-    monitor.reset()
+    monitor.abandon()
     monitor.track_chunk("a")
     send_heartbeat(monitor)
 
     assert monitor.on_ack(old) is None
-    assert monitor.reset() == ["a"]
+    assert monitor.abandon() == ["a"]
 
 
 def test_is_tracked(monitor: HeartbeatMonitor) -> None:

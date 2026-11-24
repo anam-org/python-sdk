@@ -7,7 +7,7 @@ import pytest
 import pytest_asyncio
 
 from anam._heartbeat_monitor import HeartbeatMonitor
-from anam._signalling import SignallingClient
+from anam._signalling import HeartbeatAcks, SignallingClient
 
 from .fake_engine import SESSION_ID, FakeEngine, session_info_for, stays
 
@@ -66,7 +66,8 @@ async def make_client(engine: FakeEngine, failures: list[str]) -> AsyncIterator[
 async def announce_acks(engine: FakeEngine, client: SignallingClient, acks: bool) -> None:
     payload: dict[str, Any] = {"sendsHeartbeatAcks": True} if acks else {}
     await engine.send({"actionType": "sessionready", "sessionId": SESSION_ID, "payload": payload})
-    await engine.wait_for(lambda: client._engine_sends_heartbeat_acks is acks)
+    expected = HeartbeatAcks.YES if acks else HeartbeatAcks.NO
+    await engine.wait_for(lambda: client._heartbeat_acks is expected)
 
 
 async def talk(client: SignallingClient, correlation_id: str) -> None:

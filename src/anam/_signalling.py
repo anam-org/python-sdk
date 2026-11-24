@@ -33,6 +33,14 @@ async def _wait(event: asyncio.Event, timeout: float) -> None:
         pass
 
 
+class HeartbeatAcks(Enum):
+    """Whether the engine answers heartbeats, as announced in sessionready."""
+
+    UNKNOWN = "unknown"
+    YES = "yes"
+    NO = "no"
+
+
 class SignalAction(str, Enum):
     """Signal message action types."""
 
@@ -112,7 +120,7 @@ class SignallingClient:
         self._dispatch_queue: asyncio.Queue[_DispatchItem] = asyncio.Queue()
 
         self._monitor = HeartbeatMonitor()
-        self._engine_sends_heartbeat_acks: bool | None = None
+        self._heartbeat_acks = HeartbeatAcks.UNKNOWN
         self._ever_opened = False
         self._unanswered_replacements = 0
         self._give_up = False
@@ -211,7 +219,7 @@ class SignallingClient:
         await asyncio.gather(*tasks, return_exceptions=True)
         if self._write_started is not None and self._write_started[0] is ws:
             self._write_started = None
-        self._queue_failures(self._monitor.reset())
+        self._queue_failures(self._monitor.abandon())
 
     async def _supervise(self, ws: ClientConnection, opened_at: float) -> None:
         loop = asyncio.get_running_loop()
@@ -305,9 +313,10 @@ class SignallingClient:
         if action_type == SignalAction.END_SESSION.value:
             self._server_ended = True
         elif action_type == SignalAction.SESSION_READY.value:
-            acks = isinstance(payload, dict) and payload.get("sendsHeartbeatAcks") is True
-            self._engine_sends_heartbeat_acks = acks
-            if not acks:
+            if isinstance(payload, dict) and payload.get("sendsHeartbeatAcks") is True:
+                self._heartbeat_acks = HeartbeatAcks.YES
+            else:
+                self._heartbeat_acks = HeartbeatAcks.NO
                 self._monitor.disable()
         elif action_type == SignalAction.TALK_STREAM_INTERRUPTED.value:
             correlation_id = payload.get("correlationId") if isinstance(payload, dict) else None
@@ -379,9 +388,8 @@ class SignallingClient:
             async with self._send_lock:
                 if self._stop_signal or ws.state is not State.OPEN:
                     return
-                seq = self._monitor.next_seq()
                 # websockets writes the frame before awaiting drain, so the ack can arrive first.
-                self._monitor.record_sent(seq)
+                seq = self._monitor.start_heartbeat()
                 self._watchdog_wake.set()
                 message = {
                     "actionType": SignalAction.HEARTBEAT.value,
@@ -412,9 +420,9 @@ class SignallingClient:
             if stall_deadline is not None and stall_deadline <= now:
                 logger.warning("Signalling write stalled; replacing the socket")
             else:
-                failed = self._monitor.expire()
+                failed = self._monitor.abandon()
                 self._queue_failures(failed)
-                if self._engine_sends_heartbeat_acks is None and not failed:
+                if self._heartbeat_acks is HeartbeatAcks.UNKNOWN and not failed:
                     continue
                 logger.warning("Signalling heartbeat not answered; replacing the socket")
             if self._unanswered_replacements >= self._max_reconnection_attempts:
@@ -437,6 +445,7 @@ class SignallingClient:
         self._probe_wake.set()
 
     async def _flush(self, ws: ClientConnection) -> None:
+        assert self._send_lock.locked()
         self._buffer_overflowed = False
         while self._send_buffer and not self.is_permanently_closed:
             if ws.state is not State.OPEN:
@@ -446,7 +455,7 @@ class SignallingClient:
             if correlation_id is not None:
                 if correlation_id in self._failed_cids:
                     continue
-                if self._engine_sends_heartbeat_acks is not False:
+                if self._heartbeat_acks is not HeartbeatAcks.NO:
                     self._track(correlation_id)
             try:
                 await self._write(ws, message)
@@ -505,6 +514,7 @@ class SignallingClient:
         await self._report_now(failed)
 
     async def _send_or_buffer(self, message: dict[str, Any]) -> list[str]:
+        assert self._send_lock.locked()
         ws = self._ws
         if ws is None or ws.state is not State.OPEN:
             return self._buffer(message)
@@ -672,9 +682,9 @@ class SignallingClient:
                 return
             if self._permanently_closed:
                 failed = self._claim_failures([correlation_id])
-            elif self._engine_sends_heartbeat_acks is False or not self._ever_opened:
+            elif self._heartbeat_acks is HeartbeatAcks.NO or not self._ever_opened:
                 failed = await self._send_or_buffer(message)
-            elif self._engine_sends_heartbeat_acks is True and self._monitor.is_suspect():
+            elif self._heartbeat_acks is HeartbeatAcks.YES and self._monitor.is_suspect():
                 logger.warning("Refusing talk stream chunk: the signalling socket looks dead")
                 failed = self._claim_failures([correlation_id])
             elif self._ws is None or self._ws.state is not State.OPEN:
