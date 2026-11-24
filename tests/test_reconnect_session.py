@@ -341,6 +341,8 @@ async def test_talk_chunk_in_gap_fails_stream(engine: FakeEngine, anam: AnamClie
     await drop_and_wait_for_gap(engine, anam)
     await stream.send("hello")
 
+    assert stream.state is TalkMessageStreamState.DELIVERY_FAILED
+    await engine.wait_for(lambda: len(seen) == 1)
     assert seen == [
         (
             MessageDeliveryFailure("talk_stream", stream.correlation_id),
@@ -416,11 +418,11 @@ async def test_endsession_racing_peer_close_reports_server_closed(
     await engine.send({"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {}})
     await asyncio.wait_for(listener_started.wait(), 2.0)
 
-    await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
-    await engine.wait_for(lambda: sc.server_ended)
     await peer_connected(engine, anam)
+    await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
     await engine.close_peer()
     await asyncio.wait_for(session.wait_until_closed(), 2.0)
+    assert sc.server_ended
     release.set()
 
     await engine.wait_for(lambda: all_tasks_done(sc))
@@ -467,6 +469,7 @@ async def test_signalling_failure_ends_pending_frame_read(
     await exhaust_retries(engine)
 
     await asyncio.wait_for(reader, 2.0)
+    await engine.wait_for(lambda: len(closed) == 1)
     assert [event[0] for event in closed] == ["signalling_failure"]
 
 

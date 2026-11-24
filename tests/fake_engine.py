@@ -25,6 +25,7 @@ class FakeEngine:
         self.hold_handshake: asyncio.Event | None = None
         self.drop_on_open = False
         self.answer_heartbeats = True
+        self.hold_heartbeat_answers: asyncio.Event | None = None
         self.answer_offers: Literal["none", "fake", "aiortc"] = "fake"
         self.peers: list[RTCPeerConnection] = []
         self._server: Server | None = None
@@ -74,6 +75,8 @@ class FakeEngine:
         action = message.get("actionType")
         payload = message.get("payload")
         if action == "heartbeat" and self.answer_heartbeats:
+            if self.hold_heartbeat_answers is not None:
+                await self.hold_heartbeat_answers.wait()
             if isinstance(payload, dict) and type(payload.get("seq")) is int:
                 await ws.send(
                     json.dumps(

@@ -7,7 +7,6 @@ import json
 import logging
 import math
 import uuid
-import weakref
 from collections.abc import AsyncIterator
 from typing import Any, Awaitable, Callable, TypeVar
 
@@ -23,7 +22,6 @@ from .types import (
     AgentAudioInputConfig,
     AnamEvent,
     ClientOptions,
-    ConnectionClosedCode,
     Message,
     MessageDeliveryFailure,
     MessageRole,
@@ -169,11 +167,7 @@ class AnamClient:
 
         self._session: Session | None = None
         self._session_generation = 0
-        self._connection_closed_emitted = False
         self._session_ready_emitted = False
-        self._talk_streams: weakref.WeakValueDictionary[str, TalkMessageStream] = (
-            weakref.WeakValueDictionary()
-        )
 
     def on(self, event: AnamEvent) -> Callable[[T], T]:
         """Decorator to register an event handler.
@@ -274,10 +268,9 @@ class AnamClient:
 
         logger.info("Connecting to Anam...")
         self._session_generation += 1
+        generation = self._session_generation
         self._session = None
-        self._connection_closed_emitted = False
         self._session_ready_emitted = False
-        self._talk_streams = weakref.WeakValueDictionary()
         self._message_history = []
 
         # Create API client and start session
@@ -317,10 +310,9 @@ class AnamClient:
 
         try:
             await streaming_client.connect()
-            if self._connection_closed_emitted:
-                raise SessionError("Session closed during startup")
+            if generation != self._session_generation:
+                raise SessionError("Session was replaced during startup")
         except BaseException:
-            generation = self._session_generation
             if self._streaming_client is streaming_client:
                 self._streaming_client = None
             await streaming_client.close()
@@ -487,18 +479,12 @@ class AnamClient:
         await self._emit(AnamEvent.TALK_STREAM_INTERRUPTED, correlation_id)
 
     async def _handle_talk_stream_delivery_failed(self, correlation_id: str) -> None:
-        stream = self._talk_streams.get(correlation_id)
-        if stream is not None:
-            stream._mark_delivery_failed()
         await self._emit(
             AnamEvent.MESSAGE_DELIVERY_FAILED,
             MessageDeliveryFailure("talk_stream", correlation_id),
         )
 
     async def _handle_connection_closed(self, code: str, reason: str | None) -> None:
-        if self._connection_closed_emitted:
-            return
-        self._connection_closed_emitted = True
         logger.debug("Connection closed: %s", code)
         self._is_streaming = False
         if self._session is not None:
@@ -524,20 +510,24 @@ class AnamClient:
         return self._streaming_client.create_agent_audio_input_stream(config)
 
     async def close(self) -> None:
-        """Close the connection and clean up resources."""
+        """Close the connection and clean up resources.
+
+        Returns once the teardown has finished. Called from a CONNECTION_CLOSED listener,
+        it returns at once instead.
+        """
         streaming_client = self._streaming_client
         if streaming_client is None:
             return
         generation = self._session_generation
-        self._streaming_client = None
-        if self._is_streaming:
-            await self._handle_connection_closed(ConnectionClosedCode.NORMAL.value, None)
-        else:
-            self._connection_closed_emitted = True
-        await streaming_client.close()
-        if generation == self._session_generation:
-            self._session_info = None
-            self._message_history.clear()
+        try:
+            await streaming_client.close()
+        finally:
+            if self._streaming_client is streaming_client:
+                self._streaming_client = None
+                self._is_streaming = False
+            if generation == self._session_generation:
+                self._session_info = None
+                self._message_history.clear()
         logger.info("Client closed")
 
     @property
@@ -780,7 +770,6 @@ class Session:
             signalling_client=signalling_client,
             client=self._client,
         )
-        self._client._talk_streams[correlation_id] = stream
         return stream
 
     async def send_talk_stream(self, content: str, utterance_id: str | None = None) -> None:

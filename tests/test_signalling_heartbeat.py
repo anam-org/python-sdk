@@ -1,17 +1,19 @@
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 import pytest_asyncio
 
 from anam._heartbeat_monitor import HeartbeatMonitor
 from anam._signalling import HeartbeatAcks, SignallingClient
+from anam.types import ConnectionClosedCode
 
 from .fake_engine import SESSION_ID, FakeEngine, session_info_for, stays
 
 ClientFactory = Callable[..., SignallingClient]
+FailureCallback = Callable[[str], Awaitable[None]]
 
 
 @pytest.fixture(autouse=True)
@@ -43,16 +45,16 @@ async def make_client(engine: FakeEngine, failures: list[str]) -> AsyncIterator[
         failures.append(correlation_id)
 
     def factory(
-        on_message: Any = None,
-        on_close: Any = None,
-        on_failed: Any = None,
+        on_message: AsyncMock | None = None,
+        on_end: Mock | None = None,
+        on_failed: FailureCallback | None = None,
         **info: Any,
     ) -> SignallingClient:
         client = SignallingClient(
             session_info_for(engine, heartbeat_interval_seconds=0.1, **info),
             on_message=on_message or AsyncMock(),
             on_open=AsyncMock(),
-            on_close=on_close or AsyncMock(),
+            on_end=on_end or Mock(),
             on_talk_stream_delivery_failed=on_failed or record_failure,
         )
         created.append(client)
@@ -109,8 +111,7 @@ def end_gap(engine: FakeEngine) -> None:
     engine.hold_handshake.set()
 
 
-async def sync_dispatch(engine: FakeEngine, client: SignallingClient) -> None:
-    on_message: AsyncMock = client._on_message
+async def sync_dispatch(engine: FakeEngine, on_message: AsyncMock) -> None:
     await engine.send({"actionType": "sync", "payload": {}})
     await engine.wait_for(
         lambda: any(call.args[0].get("actionType") == "sync" for call in on_message.call_args_list)
@@ -140,8 +141,12 @@ async def test_chunk_confirmed_then_drop_reports_nothing(
     client = make_client()
     await client.connect()
     await announce_acks(engine, client, True)
+    engine.hold_heartbeat_answers = asyncio.Event()
 
     await talk(client, "a")
+    await engine.wait_for(lambda: talk_cids(engine, 0) == ["a"])
+    assert client._monitor.is_tracked("a")
+    engine.hold_heartbeat_answers.set()
     await engine.wait_for(lambda: not client._monitor.is_tracked("a"))
     await engine.drop("abort")
     await round_trip_on(engine, 1)
@@ -210,7 +215,7 @@ async def test_chunk_during_gap_fails_immediately(
 
     await drop_and_wait_for_gap(engine, client)
     await talk(client, "a")
-    assert failures == ["a"]
+    await engine.wait_for(lambda: failures == ["a"])
     end_gap(engine)
     await round_trip_on(engine, 1)
 
@@ -262,12 +267,14 @@ async def test_stalled_write_replaces_socket(
 async def test_unanswered_replacements_capped(
     engine: FakeEngine, make_client: ClientFactory
 ) -> None:
-    client = make_client(max_reconnection_attempts=2)
+    on_end = Mock()
+    client = make_client(on_end=on_end, max_reconnection_attempts=2)
     await client.connect()
     await announce_acks(engine, client, True)
     engine.answer_heartbeats = False
 
-    await engine.wait_for(lambda: client._on_close.await_count == 1, timeout=5.0)
+    await engine.wait_for(lambda: on_end.call_count == 1, timeout=5.0)
+    on_end.assert_called_once_with(ConnectionClosedCode.SIGNALLING_FAILURE, ANY)
 
     assert len(engine.connections) == 3
     assert client.is_permanently_closed
@@ -306,17 +313,18 @@ async def test_ack_parsing_rejects_non_int_seq(
 ) -> None:
     monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     engine.answer_heartbeats = False
-    client = make_client()
+    on_message = AsyncMock()
+    client = make_client(on_message=on_message)
     await client.connect()
     await engine.wait_for(lambda: len(heartbeat_seqs(engine, 0)) >= 2)
     last = heartbeat_seqs(engine, 0)[-1]
 
     for payload in ({"seq": True}, {"seq": str(last)}, {"seq": float(last)}, {}, ""):
         await engine.send({"actionType": "heartbeat", "sessionId": SESSION_ID, "payload": payload})
-    await sync_dispatch(engine, client)
+    await sync_dispatch(engine, on_message)
 
     assert any(hb.seq <= last for hb in client._monitor._pending)
-    forwarded = [call.args[0]["actionType"] for call in client._on_message.call_args_list]
+    forwarded = [call.args[0]["actionType"] for call in on_message.call_args_list]
     assert forwarded == ["sync"]
 
     await engine.send(
@@ -353,7 +361,8 @@ async def test_interrupted_stream_not_reported(
 ) -> None:
     monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     engine.answer_heartbeats = False
-    client = make_client()
+    on_message = AsyncMock()
+    client = make_client(on_message=on_message)
     await client.connect()
 
     await talk(client, "a")
@@ -370,7 +379,7 @@ async def test_interrupted_stream_not_reported(
     await round_trip_on(engine, 1)
 
     assert await stays(lambda: failures == [], 0.1)
-    forwarded = [call.args[0]["actionType"] for call in client._on_message.call_args_list]
+    forwarded = [call.args[0]["actionType"] for call in on_message.call_args_list]
     assert "talkinputstreaminterrupted" in forwarded
 
 
@@ -409,7 +418,8 @@ async def test_stale_ack_after_reconnect_confirms_nothing(
 ) -> None:
     monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     engine.answer_heartbeats = False
-    client = make_client()
+    on_message = AsyncMock()
+    client = make_client(on_message=on_message)
     await client.connect()
     await engine.wait_for(lambda: len(heartbeat_seqs(engine, 0)) >= 1)
     stale = heartbeat_seqs(engine, 0)[-1]
@@ -427,7 +437,7 @@ async def test_stale_ack_after_reconnect_confirms_nothing(
     await engine.send(
         {"actionType": "heartbeat", "sessionId": SESSION_ID, "payload": {"seq": stale}}
     )
-    await sync_dispatch(engine, client)
+    await sync_dispatch(engine, on_message)
     assert client._monitor.is_tracked("a")
     assert client._unanswered_replacements == 1
 
@@ -479,7 +489,7 @@ async def test_send_for_failed_correlation_id_is_dropped(
     await talk(client, "b")
     await engine.wait_for(lambda: talk_cids(engine, 1) == ["b"])
 
-    assert failures == ["a"]
+    assert await stays(lambda: failures == ["a"], 0.1)
 
 
 @pytest.mark.asyncio
@@ -491,7 +501,8 @@ async def test_suspect_refusal_only_after_acks_confirmed(
 ) -> None:
     monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     engine.answer_heartbeats = False
-    client = make_client()
+    on_message = AsyncMock()
+    client = make_client(on_message=on_message)
     await client.connect()
     await engine.wait_for(client._monitor.is_suspect)
 
@@ -502,8 +513,8 @@ async def test_suspect_refusal_only_after_acks_confirmed(
     await announce_acks(engine, client, True)
     assert client._monitor.is_suspect()
     await talk(client, "b")
-    assert failures == ["b"]
-    await sync_dispatch(engine, client)
+    await engine.wait_for(lambda: failures == ["b"])
+    await sync_dispatch(engine, on_message)
     assert talk_cids(engine) == ["a"]
 
 
@@ -521,8 +532,9 @@ async def test_evicted_talk_chunk_is_reported(
     for cid in ("a", "b", "c"):
         await talk(client, cid)
 
-    assert failures == ["a"]
     assert [message["payload"]["correlationId"] for message in client._send_buffer] == ["b", "c"]
+    await engine.wait_for(lambda: failures == ["a"])
+    await client.close()
 
 
 @pytest.mark.asyncio
@@ -541,20 +553,11 @@ async def test_chunk_buffered_before_first_open_is_tracked_on_flush(
 
 
 @pytest.mark.asyncio
-async def test_terminal_close_reports_buffered_talk_chunks_before_on_close(
-    engine: FakeEngine, make_client: ClientFactory
+async def test_terminal_close_hands_buffered_talk_chunks_to_take_failures(
+    engine: FakeEngine, make_client: ClientFactory, failures: list[str]
 ) -> None:
-    order: list[str] = []
-
-    async def on_failed(correlation_id: str) -> None:
-        order.append(f"failed:{correlation_id}")
-
-    async def on_close(code: int | None, reason: str) -> None:
-        order.append("closed")
-
-    client = make_client(
-        on_failed=on_failed, on_close=AsyncMock(side_effect=on_close), max_reconnection_attempts=1
-    )
+    on_end = Mock()
+    client = make_client(on_end=on_end, max_reconnection_attempts=1)
     await client.connect()
     await announce_acks(engine, client, False)
 
@@ -565,5 +568,7 @@ async def test_terminal_close_reports_buffered_talk_chunks_before_on_close(
     engine.refuse_new = True
     end_gap(engine)
 
-    await engine.wait_for(lambda: "closed" in order)
-    assert order == ["failed:a", "failed:b", "closed"]
+    await engine.wait_for(lambda: on_end.call_count == 1)
+    assert client.take_failures(include_unconfirmed=True) == ["a", "b"]
+    assert client._send_buffer == []
+    assert failures == []

@@ -9,7 +9,7 @@ from websockets.protocol import State
 
 from anam._signalling import SignallingClient
 from anam._streaming import StreamingClient
-from anam.types import SessionInfo
+from anam.types import ConnectionClosedCode, SessionInfo
 
 
 @pytest.fixture
@@ -64,18 +64,20 @@ async def test_local_close_sends_end_session_before_signalling_close(
 async def test_server_end_session_does_not_echo(
     session_info: SessionInfo, signalling: MagicMock, reenter_close: bool
 ) -> None:
-    client = StreamingClient(session_info)
-    client._signalling_client = signalling
-
     async def on_closed(code: str, reason: str | None) -> None:
-        assert client._server_ended
+        signalling.close.assert_awaited_once_with()
         if reenter_close:
-            await client.close()
+            await asyncio.wait_for(client.close(), timeout=1.0)
 
-    client._on_connection_closed = AsyncMock(side_effect=on_closed)
-    await client._handle_signal_message({"actionType": "endsession", "payload": "done"})
+    on_connection_closed = AsyncMock(side_effect=on_closed)
+    client = StreamingClient(session_info, on_connection_closed=on_connection_closed)
+    client._signalling_client = signalling
+    client._started = True
 
-    client._on_connection_closed.assert_awaited_once()
+    client._terminate(ConnectionClosedCode.SERVER_CLOSED, "done")
+    await client.close()
+
+    on_connection_closed.assert_awaited_once_with("server_closed", "done")
     signalling.send_end_session.assert_not_awaited()
     signalling.close.assert_awaited_once_with()
 
@@ -133,7 +135,6 @@ async def test_cancelled_end_session_allows_cleanup_retry(
     with pytest.raises(asyncio.CancelledError):
         await client.close()
 
-    assert not client._closing
     assert not client.is_connected
     signalling.send_end_session.side_effect = None
     await client.close()
@@ -170,7 +171,6 @@ async def test_failed_end_session_does_not_block_cleanup(
     peer.close.assert_awaited_once_with()
     assert signalling._send_buffer == []
     assert signalling._ws is None
-    assert not client._closing
 
 
 @pytest.mark.asyncio

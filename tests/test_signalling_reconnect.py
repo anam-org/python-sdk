@@ -1,14 +1,14 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 import pytest_asyncio
 from websockets.asyncio.client import ClientConnection
 
 from anam._signalling import SignallingClient
-from anam.types import AgentAudioInputPayload
+from anam.types import AgentAudioInputPayload, ConnectionClosedCode
 
 from .fake_engine import SESSION_ID, FakeEngine, session_info_for, stays
 
@@ -32,15 +32,16 @@ async def make_client(engine: FakeEngine) -> AsyncIterator[ClientFactory]:
     created: list[SignallingClient] = []
 
     def factory(
-        on_message: Any = None,
-        on_close: Any = None,
+        on_message: AsyncMock | None = None,
+        on_open: AsyncMock | None = None,
+        on_end: Mock | None = None,
         **info: Any,
     ) -> SignallingClient:
         client = SignallingClient(
             session_info_for(engine, **info),
             on_message=on_message or AsyncMock(),
-            on_open=AsyncMock(),
-            on_close=on_close or AsyncMock(),
+            on_open=on_open or AsyncMock(),
+            on_end=on_end or Mock(),
         )
         created.append(client)
         return client
@@ -78,31 +79,34 @@ async def drop_and_wait_for_gap(engine: FakeEngine, client: SignallingClient) ->
 async def test_drop_reconnects_to_same_url(
     engine: FakeEngine, make_client: ClientFactory, mode: str
 ) -> None:
-    client = make_client()
+    on_open = AsyncMock()
+    on_end = Mock()
+    client = make_client(on_open=on_open, on_end=on_end)
     await client.connect()
 
     await engine.drop(mode)
     await engine.wait_for(lambda: bool(engine.received_on(1)))
 
     assert engine.paths == [f"/ws?session_id={SESSION_ID}"] * 2
-    client._on_close.assert_not_awaited()
-    client._on_open.assert_awaited_once()
+    on_end.assert_not_called()
+    on_open.assert_awaited_once()
     assert not client.is_permanently_closed
 
 
 @pytest.mark.asyncio
-async def test_retries_exhausted_calls_on_close_once(
+async def test_retries_exhausted_calls_on_end_once(
     engine: FakeEngine, make_client: ClientFactory
 ) -> None:
-    client = make_client(max_reconnection_attempts=3)
+    on_end = Mock()
+    client = make_client(on_end=on_end, max_reconnection_attempts=3)
     await client.connect()
 
     engine.refuse_new = True
     await engine.drop("abort")
-    await engine.wait_for(lambda: client._on_close.await_count == 1)
+    await engine.wait_for(lambda: on_end.call_count == 1)
 
     assert await stays(lambda: engine.connect_attempts == 1 + 3, 0.1)
-    client._on_close.assert_awaited_once()
+    on_end.assert_called_once_with(ConnectionClosedCode.SIGNALLING_FAILURE, ANY)
     assert client.is_permanently_closed
 
 
@@ -110,22 +114,24 @@ async def test_retries_exhausted_calls_on_close_once(
 async def test_open_then_drop_still_exhausts(
     engine: FakeEngine, make_client: ClientFactory
 ) -> None:
-    client = make_client(max_reconnection_attempts=3)
+    on_end = Mock()
+    client = make_client(on_end=on_end, max_reconnection_attempts=3)
     await client.connect()
 
     engine.drop_on_open = True
     await engine.drop("abort")
-    await engine.wait_for(lambda: client._on_close.await_count == 1)
+    await engine.wait_for(lambda: on_end.call_count == 1)
 
     assert await stays(lambda: engine.connect_attempts == 1 + 3, 0.1)
-    client._on_close.assert_awaited_once()
+    on_end.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_stable_socket_resets_attempts(
     engine: FakeEngine, make_client: ClientFactory
 ) -> None:
-    client = make_client(max_reconnection_attempts=2)
+    on_end = Mock()
+    client = make_client(on_end=on_end, max_reconnection_attempts=2)
     await client.connect()
 
     for index in range(1, 5):
@@ -134,7 +140,7 @@ async def test_stable_socket_resets_attempts(
         await engine.wait_for(lambda index=index: bool(engine.received_on(index)))
 
     assert len(engine.connections) == 5
-    client._on_close.assert_not_awaited()
+    on_end.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -171,21 +177,23 @@ async def test_close_during_pending_handshake(
 
 
 @pytest.mark.asyncio
-async def test_close_from_on_close_callback_does_not_hang(
+async def test_close_started_from_on_end_does_not_hang(
     engine: FakeEngine, make_client: ClientFactory
 ) -> None:
     holder: list[SignallingClient] = []
+    closes: list[asyncio.Task[None]] = []
 
-    async def on_close(code: int | None, reason: str) -> None:
-        await holder[0].close()
+    def on_end(code: ConnectionClosedCode, reason: str | None) -> None:
+        closes.append(asyncio.create_task(holder[0].close()))
 
-    client = make_client(on_close=AsyncMock(side_effect=on_close), max_reconnection_attempts=1)
+    client = make_client(on_end=Mock(side_effect=on_end), max_reconnection_attempts=1)
     holder.append(client)
     await client.connect()
 
     engine.refuse_new = True
     await engine.drop("abort")
-    await engine.wait_for(lambda: client._on_close.await_count == 1)
+    await engine.wait_for(lambda: len(closes) == 1)
+    await asyncio.wait_for(closes[0], 2.0)
     await engine.wait_for(lambda: owned_tasks_done(client))
 
 
@@ -209,18 +217,20 @@ async def test_close_from_on_message_callback_does_not_hang(
 
 
 @pytest.mark.asyncio
-async def test_endsession_then_clean_close_does_not_reconnect(
+async def test_endsession_ends_without_reconnect(
     engine: FakeEngine, make_client: ClientFactory
 ) -> None:
-    client = make_client()
+    on_end = Mock()
+    client = make_client(on_end=on_end)
     await client.connect()
 
     await engine.send({"actionType": "endsession", "payload": "done"})
+    await engine.wait_for(lambda: on_end.call_count == 1)
     await engine.drop("clean")
 
     assert await stays(lambda: engine.connect_attempts == 1, 0.3)
     assert client.server_ended
-    client._on_close.assert_not_awaited()
+    on_end.assert_called_once_with(ConnectionClosedCode.SERVER_CLOSED, "done")
 
 
 @pytest.mark.asyncio
@@ -342,7 +352,8 @@ async def test_buffer_never_evicts_offer(
 async def test_buffer_cleared_on_terminal_close(
     engine: FakeEngine, make_client: ClientFactory
 ) -> None:
-    client = make_client(max_reconnection_attempts=2)
+    on_end = Mock()
+    client = make_client(on_end=on_end, max_reconnection_attempts=2)
     await client.connect()
 
     await drop_and_wait_for_gap(engine, client)
@@ -351,7 +362,7 @@ async def test_buffer_cleared_on_terminal_close(
     engine.refuse_new = True
     assert engine.hold_handshake is not None
     engine.hold_handshake.set()
-    await engine.wait_for(lambda: client._on_close.await_count == 1)
+    await engine.wait_for(lambda: on_end.call_count == 1)
 
     assert client._send_buffer == []
     await client.send_agent_audio_input(audio(2))
@@ -375,7 +386,7 @@ async def test_on_open_failure_closes_client(engine: FakeEngine) -> None:
 
 
 @pytest.mark.asyncio
-async def test_terminal_close_without_on_close_finishes_tasks(engine: FakeEngine) -> None:
+async def test_terminal_close_without_on_end_finishes_tasks(engine: FakeEngine) -> None:
     client = SignallingClient(session_info_for(engine, max_reconnection_attempts=1))
     await client.connect()
 

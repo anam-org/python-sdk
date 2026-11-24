@@ -1,5 +1,6 @@
 """Agent audio input stream for sending PCM audio data to the backend."""
 
+import asyncio
 import base64
 import logging
 from typing import Union
@@ -49,6 +50,7 @@ class AgentAudioInputStream:
         self._config = config
         self._signalling_client = signalling_client
         self._sequence_number = 0
+        self._send_lock = asyncio.Lock()
 
     async def send_audio_chunk(self, audio_data: Union[bytes, bytearray, str]) -> None:
         """Send PCM audio chunk to server.
@@ -67,24 +69,25 @@ class AgentAudioInputStream:
         else:
             raise ValueError(f"audio_data must be bytes, bytearray, or str, got {type(audio_data)}")
 
-        payload = AgentAudioInputPayload(
-            audio_data=base64_data,
-            encoding=self._config.encoding,
-            sample_rate=self._config.sample_rate,
-            channels=self._config.channels,
-            sequence_number=self._sequence_number,
-        )
-        self._sequence_number += 1
-
-        await self._signalling_client.send_agent_audio_input(payload)
+        async with self._send_lock:
+            payload = AgentAudioInputPayload(
+                audio_data=base64_data,
+                encoding=self._config.encoding,
+                sample_rate=self._config.sample_rate,
+                channels=self._config.channels,
+                sequence_number=self._sequence_number,
+            )
+            await self._signalling_client.send_agent_audio_input(payload)
+            self._sequence_number += 1
 
     async def end_sequence(self) -> None:
         """Signal end of the current audio sequence/turn.
 
         Sends AGENT_AUDIO_INPUT_END signal message and resets sequence number.
         """
-        self._sequence_number = 0
-        await self._signalling_client.send_agent_audio_input_end()
+        async with self._send_lock:
+            await self._signalling_client.send_agent_audio_input_end()
+            self._sequence_number = 0
 
     def get_sequence_number(self) -> int:
         """Get the current sequence number.
