@@ -844,11 +844,14 @@ async def test_resend_on_new_stream_during_gap_yields_and_recovers(
 ) -> None:
     limit = 5000
     session = await anam.connect_async()
+    sc = signalling(anam)
     ticks = 0
     ticks_at_failure: list[int] = []
+    failed_ids: list[str] = []
 
     async def on_failed(failure: MessageDeliveryFailure) -> None:
         ticks_at_failure.append(ticks)
+        failed_ids.append(failure.correlation_id)
         if len(ticks_at_failure) < limit:
             await session.send_talk_stream("again")
 
@@ -867,10 +870,13 @@ async def test_resend_on_new_stream_during_gap_yields_and_recovers(
         end_gap(engine)
 
         await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
+        delivered = engine.received_actions("talkstream")[0][1]["payload"]["correlationId"]
+        await engine.wait_for(lambda: not sc._monitor.is_tracked(delivered))
     finally:
         ticker.cancel()
     failures = len(ticks_at_failure)
     assert failures < limit
+    assert delivered not in failed_ids
     assert all(b > a for a, b in zip(ticks_at_failure, ticks_at_failure[1:]))
     assert await stays(lambda: len(ticks_at_failure) == failures, 0.2)
 
@@ -887,6 +893,7 @@ async def test_listener_cancelling_worker_that_closes_finishes(
             await asyncio.Event().wait()
         finally:
             await session.close()
+            done.append("worker")
 
     worker = asyncio.create_task(work())
 
@@ -898,7 +905,8 @@ async def test_listener_cancelling_worker_that_closes_finishes(
     anam.add_listener(AnamEvent.CONNECTION_CLOSED, on_closed)
     await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
 
-    await engine.wait_for(lambda: done == ["server_closed"], timeout=3.0)
+    await engine.wait_for(lambda: "server_closed" in done, timeout=3.0)
+    assert done == ["worker", "server_closed"]
 
 
 @pytest.mark.asyncio
@@ -918,15 +926,17 @@ async def test_close_after_cancelled_close_waits_for_teardown(
         await original(self)
 
     monkeypatch.setattr(SignallingClient, "close", slow_close)
-    first = asyncio.create_task(anam.close())
-    await asyncio.wait_for(entered.wait(), 2.0)
-    first.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await first
+    try:
+        first = asyncio.create_task(anam.close())
+        await asyncio.wait_for(entered.wait(), 2.0)
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
 
-    second = asyncio.create_task(anam.close())
-    assert await stays(lambda: not second.done(), 0.2)
-    release.set()
+        second = asyncio.create_task(anam.close())
+        assert await stays(lambda: not second.done(), 0.2)
+    finally:
+        release.set()
     await asyncio.wait_for(second, 3.0)
     assert streaming._peer_connection is None
     assert anam._streaming_client is None
@@ -988,15 +998,17 @@ async def test_close_event_waits_for_failure_listeners_in_flight(
     streaming = anam._streaming_client
     assert streaming is not None
 
-    await drop_and_wait_for_gap(engine, anam)
-    await session.create_talk_stream().send("hello")
-    await engine.wait_for(lambda: events == ["first:start"])
-    engine.refuse_new = True
-    end_gap(engine)
-    await engine.wait_for(lambda: streaming._peer_connection is None)
+    try:
+        await drop_and_wait_for_gap(engine, anam)
+        await session.create_talk_stream().send("hello")
+        await engine.wait_for(lambda: events == ["first:start"])
+        engine.refuse_new = True
+        end_gap(engine)
+        await engine.wait_for(lambda: streaming._peer_connection is None)
 
-    assert await stays(lambda: events == ["first:start"], 0.1)
-    release.set()
+        assert await stays(lambda: events == ["first:start"], 0.1)
+    finally:
+        release.set()
     await engine.wait_for(lambda: "signalling_failure" in events)
     assert events == ["first:start", "first:end", "second", "signalling_failure"]
 
