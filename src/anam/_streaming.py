@@ -114,8 +114,9 @@ class StreamingClient:
 
         # Wait for WebRTC connection to be established
         try:
-            await asyncio.wait_for(self._connection_ready.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
+            async with asyncio.timeout(timeout):
+                await self._connection_ready.wait()
+        except TimeoutError:
             logger.warning("Connection timed out waiting for WebRTC, proceeding anyway")
         if self._terminated:
             raise SessionError("Session ended while connecting")

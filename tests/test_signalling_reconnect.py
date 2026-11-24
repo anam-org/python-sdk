@@ -256,11 +256,11 @@ async def test_send_waits_behind_flush(
     release_flush = asyncio.Event()
     original_send = ClientConnection.send
 
-    async def gated_send(self: ClientConnection, message: Any, text: Any = None) -> None:
+    async def gated_send(self: ClientConnection, message: Any, **kwargs: Any) -> None:
         if self is not first_socket and not flush_started.is_set():
             flush_started.set()
             await release_flush.wait()
-        await original_send(self, message, text)
+        await original_send(self, message, **kwargs)
 
     await drop_and_wait_for_gap(engine, client)
     for seq in (1, 2):
@@ -289,7 +289,7 @@ async def test_failed_write_on_open_socket_is_not_rebuffered(
     assert ws is not None
     original_send = ws.send
 
-    async def failing_send(message: Any, text: Any = None) -> None:
+    async def failing_send(message: Any, **kwargs: Any) -> None:
         monkeypatch.setattr(ws, "send", original_send)
         raise OSError("write failed")
 

@@ -164,9 +164,9 @@ async def test_ack_during_suspended_write_counts(
     release = asyncio.Event()
     gate_next_heartbeat = False
 
-    async def gated_send(message: Any, text: Any = None) -> None:
+    async def gated_send(message: Any, **kwargs: Any) -> None:
         nonlocal gate_next_heartbeat
-        await original_send(message, text)
+        await original_send(message, **kwargs)
         if gate_next_heartbeat and '"heartbeat"' in message and client._monitor.is_tracked("a"):
             gate_next_heartbeat = False
             await release.wait()

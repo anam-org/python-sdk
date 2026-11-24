@@ -24,6 +24,15 @@ async def _noop(*_: Any) -> None:
     return None
 
 
+async def _wait(event: asyncio.Event, timeout: float) -> None:
+    # asyncio.wait_for on Python 3.11 can swallow a cancel that races with the wait completing.
+    try:
+        async with asyncio.timeout(timeout):
+            await event.wait()
+    except TimeoutError:
+        pass
+
+
 class SignalAction(str, Enum):
     """Signal message action types."""
 
@@ -92,6 +101,7 @@ class SignallingClient:
         self._on_talk_stream_delivery_failed = on_talk_stream_delivery_failed
 
         self._ws: ClientConnection | None = None
+        self._live_ws: ClientConnection | None = None
         self._stop_signal = False
         self._permanently_closed = False
         self._server_ended = False
@@ -175,6 +185,7 @@ class SignallingClient:
         return [task for task in tasks if task is not None]
 
     async def _activate(self, ws: ClientConnection) -> None:
+        self._live_ws = ws
         self._watchdog_task = asyncio.create_task(self._watch(ws))
         try:
             async with self._send_lock:
@@ -190,6 +201,8 @@ class SignallingClient:
     async def _deactivate(self, ws: ClientConnection) -> None:
         if self._ws is ws:
             self._ws = None
+        if self._live_ws is ws:
+            self._live_ws = None
         tasks = [task for task in (self._heartbeat_task, self._watchdog_task) if task is not None]
         self._heartbeat_task = None
         self._watchdog_task = None
@@ -348,9 +361,12 @@ class SignallingClient:
             if last:
                 return
 
+    def _owns(self, ws: ClientConnection) -> bool:
+        return not self._stop_signal and self._live_ws is ws
+
     async def _send_heartbeats(self, ws: ClientConnection) -> None:
         next_beat = time.monotonic() + self._heartbeat_interval
-        while True:
+        while self._owns(ws):
             self._probe_wake.clear()
             due = next_beat
             probe_at = self._monitor.probe_due_at()
@@ -358,10 +374,7 @@ class SignallingClient:
                 due = min(due, probe_at)
             delay = due - time.monotonic()
             if delay > 0:
-                try:
-                    await asyncio.wait_for(self._probe_wake.wait(), delay)
-                except asyncio.TimeoutError:
-                    pass
+                await _wait(self._probe_wake, delay)
                 continue
             async with self._send_lock:
                 if self._stop_signal or ws.state is not State.OPEN:
@@ -382,7 +395,7 @@ class SignallingClient:
             next_beat = time.monotonic() + self._heartbeat_interval
 
     async def _watch(self, ws: ClientConnection) -> None:
-        while True:
+        while self._owns(ws):
             self._watchdog_wake.clear()
             now = time.monotonic()
             ack_deadline = self._monitor.ack_deadline()
@@ -394,10 +407,7 @@ class SignallingClient:
                 await self._watchdog_wake.wait()
                 continue
             if min(deadlines) > now:
-                try:
-                    await asyncio.wait_for(self._watchdog_wake.wait(), min(deadlines) - now)
-                except asyncio.TimeoutError:
-                    pass
+                await _wait(self._watchdog_wake, min(deadlines) - now)
                 continue
             if stall_deadline is not None and stall_deadline <= now:
                 logger.warning("Signalling write stalled; replacing the socket")
@@ -518,11 +528,10 @@ class SignallingClient:
             "payload": {},
         }
         try:
-            await asyncio.wait_for(
-                self._send_end_session(ws, message), timeout=self.SHUTDOWN_TIMEOUT
-            )
+            async with asyncio.timeout(self.SHUTDOWN_TIMEOUT):
+                await self._send_end_session(ws, message)
             logger.debug("Sent endsession for session %s", self._session_id)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Timed out sending endsession")
         except Exception as e:
             logger.warning("Failed to send endsession: %s", e)
@@ -707,8 +716,9 @@ class SignallingClient:
 
     async def _dispose(self, ws: ClientConnection) -> None:
         try:
-            await asyncio.wait_for(ws.close(), timeout=self.SHUTDOWN_TIMEOUT)
-        except asyncio.TimeoutError:
+            async with asyncio.timeout(self.SHUTDOWN_TIMEOUT):
+                await ws.close()
+        except TimeoutError:
             logger.warning("Timed out closing signalling socket; aborting transport")
             transport = getattr(ws, "transport", None)
             if transport is not None:
