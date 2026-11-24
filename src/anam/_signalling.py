@@ -463,6 +463,9 @@ class SignallingClient:
                 logger.error("Error handling signalling callback: %s", e)
             finally:
                 self._dispatching = False
+            # Queue.get() and free locks do not yield. A failure listener that resends during a
+            # reconnect queues a new failure at once and would otherwise starve the loop.
+            await asyncio.sleep(0)
 
     def _owns(self, ws: ClientConnection) -> bool:
         return not self._stop_signal and self._live_ws is ws

@@ -835,3 +835,40 @@ async def test_pending_failures_reported_before_connection_closed(
 
     await engine.wait_for(lambda: expected[-1] in events)
     assert events == expected
+
+
+@pytest.mark.asyncio
+async def test_resend_on_new_stream_during_gap_yields_and_recovers(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    limit = 5000
+    session = await anam.connect_async()
+    ticks = 0
+    ticks_at_failure: list[int] = []
+
+    async def on_failed(failure: MessageDeliveryFailure) -> None:
+        ticks_at_failure.append(ticks)
+        if len(ticks_at_failure) < limit:
+            await session.send_talk_stream("again")
+
+    async def tick() -> None:
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await asyncio.sleep(0)
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
+    ticker = asyncio.create_task(tick())
+    try:
+        await drop_and_wait_for_gap(engine, anam)
+        await session.send_talk_stream("hello")
+        await engine.wait_for(lambda: len(ticks_at_failure) >= 3)
+        end_gap(engine)
+
+        await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
+    finally:
+        ticker.cancel()
+    failures = len(ticks_at_failure)
+    assert failures < limit
+    assert all(b > a for a, b in zip(ticks_at_failure, ticks_at_failure[1:]))
+    assert await stays(lambda: len(ticks_at_failure) == failures, 0.2)

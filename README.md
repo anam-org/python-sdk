@@ -363,6 +363,32 @@ moves to `TalkMessageStreamState.DELIVERY_FAILED` and `send()` raises `RuntimeEr
 This can also occur after `end()`. To speak the text, create a new talk stream and send
 the text again. If the first chunk reached the engine, the avatar speaks the text twice.
 
+While the SDK reconnects, a new chunk fails again at once. Wait before you resend, and
+limit the attempts. Do the wait in a task, so that the listener does not delay other
+signalling messages:
+
+```python
+texts: dict[str, tuple[str, int]] = {}  # correlation ID -> (text, attempt)
+
+async def speak(session: Session, text: str, attempt: int = 0) -> None:
+    stream = session.create_talk_stream()
+    texts[stream.correlation_id] = (text, attempt)
+    await stream.send(text, end_of_speech=True)
+
+async def resend(session: Session, text: str, attempt: int) -> None:
+    await asyncio.sleep(0.5 * attempt)
+    try:
+        await speak(session, text, attempt)
+    except (RuntimeError, SessionError):
+        pass  # The session ended.
+
+@client.on(AnamEvent.MESSAGE_DELIVERY_FAILED)
+async def on_delivery_failed(failure: MessageDeliveryFailure):
+    text, attempt = texts.pop(failure.correlation_id, ("", 3))
+    if attempt < 3:
+        asyncio.create_task(resend(session, text, attempt + 1))
+```
+
 When the session ends, the SDK emits the pending `MESSAGE_DELIVERY_FAILED` events
 before `CONNECTION_CLOSED`.
 
