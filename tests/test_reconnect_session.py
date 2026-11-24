@@ -1036,7 +1036,11 @@ async def test_watchdog_cap_ends_with_signalling_failure_before_listeners(
     anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
     anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
     await engine.send(
-        {"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {"sendsHeartbeatAcks": True}}
+        {
+            "actionType": "sessionready",
+            "sessionId": SESSION_ID,
+            "payload": {"sendsHeartbeatAcks": True},
+        }
     )
     await engine.wait_for(lambda: sc._heartbeat_acks is HeartbeatAcks.YES)
     engine.answer_heartbeats = False
@@ -1074,7 +1078,9 @@ async def test_talk_stream_rejects_sends_after_session_end(
     assert await stays(lambda: failed == [], 0.1)
 
 
-def stall_after_write(monkeypatch: pytest.MonkeyPatch, action: str) -> tuple[asyncio.Event, asyncio.Event]:
+def stall_after_write(
+    monkeypatch: pytest.MonkeyPatch, action: str
+) -> tuple[asyncio.Event, asyncio.Event]:
     written = asyncio.Event()
     release = asyncio.Event()
     original = SignallingClient._write
@@ -1157,7 +1163,11 @@ async def test_reused_id_after_refused_chunk_does_not_fail_again(
     session = await anam.connect_async()
     sc = signalling(anam)
     await engine.send(
-        {"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {"sendsHeartbeatAcks": True}}
+        {
+            "actionType": "sessionready",
+            "sessionId": SESSION_ID,
+            "payload": {"sendsHeartbeatAcks": True},
+        }
     )
     await engine.wait_for(lambda: sc._heartbeat_acks is HeartbeatAcks.YES)
     engine.answer_heartbeats = False
