@@ -301,10 +301,13 @@ async def test_stale_streaming_client_callback_ignored(
     await anam.connect_async()
     old = anam._streaming_client
     assert old is not None and old._on_connection_closed is not None
+    assert old._on_torn_down is not None
     stale_callback = old._on_connection_closed
+    stale_torn_down = old._on_torn_down
     await anam.close()
 
     session = await anam.connect_async()
+    stale_torn_down()
     await stale_callback("webrtc_failure", None)
 
     assert session.is_active
