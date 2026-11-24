@@ -232,7 +232,10 @@ class AnamClient:
         """Connect to Anam and start streaming.
 
         Returns:
-            An async context manager that yields a Session.
+            An async context manager that yields a Session. When the block exits, it calls
+            Session.close(), which waits for the CONNECTION_CLOSED listeners. Thus a
+            CONNECTION_CLOSED listener must not await a task that runs this block unless it
+            cancels that task first.
 
         Raises:
             SessionError: If connection fails.
@@ -544,8 +547,11 @@ class AnamClient:
         Waits for the teardown, then for the CONNECTION_CLOSED listeners. It does not wait
         for the listeners when it is called from a MESSAGE_DELIVERY_FAILED or
         CONNECTION_CLOSED listener, from a task that such a listener started, or from a
-        task that is being cancelled. A listener must not await another task that calls
-        close() unless it cancels that task first.
+        task that is being cancelled. Thus a CONNECTION_CLOSED listener must not await
+        another task that calls close() unless it cancels that task first:
+
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
         """
         streaming_client = self._streaming_client
         if streaming_client is None:
@@ -931,15 +937,19 @@ class Session:
         """Wait until the session is closed.
 
         This is useful for keeping the session alive until
-        the server closes it or an error occurs.
+        the server closes it or an error occurs. It returns when the teardown is done.
+        The MESSAGE_DELIVERY_FAILED and CONNECTION_CLOSED listeners of the session can
+        still be running then.
         """
         await self._close_event.wait()
 
     async def close(self) -> None:
         """Close the session.
 
-        Waits like AnamClient.close(), including for the CONNECTION_CLOSED listeners.
-        When the client has started a newer session, only this session is marked closed.
+        Waits like AnamClient.close(), including for the CONNECTION_CLOSED listeners, so
+        a CONNECTION_CLOSED listener must not await another task that calls this method
+        unless it cancels that task first. When the client has started a newer session,
+        only this session is marked closed.
         """
         self._mark_closed()
         if self._is_current():

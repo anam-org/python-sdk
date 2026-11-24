@@ -354,6 +354,22 @@ session, with one of these codes:
   and frame iterators stop.
 - `webrtc_failure`: the peer connection closed.
 
+`close()` returns after the SDK has torn down the session and the `CONNECTION_CLOSED`
+listeners have finished. Thus a `CONNECTION_CLOSED` listener must not wait for a task that
+calls `close()`. This includes a task whose `async with client.connect()` block exits,
+because the block calls `close()`. Cancel the task first, then wait for it. A `close()`
+in a cancelled task waits only for the teardown:
+
+```python
+@client.on(AnamEvent.CONNECTION_CLOSED)
+async def on_closed(code: str, reason: str | None):
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
+```
+
+After the session has ended, `TalkMessageStream.send()` and `TalkMessageStream.end()`
+raise `RuntimeError`, and the stream state does not change.
+
 During a reconnect, the SDK keeps messages such as agent audio in a buffer and sends them
 when the new WebSocket opens. The engine does not replay messages that were lost on the
 old WebSocket. When the SDK cannot confirm that a talk stream chunk reached the engine,
@@ -365,27 +381,35 @@ the text again. If the first chunk reached the engine, the avatar speaks the tex
 
 While the SDK reconnects, a new chunk fails again at once. Wait before you resend, and
 limit the attempts. Do the wait in a task, so that the listener does not delay other
-signalling messages:
+signalling messages. Resend only in the session that sent the text, and keep only the
+most recent texts:
 
 ```python
-texts: dict[str, tuple[str, int]] = {}  # correlation ID -> (text, attempt)
+MAX_TEXTS = 100
+# Correlation ID -> (session, text, attempt), oldest first.
+texts: dict[str, tuple[Session, str, int]] = {}
 
 async def speak(session: Session, text: str, attempt: int = 0) -> None:
     stream = session.create_talk_stream()
-    texts[stream.correlation_id] = (text, attempt)
+    texts[stream.correlation_id] = (session, text, attempt)
+    if len(texts) > MAX_TEXTS:
+        del texts[next(iter(texts))]
     await stream.send(text, end_of_speech=True)
 
 async def resend(session: Session, text: str, attempt: int) -> None:
     await asyncio.sleep(0.5 * attempt)
+    if not session.is_active:
+        return  # The session ended. A new session must not speak the old text.
     try:
         await speak(session, text, attempt)
     except (RuntimeError, SessionError):
-        pass  # The session ended.
+        pass  # The session ended during the send.
 
 @client.on(AnamEvent.MESSAGE_DELIVERY_FAILED)
 async def on_delivery_failed(failure: MessageDeliveryFailure):
-    text, attempt = texts.pop(failure.correlation_id, ("", 3))
-    if attempt < 3:
+    entry = texts.pop(failure.correlation_id, None)
+    if entry is not None and entry[2] < 3:
+        session, text, attempt = entry
         asyncio.create_task(resend(session, text, attempt + 1))
 ```
 
