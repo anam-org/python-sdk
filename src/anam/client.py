@@ -289,7 +289,7 @@ class AnamClient:
             handler: Callable[..., Awaitable[None]],
         ) -> Callable[..., Awaitable[None]]:
             async def call(*args: Any) -> None:
-                if streaming_client is self._streaming_client:
+                if generation == self._session_generation:
                     await handler(*args)
 
             return call

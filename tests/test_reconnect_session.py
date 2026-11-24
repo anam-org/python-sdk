@@ -774,3 +774,64 @@ async def test_buffered_chunk_reported_before_webrtc_failure(
     await engine.wait_for(lambda: "webrtc_failure" in events)
     assert events == ["failed", "webrtc_failure"]
     assert stream.state is TalkMessageStreamState.DELIVERY_FAILED
+
+
+@pytest.mark.asyncio
+async def test_close_inside_terminal_failure_listener_still_reports_close(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
+    events: list[str] = []
+    session = await anam.connect_async()
+    engine.answer_heartbeats = False
+
+    async def on_failed(failure: MessageDeliveryFailure) -> None:
+        events.append("failed")
+        await session.close()
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
+    stream = session.create_talk_stream()
+    await stream.send("hello")
+    await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
+    await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+
+    await engine.wait_for(lambda: "server_closed" in events)
+    assert await stays(lambda: events == ["failed", "server_closed"], 0.1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ending", ["retries", "endsession"])
+async def test_pending_failures_reported_before_connection_closed(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch, ending: str
+) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
+    events: list[str] = []
+    anam.add_listener(
+        AnamEvent.MESSAGE_DELIVERY_FAILED,
+        lambda failure: events.append(f"failed:{failure.correlation_id}"),
+    )
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
+    session = await anam.connect_async()
+    first = session.create_talk_stream("a")
+    second = session.create_talk_stream("b")
+
+    if ending == "retries":
+        await engine.send({"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {}})
+        await engine.wait_for(lambda: signalling(anam)._heartbeat_acks is HeartbeatAcks.NO)
+        await drop_and_wait_for_gap(engine, anam)
+        await first.send("one")
+        await first.send("two")
+        await second.send("three")
+        engine.refuse_new = True
+        end_gap(engine)
+        expected = ["failed:a", "failed:b", "signalling_failure"]
+    else:
+        engine.answer_heartbeats = False
+        await first.send("one")
+        await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
+        await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+        expected = ["failed:a", "server_closed"]
+
+    await engine.wait_for(lambda: expected[-1] in events)
+    assert events == expected
