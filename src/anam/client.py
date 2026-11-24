@@ -218,6 +218,11 @@ class AnamClient:
                 result = callback(*args, **kwargs)
                 if asyncio.iscoroutine(result):
                     await result
+            except asyncio.CancelledError:
+                task = asyncio.current_task()
+                if task is not None and task.cancelling():
+                    raise
+                logger.error("Event callback for %s raised CancelledError", event.value)
             except Exception as e:
                 logger.error("Error in event callback for %s: %s", event.value, e)
 
@@ -512,8 +517,11 @@ class AnamClient:
     async def close(self) -> None:
         """Close the connection and clean up resources.
 
-        Returns once the teardown has finished. Called from a CONNECTION_CLOSED listener,
-        it returns at once instead.
+        Waits for the teardown, then for the CONNECTION_CLOSED listeners. It does not wait
+        for the listeners when it is called from a MESSAGE_DELIVERY_FAILED or
+        CONNECTION_CLOSED listener, from a task that such a listener started, or from a
+        task that is being cancelled. A listener must not await another task that calls
+        close() unless it cancels that task first.
         """
         streaming_client = self._streaming_client
         if streaming_client is None:
@@ -522,12 +530,13 @@ class AnamClient:
         try:
             await streaming_client.close()
         finally:
-            if self._streaming_client is streaming_client:
-                self._streaming_client = None
-                self._is_streaming = False
-            if generation == self._session_generation:
-                self._session_info = None
-                self._message_history.clear()
+            if streaming_client.teardown_finished:
+                if self._streaming_client is streaming_client:
+                    self._streaming_client = None
+                    self._is_streaming = False
+                if generation == self._session_generation:
+                    self._session_info = None
+                    self._message_history.clear()
         logger.info("Client closed")
 
     @property
@@ -900,7 +909,10 @@ class Session:
         await self._close_event.wait()
 
     async def close(self) -> None:
-        """Close the session."""
+        """Close the session.
+
+        Waits like AnamClient.close(), including for the CONNECTION_CLOSED listeners.
+        """
         self._closed = True
         self._close_event.set()
         await self._client.close()

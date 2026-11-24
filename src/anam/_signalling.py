@@ -132,7 +132,7 @@ class SignallingClient:
         self._buffer_overflowed = False
         self._send_lock = asyncio.Lock()
         self._dispatch_queue: asyncio.Queue[_Dispatch] = asyncio.Queue()
-        self._dispatching = False
+        self._dispatching: _Dispatch | None = None
 
         self._monitor = HeartbeatMonitor()
         self._heartbeat_acks = HeartbeatAcks.UNKNOWN
@@ -218,7 +218,7 @@ class SignallingClient:
             if task is not None and task is not current:
                 task.cancel()
         dispatch_task = self._dispatch_task
-        if dispatch_task is not None and dispatch_task is not current and not self._dispatching:
+        if dispatch_task is not None and dispatch_task is not current and self._dispatching is None:
             dispatch_task.cancel()
 
     def take_failures(self, include_unconfirmed: bool) -> list[str]:
@@ -241,6 +241,19 @@ class SignallingClient:
                 unconfirmed + [cid for cid in buffered if cid is not None]
             )
         return taken
+
+    async def finish_failure_report(self) -> None:
+        """Wait until the failure report that the dispatcher delivers now has finished.
+
+        Call this after stop(), so that the dispatcher exits after that report.
+        """
+        task = self._dispatch_task
+        item = self._dispatching
+        if task is None or task is asyncio.current_task():
+            return
+        if item is None or item.failed_correlation_id is None:
+            return
+        await asyncio.wait([task])
 
     def register_talk_stream(self, correlation_id: str, stream: TalkStreamTarget) -> None:
         """Mark this stream when a delivery failure is claimed for its correlation id.
@@ -456,13 +469,13 @@ class SignallingClient:
     async def _dispatch(self) -> None:
         while not self._stop_signal:
             item = await self._dispatch_queue.get()
-            self._dispatching = True
+            self._dispatching = item
             try:
                 await item.call()
             except Exception as e:
                 logger.error("Error handling signalling callback: %s", e)
             finally:
-                self._dispatching = False
+                self._dispatching = None
             # Queue.get() and free locks do not yield. A failure listener that resends during a
             # reconnect queues a new failure at once and would otherwise starve the loop.
             await asyncio.sleep(0)
@@ -819,7 +832,7 @@ class SignallingClient:
             if task is not None and task is not current
         ]
         dispatch_task = self._dispatch_task
-        if dispatch_task is not None and dispatch_task is not current and not self._dispatching:
+        if dispatch_task is not None and dispatch_task is not current and self._dispatching is None:
             tasks.append(dispatch_task)
         await asyncio.gather(*tasks, return_exceptions=True)
 

@@ -872,3 +872,148 @@ async def test_resend_on_new_stream_during_gap_yields_and_recovers(
     assert failures < limit
     assert all(b > a for a, b in zip(ticks_at_failure, ticks_at_failure[1:]))
     assert await stays(lambda: len(ticks_at_failure) == failures, 0.2)
+
+
+@pytest.mark.asyncio
+async def test_listener_cancelling_worker_that_closes_finishes(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    session = await anam.connect_async()
+    done: list[str] = []
+
+    async def work() -> None:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await session.close()
+
+    worker = asyncio.create_task(work())
+
+    async def on_closed(code: str, reason: str | None) -> None:
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+        done.append(code)
+
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, on_closed)
+    await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+
+    await engine.wait_for(lambda: done == ["server_closed"], timeout=3.0)
+
+
+@pytest.mark.asyncio
+async def test_close_after_cancelled_close_waits_for_teardown(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await anam.connect_async()
+    streaming = anam._streaming_client
+    assert streaming is not None
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original = SignallingClient.close
+
+    async def slow_close(self: SignallingClient) -> None:
+        entered.set()
+        await release.wait()
+        await original(self)
+
+    monkeypatch.setattr(SignallingClient, "close", slow_close)
+    first = asyncio.create_task(anam.close())
+    await asyncio.wait_for(entered.wait(), 2.0)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+
+    second = asyncio.create_task(anam.close())
+    assert await stays(lambda: not second.done(), 0.2)
+    release.set()
+    await asyncio.wait_for(second, 3.0)
+    assert streaming._peer_connection is None
+    assert anam._streaming_client is None
+
+
+@pytest.mark.asyncio
+async def test_listener_awaiting_cancelled_child_does_not_stop_close_event(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
+    events: list[str] = []
+
+    async def await_cancelled_child() -> None:
+        child = asyncio.create_task(asyncio.sleep(10))
+        child.cancel()
+        await child
+
+    async def on_failed(failure: MessageDeliveryFailure) -> None:
+        events.append("failed")
+        await await_cancelled_child()
+
+    async def on_closed(code: str, reason: str | None) -> None:
+        events.append(f"first:{code}")
+        await await_cancelled_child()
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, on_closed)
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
+    session = await anam.connect_async()
+    engine.answer_heartbeats = False
+    await session.create_talk_stream().send("hello")
+    await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
+    await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+
+    await engine.wait_for(lambda: "server_closed" in events)
+    assert events == ["failed", "first:server_closed", "server_closed"]
+    assert not anam.is_streaming
+
+
+@pytest.mark.asyncio
+async def test_close_event_waits_for_failure_listeners_in_flight(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    events: list[str] = []
+    release = asyncio.Event()
+
+    async def first(failure: MessageDeliveryFailure) -> None:
+        events.append("first:start")
+        await release.wait()
+        events.append("first:end")
+
+    async def second(failure: MessageDeliveryFailure) -> None:
+        events.append("second")
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, first)
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, second)
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
+    session = await anam.connect_async()
+    streaming = anam._streaming_client
+    assert streaming is not None
+
+    await drop_and_wait_for_gap(engine, anam)
+    await session.create_talk_stream().send("hello")
+    await engine.wait_for(lambda: events == ["first:start"])
+    engine.refuse_new = True
+    end_gap(engine)
+    await engine.wait_for(lambda: streaming._peer_connection is None)
+
+    assert await stays(lambda: events == ["first:start"], 0.1)
+    release.set()
+    await engine.wait_for(lambda: "signalling_failure" in events)
+    assert events == ["first:start", "first:end", "second", "signalling_failure"]
+
+
+@pytest.mark.asyncio
+async def test_failure_listener_in_flight_can_close(engine: FakeEngine, anam: AnamClient) -> None:
+    events: list[str] = []
+    session = await anam.connect_async()
+
+    async def on_failed(failure: MessageDeliveryFailure) -> None:
+        events.append("failed")
+        await session.close()
+        events.append("closed")
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
+    await drop_and_wait_for_gap(engine, anam)
+    await session.create_talk_stream().send("hello")
+
+    await engine.wait_for(lambda: "normal" in events, timeout=3.0)
+    assert events == ["failed", "closed", "normal"]

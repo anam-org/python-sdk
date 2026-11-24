@@ -28,10 +28,23 @@ from .types import AgentAudioInputConfig, ConnectionClosedCode, SessionInfo
 
 logger = logging.getLogger(__name__)
 
-# Child tasks copy the context, so a task started by a terminal listener sees this value too.
+# Set while the delivery failure and CONNECTION_CLOSED listeners of a session run. Child tasks
+# copy the context, so a task that such a listener starts sees the value too.
 _notifying: contextvars.ContextVar["StreamingClient | None"] = contextvars.ContextVar(
     "anam_terminal_notification", default=None
 )
+
+
+async def _call_listener(call: Awaitable[None]) -> None:
+    try:
+        await call
+    except asyncio.CancelledError:
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            raise
+        logger.error("A session listener raised CancelledError")
+    except Exception as e:
+        logger.error("Error in session listener: %s", e)
 
 
 class StreamingClient:
@@ -93,6 +106,8 @@ class StreamingClient:
         self._started = False
         self._end: tuple[ConnectionClosedCode, str | None] | None = None
         self._end_task: asyncio.Task[None] | None = None
+        self._teardown_task: asyncio.Task[None] | None = None
+        self._torn_down = False
         self._notified = False
         self._finished = False
         self._signalling: SignallingClient | None = None
@@ -116,7 +131,7 @@ class StreamingClient:
             on_message=self._handle_signal_message,
             on_open=self._on_signalling_open,
             on_end=self._terminate,
-            on_talk_stream_delivery_failed=self._on_talk_stream_delivery_failed,
+            on_talk_stream_delivery_failed=self._report_failure,
         )
 
         # Connect to signalling server
@@ -152,36 +167,48 @@ class StreamingClient:
             self._signalling_client.stop()
         self._end_task = asyncio.create_task(self._finish())
 
+    def _start_teardown(self) -> asyncio.Task[None]:
+        assert self._end is not None
+        task = self._teardown_task
+        if task is None or (task.done() and not self._torn_down):
+            send_end_session = self._end[0] is not ConnectionClosedCode.SERVER_CLOSED
+            task = self._teardown_task = asyncio.create_task(self._teardown(send_end_session))
+        return task
+
     async def _finish(self) -> None:
         assert self._end is not None
         code, reason = self._end
-        await self._teardown(send_end_session=code is not ConnectionClosedCode.SERVER_CLOSED)
+        await self._start_teardown()
         await self._notify(code, reason)
         self._finished = True
+
+    async def _report_failure(self, correlation_id: str) -> None:
+        if self._on_talk_stream_delivery_failed is None:
+            return
+        token = _notifying.set(self)
+        try:
+            await self._on_talk_stream_delivery_failed(correlation_id)
+        finally:
+            _notifying.reset(token)
 
     async def _notify(self, code: ConnectionClosedCode, reason: str | None) -> None:
         if self._notified:
             return
         self._notified = True
         signalling = self._signalling_client or self._signalling
-        failures = (
-            signalling.take_failures(include_unconfirmed=code is not ConnectionClosedCode.NORMAL)
-            if signalling is not None
-            else []
-        )
+        failures: list[str] = []
+        if signalling is not None:
+            await signalling.finish_failure_report()
+            failures = signalling.take_failures(
+                include_unconfirmed=code is not ConnectionClosedCode.NORMAL
+            )
         token = _notifying.set(self)
         try:
             for correlation_id in failures:
                 if self._on_talk_stream_delivery_failed:
-                    try:
-                        await self._on_talk_stream_delivery_failed(correlation_id)
-                    except Exception as e:
-                        logger.error("Error handling talk stream delivery failure: %s", e)
+                    await _call_listener(self._on_talk_stream_delivery_failed(correlation_id))
             if self._started and self._on_connection_closed:
-                try:
-                    await self._on_connection_closed(code.value, reason)
-                except Exception as e:
-                    logger.error("Error handling connection closed: %s", e)
+                await _call_listener(self._on_connection_closed(code.value, reason))
         finally:
             _notifying.reset(token)
 
@@ -695,19 +722,27 @@ class StreamingClient:
     async def close(self) -> None:
         """Close the streaming connection and clean up resources.
 
-        Returns once the teardown has finished. Inside a CONNECTION_CLOSED or delivery
-        failure listener of this session it returns at once, so the listener cannot wait
-        on itself.
+        Waits for the teardown, then for the CONNECTION_CLOSED listeners. It does not wait
+        for the listeners when it is called from a delivery failure or CONNECTION_CLOSED
+        listener of this session, from a task that such a listener started, or from a task
+        that is being cancelled. A listener must not await another task that calls close()
+        unless it cancels that task first.
         """
         self._terminate(ConnectionClosedCode.NORMAL, None)
-        if _notifying.get() is self:
+        await asyncio.shield(self._start_teardown())
+        current = asyncio.current_task()
+        if _notifying.get() is self or (current is not None and current.cancelling()):
             return
         task = self._end_task
         if task is None or (task.done() and not self._finished):
             task = self._end_task = asyncio.create_task(self._finish())
-        if task is asyncio.current_task():
+        if task is current:
             return
         await asyncio.shield(task)
+
+    @property
+    def teardown_finished(self) -> bool:
+        return self._torn_down
 
     async def _teardown(self, send_end_session: bool) -> None:
         logger.debug("Closing streaming client")
@@ -744,6 +779,7 @@ class StreamingClient:
                 logger.warning("Error closing peer connection: %s", e)
             finally:
                 self._peer_connection = None
+        self._torn_down = True
         logger.debug("Streaming client closed")
 
     def send_user_audio(
