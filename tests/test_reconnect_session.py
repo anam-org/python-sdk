@@ -843,8 +843,11 @@ async def test_pending_failures_reported_before_connection_closed(
 
 @pytest.mark.asyncio
 async def test_resend_on_new_stream_during_gap_yields_and_recovers(
-    engine: FakeEngine, anam: AnamClient
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Held acks must not fail the resend before the test releases them.
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
+    monkeypatch.setattr(HeartbeatMonitor, "SUSPECT_AFTER_SECONDS", 5.0)
     limit = 5000
     session = await anam.connect_async()
     sc = signalling(anam)
@@ -870,16 +873,23 @@ async def test_resend_on_new_stream_during_gap_yields_and_recovers(
         await drop_and_wait_for_gap(engine, anam)
         await session.send_talk_stream("hello")
         await engine.wait_for(lambda: len(ticks_at_failure) >= 3)
+        acks = asyncio.Event()
+        engine.hold_heartbeat_answers = acks
         end_gap(engine)
 
+        await engine.wait_for(lambda: bool(sc._monitor._unconfirmed))
+        resent = sc._monitor._unconfirmed[0].correlation_id
+        assert await stays(lambda: sc._monitor.is_tracked(resent), 0.1)
+        acks.set()
+        await engine.wait_for(lambda: not sc._monitor.is_tracked(resent))
         await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
         delivered = engine.received_actions("talkstream")[0][1]["payload"]["correlationId"]
-        await engine.wait_for(lambda: not sc._monitor.is_tracked(delivered))
     finally:
         ticker.cancel()
+    assert delivered == resent
     failures = len(ticks_at_failure)
     assert failures < limit
-    assert delivered not in failed_ids
+    assert resent not in failed_ids
     assert all(b > a for a, b in zip(ticks_at_failure, ticks_at_failure[1:]))
     assert await stays(lambda: len(ticks_at_failure) == failures, 0.2)
 
