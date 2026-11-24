@@ -1388,3 +1388,50 @@ async def test_chunk_waiting_for_lock_is_dropped_after_interruption(
     assert contents == ["one", "three"]
     assert new.state is TalkMessageStreamState.STREAMING
     assert failed == []
+
+
+@pytest.mark.asyncio
+async def test_failures_of_old_session_reach_app_after_rollover(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
+    monkeypatch.setattr(HeartbeatMonitor, "SUSPECT_AFTER_SECONDS", 5.0)
+    events: list[tuple[str, str]] = []
+    replacement: list[Session] = []
+    reconnected = asyncio.Event()
+    session = await anam.connect_async()
+
+    async def on_failed(failure: MessageDeliveryFailure) -> None:
+        events.append(("failed", failure.correlation_id))
+        if len(events) == 1:
+            async with asyncio.timeout(3.0):
+                await reconnected.wait()
+
+    async def roll_over() -> None:
+        await session.wait_until_closed()
+        engine.answer_heartbeats = True
+        replacement.append(await anam.connect_async())
+        reconnected.set()
+
+    anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, on_failed)
+    anam.add_listener(
+        AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(("closed", code))
+    )
+    engine.answer_heartbeats = False
+    first = session.create_talk_stream()
+    second = session.create_talk_stream()
+    await first.send("one")
+    await second.send("two")
+    await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 2)
+    roller = asyncio.create_task(roll_over())
+    await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
+
+    await asyncio.wait_for(roller, 3.0)
+    await engine.wait_for(lambda: ("closed", "server_closed") in events)
+    assert events == [
+        ("failed", first.correlation_id),
+        ("failed", second.correlation_id),
+        ("closed", "server_closed"),
+    ]
+    assert replacement[0].is_active
+    assert anam.is_streaming

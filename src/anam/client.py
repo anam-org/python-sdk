@@ -310,6 +310,13 @@ class AnamClient:
             if session is not None:
                 session._mark_closed()
 
+        # The app holds an established session, so it gets that session's failure and
+        # terminal events even after a newer session started. The client state belongs to
+        # the newer session, so only the current generation changes it.
+        async def delivery_failed(correlation_id: str) -> None:
+            if generation == self._session_generation or session is not None:
+                await self._handle_talk_stream_delivery_failed(correlation_id)
+
         closed_emitted = False
 
         async def connection_closed(code: str, reason: str | None) -> None:
@@ -320,8 +327,6 @@ class AnamClient:
             if generation == self._session_generation:
                 await self._handle_connection_closed(code, reason)
             elif session is not None:
-                # The app holds this session, so it gets its terminal event even after a
-                # newer session started; the client state belongs to the newer one.
                 await self._emit(AnamEvent.CONNECTION_CLOSED, code, reason)
 
         streaming_client = StreamingClient(
@@ -332,9 +337,7 @@ class AnamClient:
             on_session_ready=for_this_session(self._handle_session_ready),
             on_talk_stream_interrupted=for_this_session(self._handle_talk_stream_interrupted),
             custom_ice_servers=self._options.ice_servers,
-            on_talk_stream_delivery_failed=for_this_session(
-                self._handle_talk_stream_delivery_failed
-            ),
+            on_talk_stream_delivery_failed=delivery_failed,
             on_torn_down=torn_down,
         )
         self._streaming_client = streaming_client
