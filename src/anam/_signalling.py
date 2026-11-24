@@ -1,18 +1,26 @@
 """WebSocket signalling client for Anam services."""
 
 import asyncio
+import functools
 import json
 import logging
 from enum import Enum
 from typing import Any, Awaitable, Callable
 
-import websockets
-from websockets.asyncio.client import ClientConnection
+from websockets.asyncio.client import ClientConnection, connect
+from websockets.exceptions import ConnectionClosed
 from websockets.protocol import State
 
 from .types import AgentAudioInputPayload, SessionInfo
 
 logger = logging.getLogger(__name__)
+
+# A dispatch item: the callback to run, and whether the dispatcher stops after it.
+_DispatchItem = tuple[Callable[[], Awaitable[None]], bool]
+
+
+async def _noop(*_: Any) -> None:
+    return None
 
 
 class SignalAction(str, Enum):
@@ -34,28 +42,46 @@ class SignalAction(str, Enum):
 class SignallingClient:
     """WebSocket client for signalling with Anam engine.
 
-    Handles the WebSocket connection for WebRTC signalling,
-    including offer/answer exchange and ICE candidate trickling.
+    Handles the WebSocket connection for WebRTC signalling, including offer/answer
+    exchange and ICE candidate trickling. When the socket drops, the client reconnects
+    to the same URL with a bounded number of attempts; the engine swaps the new socket
+    into the running session. Messages sent while no socket is open wait in a bounded
+    buffer and go out in order on the next socket.
+
+    One supervisor task owns the connect, receive and reconnect loop. Application
+    callbacks run in order on a separate dispatch task, so a slow callback cannot
+    delay the receive loop.
     """
 
     DEFAULT_HEARTBEAT_INTERVAL = 5
     DEFAULT_MAX_RECONNECTION_ATTEMPTS = 5
     SHUTDOWN_TIMEOUT = 2.0
+    RECONNECT_BACKOFF_SECONDS = 0.1
+    STABLE_CONNECTION_SECONDS = 5.0
+    # The engine purges a session after 15 s without a socket.
+    RECONNECT_OPEN_TIMEOUT_SECONDS = 5.0
+    WRITE_STALL_SECONDS = 3.0
+    SEND_BUFFER_LIMIT = 2000
 
     def __init__(
         self,
         session_info: SessionInfo,
         on_message: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         on_open: Callable[[], Awaitable[None]] | None = None,
-        on_close: Callable[[int, str], Awaitable[None]] | None = None,
+        on_close: Callable[[int | None, str], Awaitable[None]] | None = None,
+        on_talk_stream_delivery_failed: Callable[[str], Awaitable[None]] | None = None,
     ):
         """Initialize the signalling client.
 
         Args:
             session_info: Session information from API.
-            on_message: Callback for received messages.
-            on_open: Callback when connection opens.
-            on_close: Callback when connection closes.
+            on_message: Callback for received messages. Runs on the dispatch task, in
+                order.
+            on_open: Callback when the first socket opens. Reconnects do not call it.
+            on_close: Callback when the connection is lost for good because the
+                reconnect attempts ran out. A local close() does not call it.
+            on_talk_stream_delivery_failed: Callback with the correlation ID of a talk
+                stream that lost a chunk. Called at most once per correlation ID.
         """
         self._session_info = session_info
         self._session_id = session_info.session_id
@@ -69,13 +95,21 @@ class SignallingClient:
         self._on_message = on_message
         self._on_open = on_open
         self._on_close = on_close
+        self._on_talk_stream_delivery_failed = on_talk_stream_delivery_failed
 
         self._ws: ClientConnection | None = None
-        self._heartbeat_task: asyncio.Task[None] | None = None
-        self._receive_task: asyncio.Task[None] | None = None
         self._stop_signal = False
+        self._permanently_closed = False
+        self._server_ended = False
         self._connection_attempts = 0
         self._send_buffer: list[dict[str, Any]] = []
+        self._buffer_overflowed = False
+        self._send_lock = asyncio.Lock()
+        self._dispatch_queue: asyncio.Queue[_DispatchItem] = asyncio.Queue()
+
+        self._run_task: asyncio.Task[None] | None = None
+        self._dispatch_task: asyncio.Task[None] | None = None
+        self._heartbeat_task: asyncio.Task[None] | None = None
 
         self._ws_url = self._construct_websocket_url()
         logger.info("SignallingClient WebSocket URL: %s", self._ws_url)
@@ -99,125 +133,235 @@ class SignallingClient:
         base_url = f"{ws_protocol}://{hostname}{endpoint}"
         return f"{base_url}?session_id={self._session_id}"
 
+    @property
+    def is_permanently_closed(self) -> bool:
+        """True once no socket will open again: after close() or exhausted retries."""
+        return self._permanently_closed or self._stop_signal
+
+    @property
+    def server_ended(self) -> bool:
+        """True once the engine sent endsession."""
+        return self._server_ended
+
     async def connect(self) -> None:
-        """Establish WebSocket connection.
+        """Open the first socket and start the signalling tasks.
 
         Raises:
-            ConnectionError: If connection fails after max attempts.
+            Exception: If the first socket cannot open. The first connect is not retried.
         """
-        logger.debug("Connecting to signalling server: %s", self._ws_url)
+        logger.debug("Connecting to signalling server")
         try:
-            self._ws = await websockets.asyncio.client.connect(self._ws_url, close_timeout=2.0)
-            self._connection_attempts = 0
-            logger.info("WebSocket connection established")
-
-            # Start heartbeat
-            self._start_heartbeat()
-
-            # Notify connection open
-            if self._on_open:
-                await self._on_open()
-
-            # Start message handling
-            self._receive_task = asyncio.create_task(self._handle_messages())
-
+            ws = await connect(self._ws_url, close_timeout=2.0)
         except Exception as e:
             logger.error("Failed to connect to signalling server: %s", e)
             raise
-
-    async def _handle_messages(self) -> None:
-        """Handle incoming WebSocket messages."""
-        if not self._ws:
-            logger.error("WebSocket not connected")
+        if self._stop_signal:
+            await self._dispose(ws)
             return
+        logger.info("WebSocket connection established")
+        opened_at = asyncio.get_running_loop().time()
 
+        self._dispatch_task = asyncio.create_task(self._dispatch())
+        await self._activate(ws)
+        self._run_task = asyncio.create_task(self._supervise(ws, opened_at))
+
+        if self._on_open:
+            try:
+                await self._on_open()
+            except BaseException:
+                await self.close()
+                raise
+
+    def _owned_tasks(self) -> list[asyncio.Task[None]]:
+        tasks = (self._run_task, self._dispatch_task, self._heartbeat_task)
+        return [task for task in tasks if task is not None]
+
+    async def _activate(self, ws: ClientConnection) -> None:
+        """Make a freshly opened socket the current one: flush, then start heartbeats."""
         try:
-            async for message in self._ws:
+            async with self._send_lock:
+                self._ws = ws
+                await self._flush(ws)
+        except asyncio.CancelledError:
+            if self._ws is not ws:
+                ws.transport.abort()
+            raise
+        self._heartbeat_task = asyncio.create_task(self._send_heartbeats(ws))
+
+    async def _deactivate(self, ws: ClientConnection) -> None:
+        """Forget an ended socket and stop its tasks."""
+        if self._ws is ws:
+            self._ws = None
+        tasks = [task for task in (self._heartbeat_task,) if task is not None]
+        self._heartbeat_task = None
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _supervise(self, ws: ClientConnection, opened_at: float) -> None:
+        """Receive on the current socket; when it ends, reconnect or give up."""
+        loop = asyncio.get_running_loop()
+        while True:
+            await self._receive(ws)
+            await self._deactivate(ws)
+            code, reason = ws.close_code, ws.close_reason or ""
+            if self._stop_signal or self._server_ended:
+                return
+            logger.warning("Signalling socket closed: code=%s reason=%s", code, reason)
+
+            if loop.time() - opened_at >= self.STABLE_CONNECTION_SECONDS:
+                self._connection_attempts = 0
+            self._connection_attempts += 1
+
+            new_ws = await self._reconnect()
+            if new_ws is None:
+                if not self._stop_signal:
+                    self._terminate(code, reason)
+                return
+            ws = new_ws
+            opened_at = loop.time()
+            await self._activate(ws)
+
+    async def _reconnect(self) -> ClientConnection | None:
+        """Open a new socket to the same URL within the retry budget."""
+        while self._connection_attempts <= self._max_reconnection_attempts:
+            delay = self.RECONNECT_BACKOFF_SECONDS * self._connection_attempts
+            logger.info(
+                "Reconnecting signalling in %.1f seconds (attempt %d/%d)",
+                delay,
+                self._connection_attempts,
+                self._max_reconnection_attempts,
+            )
+            await asyncio.sleep(delay)
+            if self._stop_signal:
+                return None
+            try:
+                ws = await connect(
+                    self._ws_url,
+                    close_timeout=2.0,
+                    open_timeout=self.RECONNECT_OPEN_TIMEOUT_SECONDS,
+                )
+            except Exception as e:
+                logger.warning("Signalling reconnect failed: %s", e)
+                self._connection_attempts += 1
+                continue
+            if self._stop_signal:
+                await self._dispose(ws)
+                return None
+            logger.info("Signalling socket reconnected")
+            return ws
+        logger.error("Max reconnection attempts reached")
+        return None
+
+    def _terminate(self, code: int | None, reason: str) -> None:
+        """Give up for good; on_close runs last on the dispatch task."""
+        self._permanently_closed = True
+        self._send_buffer.clear()
+        on_close = self._on_close or _noop
+        self._dispatch_queue.put_nowait((functools.partial(on_close, code, reason), True))
+
+    async def _receive(self, ws: ClientConnection) -> None:
+        """Read until the socket ends. A clean close ends the iterator without an error."""
+        try:
+            async for raw in ws:
                 if self._stop_signal:
-                    break
+                    return
+                self._handle_incoming(raw)
+        except ConnectionClosed:
+            pass
 
-                try:
-                    data = json.loads(message)
-                    action_type = data.get("actionType", "").lower()
-
-                    # Skip heartbeat logging
-                    if action_type != SignalAction.HEARTBEAT.value:
-                        logger.debug("Received signal: %s", action_type)
-
-                    if self._on_message:
-                        await self._on_message(data)
-
-                except json.JSONDecodeError as e:
-                    logger.error("Failed to parse message: %s", e)
-                except Exception as e:
-                    logger.error("Error handling message: %s", e)
-
-        except websockets.exceptions.ConnectionClosed as e:
-            logger.warning("WebSocket closed: code=%s reason=%s", e.code, e.reason)
-            if self._on_close:
-                await self._on_close(e.code, e.reason or "")
-            if not self._stop_signal:
-                await self._try_reconnect()
-
-    async def _try_reconnect(self) -> None:
-        """Attempt to reconnect after disconnection."""
-        self._connection_attempts += 1
-
-        if self._connection_attempts > self._max_reconnection_attempts:
-            logger.error("Max reconnection attempts reached")
-            return
-
-        delay = 0.1 * self._connection_attempts
-        logger.info(
-            "Reconnecting in %.1f seconds (attempt %d/%d)",
-            delay,
-            self._connection_attempts,
-            self._max_reconnection_attempts,
-        )
-
-        await asyncio.sleep(delay)
-
+    def _handle_incoming(self, raw: str | bytes) -> None:
         try:
-            await self.connect()
-        except Exception as e:
-            logger.error("Reconnection failed: %s", e)
-            await self._try_reconnect()
-
-    def _start_heartbeat(self) -> None:
-        """Start the heartbeat task."""
-        if self._heartbeat_task and not self._heartbeat_task.done():
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse message: %s", e)
             return
+        if not isinstance(data, dict):
+            logger.error("Ignoring signalling message that is not an object")
+            return
+        action_type = str(data.get("actionType", "")).lower()
+        if action_type != SignalAction.HEARTBEAT.value:
+            logger.debug("Received signal: %s", action_type)
+        if action_type == SignalAction.END_SESSION.value:
+            self._server_ended = True
+        if self._on_message:
+            self._dispatch_queue.put_nowait((functools.partial(self._on_message, data), False))
 
-        self._heartbeat_task = asyncio.create_task(self._send_heartbeats())
+    async def _dispatch(self) -> None:
+        """Run application callbacks in order, away from the receive loop."""
+        while not self._stop_signal:
+            call, last = await self._dispatch_queue.get()
+            try:
+                await call()
+            except Exception as e:
+                logger.error("Error handling signalling callback: %s", e)
+            if last:
+                return
 
-    async def _send_heartbeats(self) -> None:
-        """Send periodic heartbeat messages."""
+    async def _send_heartbeats(self, ws: ClientConnection) -> None:
+        """Send periodic heartbeat messages on one socket."""
         heartbeat_message = {
             "actionType": SignalAction.HEARTBEAT.value,
             "sessionId": self._session_id,
             "payload": "",
         }
-
-        while not self._stop_signal:
+        while True:
             await asyncio.sleep(self._heartbeat_interval)
-
-            if self._stop_signal:
-                break
-
-            if self._is_ws_open():
+            async with self._send_lock:
+                if self._stop_signal or ws.state is not State.OPEN:
+                    return
                 try:
-                    await self._ws.send(json.dumps(heartbeat_message))  # type: ignore
+                    await self._write(ws, heartbeat_message)
                 except Exception as e:
-                    logger.error("Failed to send heartbeat: %s", e)
+                    logger.warning("Failed to send heartbeat: %s", e)
 
-    def _is_ws_open(self) -> bool:
-        """Check if WebSocket is connected and open."""
-        if not self._ws:
-            return False
-        return self._ws.state == State.OPEN
+    async def _write(self, ws: ClientConnection, message: dict[str, Any]) -> None:
+        await ws.send(json.dumps(message))
+
+    async def _flush(self, ws: ClientConnection) -> None:
+        """Send buffered messages in order. The caller holds the send lock."""
+        self._buffer_overflowed = False
+        while self._send_buffer and not self.is_permanently_closed:
+            if ws.state is not State.OPEN:
+                return
+            message = self._send_buffer.pop(0)
+            try:
+                await self._write(ws, message)
+            except Exception as e:
+                # The bytes may have gone out, so the message is not buffered again.
+                logger.warning("Lost buffered %s message: %s", message.get("actionType"), e)
+                return
+
+    def _buffer(self, message: dict[str, Any]) -> None:
+        self._send_buffer.append(message)
+        if len(self._send_buffer) <= self.SEND_BUFFER_LIMIT:
+            return
+        index = self._eviction_index()
+        if index is None:
+            return
+        evicted = self._send_buffer.pop(index)
+        if not self._buffer_overflowed:
+            self._buffer_overflowed = True
+            logger.warning(
+                "Signalling send buffer is full; dropping the oldest %s message",
+                evicted.get("actionType"),
+            )
+
+    def _eviction_index(self) -> int | None:
+        """Oldest agent audio first, then the oldest message that is not an offer."""
+        actions = [message.get("actionType") for message in self._send_buffer]
+        if SignalAction.AGENT_AUDIO_INPUT.value in actions:
+            return actions.index(SignalAction.AGENT_AUDIO_INPUT.value)
+        for index, action in enumerate(actions):
+            if action != SignalAction.OFFER.value:
+                return index
+        return None
 
     async def send_message(self, message: dict[str, Any]) -> None:
-        """Send a message through the WebSocket.
+        """Send a message, or buffer it until a socket is open.
+
+        A write that fails on an open socket is not retried: the bytes may have been
+        delivered, and a repeated offer would restart ICE.
 
         Args:
             message: The message to send.
@@ -226,19 +370,28 @@ class SignallingClient:
         if "actionType" in message and isinstance(message["actionType"], SignalAction):
             message["actionType"] = message["actionType"].value
 
-        if self._is_ws_open():
+        if self.is_permanently_closed:
+            logger.debug("Dropping %s message: signalling is closed", message.get("actionType"))
+            return
+        async with self._send_lock:
+            if self.is_permanently_closed:
+                logger.debug("Dropping %s message: signalling is closed", message.get("actionType"))
+                return
+            ws = self._ws
+            if ws is None or ws.state is not State.OPEN:
+                self._buffer(message)
+                return
             try:
-                await self._ws.send(json.dumps(message))  # type: ignore
+                await self._write(ws, message)
             except Exception as e:
-                logger.error("Failed to send message: %s", e)
-                self._send_buffer.append(message)
-        else:
-            self._send_buffer.append(message)
+                logger.warning("Failed to send %s message: %s", message.get("actionType"), e)
 
     async def send_end_session(self) -> None:
         """Inform the backend to end the session gracefully. Best effort, as we are on the shutdown path."""
         self._stop_signal = True
-        if not self._is_ws_open():
+        self._send_buffer.clear()
+        ws = self._ws
+        if ws is None or ws.state is not State.OPEN:
             logger.debug("Skip sending endsession: signalling socket is not open")
             return
         message = {
@@ -248,14 +401,18 @@ class SignallingClient:
         }
         try:
             await asyncio.wait_for(
-                self._ws.send(json.dumps(message)),  # type: ignore
-                timeout=self.SHUTDOWN_TIMEOUT,
+                self._send_end_session(ws, message), timeout=self.SHUTDOWN_TIMEOUT
             )
             logger.debug("Sent endsession for session %s", self._session_id)
         except asyncio.TimeoutError:
             logger.warning("Timed out sending endsession")
         except Exception as e:
             logger.warning("Failed to send endsession: %s", e)
+
+    async def _send_end_session(self, ws: ClientConnection, message: dict[str, Any]) -> None:
+        async with self._send_lock:
+            if ws.state is State.OPEN:
+                await self._write(ws, message)
 
     async def send_offer(self, sdp: str, sdp_type: str) -> None:
         """Send WebRTC offer to the server.
@@ -301,17 +458,6 @@ class SignallingClient:
             },
         }
         await self.send_message(message)
-
-    async def flush_send_buffer(self) -> None:
-        """Send all buffered messages."""
-        while self._send_buffer and self._is_ws_open():
-            message = self._send_buffer.pop(0)
-            try:
-                await self._ws.send(json.dumps(message))  # type: ignore
-            except Exception as e:
-                logger.error("Failed to flush message: %s", e)
-                self._send_buffer.insert(0, message)
-                break
 
     async def send_agent_audio_input(self, payload: AgentAudioInputPayload) -> None:
         """Send agent audio input message to the server.
@@ -392,32 +538,29 @@ class SignallingClient:
         await self.send_message(message)
 
     async def close(self) -> None:
-        """Close the WebSocket connection."""
+        """Close the connection for good. Idempotent and safe from inside a callback."""
         self._stop_signal = True
+        self._send_buffer.clear()
 
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
-            try:
-                await self._heartbeat_task
-            except asyncio.CancelledError:
-                pass
-
-        if self._receive_task:
-            self._receive_task.cancel()
-            try:
-                await self._receive_task
-            except asyncio.CancelledError:
-                pass
+        current = asyncio.current_task()
+        tasks = [task for task in self._owned_tasks() if task is not current]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
         if self._ws:
             try:
-                await asyncio.wait_for(self._ws.close(), timeout=self.SHUTDOWN_TIMEOUT)
-            except asyncio.TimeoutError:
-                logger.warning("Timed out closing signalling socket; aborting transport")
-                transport = getattr(self._ws, "transport", None)
-                if transport is not None:
-                    transport.abort()
+                await self._dispose(self._ws)
             finally:
                 self._ws = None
 
         logger.debug("SignallingClient closed")
+
+    async def _dispose(self, ws: ClientConnection) -> None:
+        try:
+            await asyncio.wait_for(ws.close(), timeout=self.SHUTDOWN_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning("Timed out closing signalling socket; aborting transport")
+            transport = getattr(ws, "transport", None)
+            if transport is not None:
+                transport.abort()

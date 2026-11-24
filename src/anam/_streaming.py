@@ -121,9 +121,9 @@ class StreamingClient:
         await self._init_peer_connection()
         await self._create_and_send_offer()
 
-    async def _on_signalling_close(self, code: int, reason: str) -> None:
+    async def _on_signalling_close(self, code: int | None, reason: str) -> None:
         """Handle signalling connection close."""
-        logger.warning("Signalling closed: %d %s", code, reason)
+        logger.warning("Signalling closed: %s %s", code, reason)
         if self._on_connection_closed:
             await self._on_connection_closed("signalling_closed", reason)
 
