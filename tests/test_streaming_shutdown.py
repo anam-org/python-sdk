@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
@@ -219,3 +220,28 @@ async def test_socket_close_timeout_clears_socket(
     assert client._stop_signal
     if has_transport:
         transport.abort.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_eager_dispatch_waits_for_the_end_of_the_session(session_info: SessionInfo) -> None:
+    if sys.version_info < (3, 12):
+        pytest.skip("eager_task_factory is new in 3.12")
+    loop = asyncio.get_running_loop()
+    loop.set_task_factory(asyncio.eager_task_factory)
+    try:
+        closed_at_call: list[bool] = []
+
+        async def on_failed(correlation_id: str) -> None:
+            closed_at_call.append(client.is_permanently_closed)
+
+        client = SignallingClient(session_info, on_talk_stream_delivery_failed=on_failed)
+        client._monitor.track_chunk("cid-1")
+        client._handle_incoming(
+            json.dumps({"actionType": "endsession", "sessionId": "session-1", "payload": "bye"})
+        )
+        await asyncio.sleep(0)
+
+        assert closed_at_call == []
+        assert client.take_failures(include_unconfirmed=True) == ["cid-1"]
+    finally:
+        loop.set_task_factory(None)

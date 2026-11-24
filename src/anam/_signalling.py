@@ -480,6 +480,9 @@ class SignallingClient:
             self._dispatch_task = asyncio.create_task(self._dispatch())
 
     async def _dispatch(self) -> None:
+        # An eager task factory runs this before create_task returns. Yield first, so that the
+        # caller can assign _dispatch_task and latch the terminal cause.
+        await asyncio.sleep(0)
         while not self._stop_signal:
             item = await self._dispatch_queue.get()
             self._dispatching = item
