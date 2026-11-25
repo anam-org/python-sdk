@@ -611,12 +611,12 @@ class SignallingClient:
             return
         index = self._eviction_index()
         if index is None:
-            return
+            index = len(self._send_buffer) - 1
         evicted = self._send_buffer.pop(index)
         if not self._buffer_overflowed:
             self._buffer_overflowed = True
             logger.warning(
-                "Signalling send buffer is full; dropping the oldest %s message",
+                "Signalling send buffer is full; dropping a %s message",
                 evicted.get("actionType"),
             )
         correlation_id = _talk_correlation_id(evicted)

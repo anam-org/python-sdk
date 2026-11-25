@@ -326,6 +326,7 @@ async def test_buffer_overflow_drops_oldest_audio_first(
         "agentaudioinput",
         "agentaudioinput",
     ]
+    assert [message["payload"]["sequenceNumber"] for message in client._send_buffer[1:]] == [2, 3]
     await client.send_agent_audio_input_end()
 
     actions = [message["actionType"] for message in client._send_buffer]
@@ -346,6 +347,20 @@ async def test_buffer_never_evicts_offer(
 
     actions = [message["actionType"] for message in client._send_buffer]
     assert actions == ["offer", "icecandidate"]
+
+
+@pytest.mark.asyncio
+async def test_buffer_of_offers_drops_the_incoming_offer(
+    engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(SignallingClient, "SEND_BUFFER_LIMIT", 2)
+    client = SignallingClient(session_info_for(engine))
+
+    for index in range(1, 6):
+        await client.send_offer(f"sdp-{index}", "offer")
+
+    sdps = [message["payload"]["connectionDescription"]["sdp"] for message in client._send_buffer]
+    assert sdps == ["sdp-1", "sdp-2"]
 
 
 @pytest.mark.asyncio
