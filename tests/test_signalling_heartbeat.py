@@ -613,10 +613,12 @@ async def test_interruption_behind_slow_listener_drops_later_chunks(
 ) -> None:
     monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     engine.answer_heartbeats = False
+    blocked = asyncio.Event()
     release = asyncio.Event()
 
     async def slow(message: dict[str, Any]) -> None:
         if message.get("actionType") == "block":
+            blocked.set()
             await release.wait()
 
     on_message = AsyncMock(side_effect=slow)
@@ -624,7 +626,7 @@ async def test_interruption_behind_slow_listener_drops_later_chunks(
     await client.connect()
     await announce_acks(engine, client, True)
     await engine.send({"actionType": "block", "payload": {}})
-    await engine.wait_for(lambda: on_message.await_count == 1)
+    await asyncio.wait_for(blocked.wait(), 2.0)
 
     await talk(client, "a")
     await engine.wait_for(lambda: talk_cids(engine) == ["a"])
