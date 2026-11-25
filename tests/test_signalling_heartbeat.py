@@ -1,4 +1,5 @@
 import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 from unittest.mock import ANY, AsyncMock, Mock
@@ -189,11 +190,16 @@ async def test_ack_during_suspended_write_counts(
 
 @pytest.mark.asyncio
 async def test_chunk_written_then_abnormal_drop_fails(
-    engine: FakeEngine, make_client: ClientFactory, failures: list[str]
+    engine: FakeEngine,
+    make_client: ClientFactory,
+    failures: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     engine.answer_heartbeats = False
     client = make_client()
     await client.connect()
+    await announce_acks(engine, client, True)
 
     await talk(client, "a")
     await engine.wait_for(lambda: talk_cids(engine) == ["a"])
@@ -212,6 +218,7 @@ async def test_chunk_during_gap_fails_immediately(
 ) -> None:
     client = make_client()
     await client.connect()
+    await announce_acks(engine, client, True)
 
     await drop_and_wait_for_gap(engine, client)
     await talk(client, "a")
@@ -242,11 +249,18 @@ async def test_unanswered_heartbeat_replaces_socket(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("acks", [None, True, False])
 async def test_stalled_write_replaces_socket(
-    engine: FakeEngine, make_client: ClientFactory
+    engine: FakeEngine,
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    acks: bool | None,
 ) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     client = make_client()
     await client.connect()
+    if acks is not None:
+        await announce_acks(engine, client, acks)
     ws = client._ws
     assert ws is not None
 
@@ -364,9 +378,11 @@ async def test_interrupted_stream_not_reported(
     on_message = AsyncMock()
     client = make_client(on_message=on_message)
     await client.connect()
+    await announce_acks(engine, client, True)
 
     await talk(client, "a")
     await engine.wait_for(lambda: talk_cids(engine) == ["a"])
+    assert client._monitor.is_tracked("a")
     await engine.send(
         {
             "actionType": "talkinputstreaminterrupted",
@@ -386,8 +402,9 @@ async def test_interrupted_stream_not_reported(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["gap", "drop"])
 async def test_failure_callback_calls_close(
-    engine: FakeEngine, make_client: ClientFactory, path: str
+    engine: FakeEngine, make_client: ClientFactory, path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     holder: list[SignallingClient] = []
     reported: list[str] = []
 
@@ -399,6 +416,7 @@ async def test_failure_callback_calls_close(
     client = make_client(on_failed=on_failed)
     holder.append(client)
     await client.connect()
+    await announce_acks(engine, client, True)
 
     if path == "gap":
         await drop_and_wait_for_gap(engine, client)
@@ -421,6 +439,7 @@ async def test_stale_ack_after_reconnect_confirms_nothing(
     on_message = AsyncMock()
     client = make_client(on_message=on_message)
     await client.connect()
+    await announce_acks(engine, client, True)
     await engine.wait_for(lambda: len(heartbeat_seqs(engine, 0)) >= 1)
     stale = heartbeat_seqs(engine, 0)[-1]
 
@@ -451,12 +470,17 @@ async def test_stale_ack_after_reconnect_confirms_nothing(
 
 @pytest.mark.asyncio
 async def test_cancelled_chunk_write_reported_at_most_once(
-    engine: FakeEngine, make_client: ClientFactory, failures: list[str]
+    engine: FakeEngine,
+    make_client: ClientFactory,
+    failures: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # pause_writing() only holds drain(); the bytes still reach the engine.
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     engine.answer_heartbeats = False
     client = make_client()
     await client.connect()
+    await announce_acks(engine, client, True)
     ws = client._ws
     assert ws is not None
 
@@ -480,6 +504,7 @@ async def test_send_for_failed_correlation_id_is_dropped(
 ) -> None:
     client = make_client()
     await client.connect()
+    await announce_acks(engine, client, True)
 
     await drop_and_wait_for_gap(engine, client)
     await talk(client, "a")
@@ -509,9 +534,11 @@ async def test_suspect_refusal_only_after_acks_confirmed(
     await talk(client, "a")
     await engine.wait_for(lambda: talk_cids(engine) == ["a"])
     assert failures == []
+    assert not client._monitor.is_tracked("a")
 
     await announce_acks(engine, client, True)
-    assert client._monitor.is_suspect()
+    assert not client._monitor.is_suspect()
+    await engine.wait_for(client._monitor.is_suspect)
     await talk(client, "b")
     await engine.wait_for(lambda: failures == ["b"])
     await sync_dispatch(engine, on_message)
@@ -538,18 +565,21 @@ async def test_evicted_talk_chunk_is_reported(
 
 
 @pytest.mark.asyncio
-async def test_chunk_buffered_before_first_open_is_tracked_on_flush(
-    engine: FakeEngine, make_client: ClientFactory
+@pytest.mark.parametrize("acks", [HeartbeatAcks.YES, HeartbeatAcks.UNKNOWN])
+async def test_chunk_buffered_before_first_open_is_tracked_on_flush_only_with_acks(
+    engine: FakeEngine, make_client: ClientFactory, acks: HeartbeatAcks
 ) -> None:
+    # sessionready cannot arrive before the first open; set the state the flush sees.
     engine.answer_heartbeats = False
     client = make_client()
+    client._heartbeat_acks = acks
     await talk(client, "a")
     assert client._monitor.is_tracked("a") is False
 
     await client.connect()
 
     await engine.wait_for(lambda: talk_cids(engine, 0) == ["a"])
-    assert client._monitor.is_tracked("a")
+    assert client._monitor.is_tracked("a") is (acks is HeartbeatAcks.YES)
 
 
 @pytest.mark.asyncio
@@ -592,11 +622,13 @@ async def test_interruption_behind_slow_listener_drops_later_chunks(
     on_message = AsyncMock(side_effect=slow)
     client = make_client(on_message=on_message)
     await client.connect()
+    await announce_acks(engine, client, True)
     await engine.send({"actionType": "block", "payload": {}})
     await engine.wait_for(lambda: on_message.await_count == 1)
 
     await talk(client, "a")
     await engine.wait_for(lambda: talk_cids(engine) == ["a"])
+    assert client._monitor.is_tracked("a")
     await engine.send(
         {
             "actionType": "talkinputstreaminterrupted",
@@ -660,3 +692,104 @@ async def test_quick_write_stalls_give_up(engine: FakeEngine, make_client: Clien
     await engine.wait_for(lambda: on_end.call_count == 1)
     on_end.assert_called_once_with(ConnectionClosedCode.SIGNALLING_FAILURE, ANY)
     assert len(engine.connections) == 2
+
+
+@pytest.mark.asyncio
+async def test_unknown_acks_never_fail_or_replace_socket(
+    engine: FakeEngine, make_client: ClientFactory, failures: list[str]
+) -> None:
+    engine.answer_heartbeats = False
+    on_end = Mock()
+    client = make_client(on_end=on_end, max_reconnection_attempts=2)
+    await client.connect()
+
+    for cid in ("a", "b", "c"):
+        await talk(client, cid)
+        assert await stays(
+            lambda: len(engine.connections) == 1 and failures == [] and not on_end.called,
+            HeartbeatMonitor.ACK_TIMEOUT_SECONDS + 0.1,
+        )
+
+    assert talk_cids(engine, 0) == ["a", "b", "c"]
+    assert client._heartbeat_acks is HeartbeatAcks.UNKNOWN
+    assert heartbeat_seqs(engine, 0)
+
+
+@pytest.mark.asyncio
+async def test_gap_chunk_flushes_once_untracked_while_acks_unknown(
+    engine: FakeEngine, make_client: ClientFactory, failures: list[str]
+) -> None:
+    engine.answer_heartbeats = False
+    client = make_client()
+    await client.connect()
+
+    await drop_and_wait_for_gap(engine, client)
+    await talk(client, "a")
+    assert [message["payload"]["correlationId"] for message in client._send_buffer] == ["a"]
+    end_gap(engine)
+    await engine.wait_for(lambda: talk_cids(engine, 1) == ["a"])
+
+    assert not client._monitor.is_tracked("a")
+    assert await stays(
+        lambda: failures == [] and len(engine.connections) == 2,
+        HeartbeatMonitor.ACK_TIMEOUT_SECONDS + 0.1,
+    )
+    assert talk_cids(engine) == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_acks_announced_later_start_fresh_and_enforce(
+    engine: FakeEngine, make_client: ClientFactory, failures: list[str]
+) -> None:
+    engine.answer_heartbeats = False
+    client = make_client()
+    await client.connect()
+    await talk(client, "a")
+    await engine.wait_for(lambda: bool(client._monitor._pending))
+
+    announced_at = time.monotonic()
+    await announce_acks(engine, client, True)
+    assert all(hb.sent_at >= announced_at for hb in client._monitor._pending)
+    assert not client._monitor.is_tracked("a")
+
+    await talk(client, "b")
+    assert client._monitor.is_tracked("b")
+    await engine.wait_for(
+        lambda: failures == ["b"] and len(engine.connections) == 2,
+        timeout=HeartbeatMonitor.ACK_TIMEOUT_SECONDS + 0.5,
+    )
+    assert talk_cids(engine, 0) == ["a", "b"]
+    assert await stays(lambda: failures == ["b"], 0.1)
+
+
+@pytest.mark.asyncio
+async def test_replayed_session_ready_keeps_tracking(
+    engine: FakeEngine,
+    make_client: ClientFactory,
+    failures: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
+    on_message = AsyncMock()
+    client = make_client(on_message=on_message)
+    await client.connect()
+    await announce_acks(engine, client, True)
+    engine.hold_heartbeat_answers = asyncio.Event()
+    await talk(client, "a")
+    await engine.wait_for(lambda: bool(client._monitor._pending))
+    pending = [(hb.seq, hb.sent_at) for hb in client._monitor._pending]
+
+    await engine.send(
+        {
+            "actionType": "sessionready",
+            "sessionId": SESSION_ID,
+            "payload": {"sendsHeartbeatAcks": True},
+        }
+    )
+    await sync_dispatch(engine, on_message)
+
+    assert client._monitor.is_tracked("a")
+    assert [(hb.seq, hb.sent_at) for hb in client._monitor._pending][: len(pending)] == pending
+    engine.hold_heartbeat_answers.set()
+    await engine.wait_for(lambda: not client._monitor.is_tracked("a"))
+    assert await stays(lambda: failures == [] and len(engine.connections) == 1, 0.1)

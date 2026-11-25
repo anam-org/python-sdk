@@ -416,6 +416,9 @@ class SignallingClient:
             return
         if action_type == SignalAction.SESSION_READY.value:
             if isinstance(payload, dict) and payload.get("sendsHeartbeatAcks") is True:
+                if self._heartbeat_acks is HeartbeatAcks.UNKNOWN:
+                    self._monitor.abandon()
+                    self._watchdog_wake.set()
                 self._heartbeat_acks = HeartbeatAcks.YES
             else:
                 self._heartbeat_acks = HeartbeatAcks.NO
@@ -552,9 +555,8 @@ class SignallingClient:
                 if stalled_since - opened_at >= self.STABLE_CONNECTION_SECONDS:
                     self._unanswered_replacements = 0
             else:
-                failed = self._monitor.abandon()
-                self._queue_failures(failed)
-                if self._heartbeat_acks is HeartbeatAcks.UNKNOWN and not failed:
+                self._queue_failures(self._monitor.abandon())
+                if self._heartbeat_acks is not HeartbeatAcks.YES:
                     continue
                 logger.warning("Signalling heartbeat not answered; replacing the socket")
             if self._unanswered_replacements >= self._max_reconnection_attempts:
@@ -591,7 +593,7 @@ class SignallingClient:
             if correlation_id is not None:
                 if self._is_dead_stream(correlation_id):
                     continue
-                if self._heartbeat_acks is not HeartbeatAcks.NO:
+                if self._heartbeat_acks is HeartbeatAcks.YES:
                     self._track(correlation_id)
             try:
                 await self._write(ws, message)
@@ -832,9 +834,9 @@ class SignallingClient:
                 raise RuntimeError("Cannot send a talk stream chunk: the session has ended")
             if (admitted is not None and not admitted()) or self._is_dead_stream(correlation_id):
                 logger.debug("Dropping talk stream chunk for an interrupted or failed stream")
-            elif self._heartbeat_acks is HeartbeatAcks.NO or not self._ever_opened:
+            elif self._heartbeat_acks is not HeartbeatAcks.YES or not self._ever_opened:
                 await self._send_or_buffer(message)
-            elif self._heartbeat_acks is HeartbeatAcks.YES and self._monitor.is_suspect():
+            elif self._monitor.is_suspect():
                 logger.warning("Refusing talk stream chunk: the signalling socket looks dead")
                 self._queue_failures([correlation_id])
             elif self._ws is None or self._ws.state is not State.OPEN:

@@ -100,6 +100,17 @@ def all_tasks_done(sc: SignallingClient) -> bool:
     return all(task.done() for task in sc._owned_tasks())
 
 
+async def announce_acks(engine: FakeEngine, client: AnamClient) -> None:
+    await engine.send(
+        {
+            "actionType": "sessionready",
+            "sessionId": SESSION_ID,
+            "payload": {"sendsHeartbeatAcks": True},
+        }
+    )
+    await engine.wait_for(lambda: signalling(client)._heartbeat_acks is HeartbeatAcks.YES)
+
+
 @pytest.mark.asyncio
 async def test_drop_keeps_peer_connection_and_sends_one_offer(engine: FakeEngine) -> None:
     sc = StreamingClient(session_info_for(engine, heartbeat_interval_seconds=0.1))
@@ -338,6 +349,7 @@ async def test_session_ready_replayed_emits_once(engine: FakeEngine, anam: AnamC
 @pytest.mark.asyncio
 async def test_talk_chunk_in_gap_fails_stream(engine: FakeEngine, anam: AnamClient) -> None:
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     stream = session.create_talk_stream()
     seen: list[tuple[MessageDeliveryFailure, TalkMessageStreamState]] = []
 
@@ -367,10 +379,12 @@ async def test_talk_chunk_in_gap_fails_stream(engine: FakeEngine, anam: AnamClie
 @pytest.mark.asyncio
 @pytest.mark.parametrize("finish", ["end", "end_of_speech"])
 async def test_final_chunk_fails_after_end(
-    engine: FakeEngine, anam: AnamClient, finish: str
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch, finish: str
 ) -> None:
+    monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     failed = record(anam, AnamEvent.MESSAGE_DELIVERY_FAILED)
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     engine.answer_heartbeats = False
     stream = session.create_talk_stream()
 
@@ -643,6 +657,7 @@ async def test_failure_handler_resending_does_not_recurse(
     engine: FakeEngine, anam: AnamClient
 ) -> None:
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     stream = session.create_talk_stream()
     seen: list[MessageDeliveryFailure] = []
     rejected: list[str] = []
@@ -738,6 +753,7 @@ async def test_failure_marks_every_stream_and_new_stream_reuses_id(
 ) -> None:
     failed = record(anam, AnamEvent.MESSAGE_DELIVERY_FAILED)
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     first = session.create_talk_stream("shared")
     second = session.create_talk_stream("shared")
 
@@ -787,6 +803,7 @@ async def test_close_inside_terminal_failure_listener_still_reports_close(
     monkeypatch.setattr(HeartbeatMonitor, "ACK_TIMEOUT_SECONDS", 5.0)
     events: list[str] = []
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     engine.answer_heartbeats = False
 
     async def on_failed(failure: MessageDeliveryFailure) -> None:
@@ -831,6 +848,7 @@ async def test_pending_failures_reported_before_connection_closed(
         end_gap(engine)
         expected = ["failed:a", "failed:b", "signalling_failure"]
     else:
+        await announce_acks(engine, anam)
         engine.answer_heartbeats = False
         await first.send("one")
         await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
@@ -850,6 +868,7 @@ async def test_resend_on_new_stream_during_gap_yields_and_recovers(
     monkeypatch.setattr(HeartbeatMonitor, "SUSPECT_AFTER_SECONDS", 5.0)
     limit = 5000
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     sc = signalling(anam)
     ticks = 0
     ticks_at_failure: list[int] = []
@@ -979,6 +998,7 @@ async def test_listener_awaiting_cancelled_child_does_not_stop_close_event(
     anam.add_listener(AnamEvent.CONNECTION_CLOSED, on_closed)
     anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     engine.answer_heartbeats = False
     await session.create_talk_stream().send("hello")
     await engine.wait_for(lambda: len(engine.received_actions("talkstream")) == 1)
@@ -1008,6 +1028,7 @@ async def test_close_event_waits_for_failure_listeners_in_flight(
     anam.add_listener(AnamEvent.MESSAGE_DELIVERY_FAILED, second)
     anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     streaming = anam._streaming_client
     assert streaming is not None
 
@@ -1030,6 +1051,7 @@ async def test_close_event_waits_for_failure_listeners_in_flight(
 async def test_failure_listener_in_flight_can_close(engine: FakeEngine, anam: AnamClient) -> None:
     events: list[str] = []
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
 
     async def on_failed(failure: MessageDeliveryFailure) -> None:
         events.append("failed")
@@ -1084,10 +1106,12 @@ async def test_talk_stream_rejects_sends_after_session_end(
     closed = record(anam, AnamEvent.CONNECTION_CLOSED)
     failed = record(anam, AnamEvent.MESSAGE_DELIVERY_FAILED)
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     sc = signalling(anam)
     stream = session.create_talk_stream()
     unstarted = session.create_talk_stream()
     await stream.send("one")
+    assert sc._monitor.is_tracked(stream.correlation_id)
     await engine.wait_for(lambda: not sc._monitor.is_tracked(stream.correlation_id))
     if ending == "endsession":
         await engine.send({"actionType": "endsession", "sessionId": SESSION_ID, "payload": "bye"})
@@ -1316,6 +1340,7 @@ async def test_failure_listener_waiting_for_close_is_released(
 ) -> None:
     events: list[str] = []
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
 
     async def on_failed(failure: MessageDeliveryFailure) -> None:
         events.append("failed")
@@ -1342,6 +1367,7 @@ async def test_failure_listener_that_reconnects_gets_close_event_for_old_session
     closed = record(anam, AnamEvent.CONNECTION_CLOSED)
     replacement: list[Session] = []
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
 
     async def on_failed(failure: MessageDeliveryFailure) -> None:
         if replacement:
@@ -1370,6 +1396,7 @@ async def test_chunk_waiting_for_lock_is_dropped_after_interruption(
 ) -> None:
     failed = record(anam, AnamEvent.MESSAGE_DELIVERY_FAILED)
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
     sc = signalling(anam)
     old = session.create_talk_stream()
     await old.send("one")
@@ -1410,6 +1437,7 @@ async def test_failures_of_old_session_reach_app_after_rollover(
     replacement: list[Session] = []
     reconnected = asyncio.Event()
     session = await anam.connect_async()
+    await announce_acks(engine, anam)
 
     async def on_failed(failure: MessageDeliveryFailure) -> None:
         events.append(("failed", failure.correlation_id))
