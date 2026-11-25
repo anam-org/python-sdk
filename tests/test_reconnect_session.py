@@ -1607,3 +1607,67 @@ async def test_session_handle_survives_signalling_reconnect(
     await engine.wait_for(
         lambda: [conn for conn, _ in engine.received_actions("talkstream")] == [1]
     )
+
+
+def speech_text(content: str) -> dict[str, Any]:
+    return {
+        "messageType": "speechText",
+        "data": {
+            "message_id": "a-1",
+            "role": "user",
+            "content": content,
+            "content_index": 0,
+            "end_of_speech": True,
+            "timestamp": "2026-01-01T00:00:00Z",
+        },
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "rolls_over_in",
+    [None, AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, AnamEvent.MESSAGE_RECEIVED],
+)
+async def test_data_message_crossing_rollover_keeps_new_history(
+    engine: FakeEngine, anam: AnamClient, rolls_over_in: AnamEvent | None
+) -> None:
+    events: list[str] = []
+    histories: list[list[Message]] = []
+    seeded = Message(id="user::b-1", role=MessageRole.USER, content="B-only")
+    replacement: list[Session] = []
+    old = await anam.connect_async()
+    old_streaming = anam._streaming_client
+    assert old_streaming is not None and old_streaming._on_message is not None
+
+    anam.add_listener(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, lambda e: events.append("stream"))
+    anam.add_listener(AnamEvent.MESSAGE_RECEIVED, lambda m: events.append("message"))
+    anam.add_listener(
+        AnamEvent.MESSAGE_HISTORY_UPDATED,
+        lambda h: (events.append("history"), histories.append(h)),
+    )
+
+    async def roll_over(*args: Any) -> None:
+        await old.close()
+        replacement.append(await anam.connect_async())
+        anam._message_history.append(seeded)
+
+    if rolls_over_in is not None:
+        anam.add_listener(rolls_over_in, roll_over)
+    await old_streaming._on_message(speech_text("A-only"))
+
+    if rolls_over_in is None:
+        assert events == ["stream", "message", "history"]
+        assert [m.content for m in histories[0]] == ["A-only"]
+        assert [m.content for m in anam.get_message_history()] == ["A-only"]
+        return
+    expected = (
+        ["stream"]
+        if rolls_over_in is AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED
+        else [
+            "stream",
+            "message",
+        ]
+    )
+    assert events == expected
+    assert replacement[0].is_active
+    assert anam.get_message_history() == [seeded]

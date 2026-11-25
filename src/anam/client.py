@@ -361,6 +361,7 @@ class AnamClient:
 
     async def _handle_data_message(self, data: dict[str, Any]) -> None:
         """Handle data channel message."""
+        generation = self._session_generation
         message_type = data.get("messageType", "")
         msg_data = data.get("data", {})
 
@@ -404,6 +405,8 @@ class AnamClient:
                 utterance_id=utterance_id,
             )
             await self._emit(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, stream_event)
+            if generation != self._session_generation:
+                return
 
             # Update message history
             self._process_message_stream_event(stream_event, timestamp)
@@ -417,6 +420,8 @@ class AnamClient:
                 )
                 if complete_message:
                     await self._emit(AnamEvent.MESSAGE_RECEIVED, complete_message)
+                    if generation != self._session_generation:
+                        return
                     await self._emit(
                         AnamEvent.MESSAGE_HISTORY_UPDATED, self._message_history.copy()
                     )
