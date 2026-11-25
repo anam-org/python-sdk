@@ -374,22 +374,43 @@ raise `RuntimeError`, and the stream state does not change.
 
 During a reconnect, the SDK keeps messages such as agent audio in a buffer and sends them
 when the new WebSocket opens. The engine does not replay messages that were lost on the
-old WebSocket. When the SDK cannot confirm that a talk stream chunk reached the engine,
-it emits `MESSAGE_DELIVERY_FAILED` with a `MessageDeliveryFailure`. This includes a
-chunk that you send while no WebSocket is open. An engine that does not confirm
-heartbeats gives the SDK no confirmation; for such an engine the SDK keeps talk stream
-chunks in the buffer and does not emit this event. Delivery is
-unconfirmed, not proven lost: the chunk can still have reached the engine. The stream
-moves to `TalkMessageStreamState.DELIVERY_FAILED` and `send()` raises `RuntimeError`.
-This can also occur after `end()`. To speak the text, create a new talk stream and send
-the text again. If the first chunk reached the engine, the avatar speaks the text twice.
+old WebSocket.
 
-While the SDK reconnects, a new chunk fails again at once. Wait before you resend, and
-limit the attempts. Do the wait in a task, so that the listener does not delay other
-signalling messages. Resend only in the session that sent the text, and keep only the
-most recent texts:
+The `sessionready` message from the engine tells the SDK if the engine confirms
+heartbeats. When the engine confirms heartbeats, the SDK checks each talk stream chunk.
+When the SDK cannot confirm that a chunk reached the engine, it emits
+`MESSAGE_DELIVERY_FAILED` with a `MessageDeliveryFailure`. A chunk that you send while no
+WebSocket is open fails at once.
+
+Before `sessionready`, and for an engine that does not confirm heartbeats, the SDK does
+not check talk stream chunks. It sends each chunk one time. During a reconnect, it keeps
+the chunk in the buffer. The SDK emits `MESSAGE_DELIVERY_FAILED` for a buffered chunk
+only in these cases:
+
+- The buffer is full. The SDK removes agent audio first. When it removes a talk stream
+  chunk, it emits the event.
+- The session ends before the SDK sends the chunk, and your application did not call
+  `close()`.
+
+When your application calls `close()`, the SDK does not emit the event for buffered
+chunks.
+
+Delivery is unconfirmed, not proven lost: the chunk can still have reached the engine.
+The stream moves to `TalkMessageStreamState.DELIVERY_FAILED` and `send()` raises
+`RuntimeError`. This can also occur after `end()`. To speak the text, create a new talk
+stream and send the text again. If the first chunk reached the engine, the avatar speaks
+the text twice.
+
+When the engine confirms heartbeats, a new chunk fails again at once while the SDK
+reconnects. Wait before you resend, and limit the attempts. Do the wait in a task, so
+that the listener does not delay other signalling messages. Resend only in the session
+that sent the text, and keep only the most recent texts:
 
 ```python
+import asyncio
+
+from anam import AnamEvent, MessageDeliveryFailure, Session, SessionError
+
 MAX_TEXTS = 100
 # Correlation ID -> (session, text, attempt), oldest first.
 texts: dict[str, tuple[Session, str, int]] = {}
