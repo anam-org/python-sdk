@@ -416,8 +416,8 @@ class SignallingClient:
             return
         if action_type == SignalAction.SESSION_READY.value:
             if isinstance(payload, dict) and payload.get("sendsHeartbeatAcks") is True:
-                if self._heartbeat_acks is HeartbeatAcks.UNKNOWN:
-                    self._monitor.abandon()
+                if self._heartbeat_acks is not HeartbeatAcks.YES:
+                    self._monitor.enable()
                     self._watchdog_wake.set()
                 self._heartbeat_acks = HeartbeatAcks.YES
             else:

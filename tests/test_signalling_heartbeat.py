@@ -765,6 +765,32 @@ async def test_acks_announced_later_start_fresh_and_enforce(
 
 
 @pytest.mark.asyncio
+async def test_acks_announced_after_no_acks_start_tracking_and_enforce(
+    engine: FakeEngine, make_client: ClientFactory, failures: list[str]
+) -> None:
+    engine.answer_heartbeats = False
+    client = make_client()
+    await client.connect()
+    await announce_acks(engine, client, False)
+    await talk(client, "a")
+    await engine.wait_for(lambda: talk_cids(engine) == ["a"])
+
+    announced_at = time.monotonic()
+    await announce_acks(engine, client, True)
+    await talk(client, "b")
+
+    assert client._monitor.is_tracked("b")
+    await engine.wait_for(lambda: bool(client._monitor._pending))
+    assert all(hb.sent_at >= announced_at for hb in client._monitor._pending)
+    await engine.wait_for(
+        lambda: failures == ["b"] and len(engine.connections) == 2,
+        timeout=HeartbeatMonitor.ACK_TIMEOUT_SECONDS + 0.5,
+    )
+    assert talk_cids(engine, 0) == ["a", "b"]
+    assert await stays(lambda: failures == ["b"], 0.1)
+
+
+@pytest.mark.asyncio
 async def test_replayed_session_ready_keeps_tracking(
     engine: FakeEngine,
     make_client: ClientFactory,

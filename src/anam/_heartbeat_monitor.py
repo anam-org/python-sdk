@@ -73,6 +73,12 @@ class HeartbeatMonitor:
         self._unconfirmed = []
         return failed
 
+    def enable(self) -> None:
+        """Start tracking with no pending heartbeats and no unconfirmed chunks."""
+        self.enabled = True
+        self._pending = []
+        self._unconfirmed = []
+
     def disable(self) -> None:
         self.enabled = False
         self._pending = []
