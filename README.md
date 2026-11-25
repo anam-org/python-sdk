@@ -392,8 +392,10 @@ only in these cases:
 - The session ends before the SDK sends the chunk, and your application did not call
   `close()`.
 
-When your application calls `close()`, the SDK does not emit the event for buffered
-chunks.
+When your application calls `close()`, the SDK does not create new failures for chunks
+that are still in the buffer. The SDK still emits the failures that it recorded before
+`close()`, for example from a full buffer or from a session that had already ended
+abnormally. It emits them before `CONNECTION_CLOSED`.
 
 Delivery is unconfirmed, not proven lost: the chunk can still have reached the engine.
 The stream moves to `TalkMessageStreamState.DELIVERY_FAILED` and `send()` raises

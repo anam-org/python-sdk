@@ -861,6 +861,29 @@ async def test_pending_failures_reported_before_connection_closed(
 
 
 @pytest.mark.asyncio
+async def test_close_reports_recorded_failures_but_not_buffered_chunks(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(SignallingClient, "SEND_BUFFER_LIMIT", 2)
+    events: list[str] = []
+    anam.add_listener(
+        AnamEvent.MESSAGE_DELIVERY_FAILED,
+        lambda failure: events.append(f"failed:{failure.correlation_id}"),
+    )
+    anam.add_listener(AnamEvent.CONNECTION_CLOSED, lambda code, reason: events.append(code))
+    session = await anam.connect_async()
+    await engine.send({"actionType": "sessionready", "sessionId": SESSION_ID, "payload": {}})
+    await engine.wait_for(lambda: signalling(anam)._heartbeat_acks is HeartbeatAcks.NO)
+    await drop_and_wait_for_gap(engine, anam)
+    for correlation_id in ("a", "b", "c"):
+        await session.create_talk_stream(correlation_id).send("hello")
+
+    await session.close()
+
+    assert events == ["failed:a", "normal"]
+
+
+@pytest.mark.asyncio
 async def test_resend_on_new_stream_during_gap_yields_and_recovers(
     engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
