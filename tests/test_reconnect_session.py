@@ -1,7 +1,8 @@
 import asyncio
+import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 import pytest_asyncio
@@ -1473,3 +1474,136 @@ async def test_failures_of_old_session_reach_app_after_rollover(
     ]
     assert replacement[0].is_active
     assert anam.is_streaming
+
+
+StaleOp = tuple[Callable[[Session], Any], str, str, Callable[[], Mock]]
+
+STALE_OPS: dict[str, StaleOp] = {
+    "talk": (lambda s: s.talk("hi"), "streaming", "send_talk", AsyncMock),
+    "send_message": (lambda s: s.send_message("hi"), "streaming", "send_user_message", Mock),
+    "interrupt": (lambda s: s.interrupt(), "streaming", "send_interrupt", Mock),
+    "send_director_note_cue": (
+        lambda s: s.send_director_note_cue("warm"),
+        "streaming",
+        "send_data_message",
+        lambda: Mock(return_value=True),
+    ),
+    "create_talk_stream": (
+        lambda s: s.create_talk_stream(),
+        "signalling",
+        "register_talk_stream",
+        Mock,
+    ),
+    "send_talk_stream": (
+        lambda s: s.send_talk_stream("hi"),
+        "signalling",
+        "send_talk_stream_input",
+        AsyncMock,
+    ),
+    "create_agent_audio_input_stream": (
+        lambda s: s.create_agent_audio_input_stream(AgentAudioInputConfig()),
+        "streaming",
+        "create_agent_audio_input_stream",
+        Mock,
+    ),
+    "send_user_audio": (
+        lambda s: s.send_user_audio(b"\x00\x00", 16000, 1),
+        "streaming",
+        "send_user_audio",
+        Mock,
+    ),
+    "video_frames": (lambda s: s.video_frames(), "streaming", "video_frames", Mock),
+    "audio_frames": (lambda s: s.audio_frames(), "streaming", "audio_frames", Mock),
+}
+
+
+async def run_op(call: Callable[[Session], Any], session: Session) -> None:
+    result = call(session)
+    if inspect.isawaitable(result):
+        await result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op", list(STALE_OPS))
+async def test_stale_session_rejects_operations_and_hides_metadata(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch, op: str
+) -> None:
+    call, target, name, make_spy = STALE_OPS[op]
+    infos = [
+        session_info_for(
+            engine, heartbeat_interval_seconds=0.1, max_reconnection_attempts=2, region="eu"
+        ),
+        session_info_for(
+            engine,
+            heartbeat_interval_seconds=0.1,
+            max_reconnection_attempts=2,
+            session_id="session-2",
+            region="us",
+        ),
+    ]
+    monkeypatch.setattr(CoreApiClient, "start_session", AsyncMock(side_effect=infos))
+    old = await anam.connect_async()
+    await old.close()
+    new = await anam.connect_async()
+    streaming = anam._streaming_client
+    assert streaming is not None
+    streaming._data_channel_open = True
+    spy = make_spy()
+    monkeypatch.setattr(streaming if target == "streaming" else signalling(anam), name, spy)
+
+    with pytest.raises(SessionError):
+        await run_op(call, old)
+    assert spy.call_count == 0
+    assert old.session_id is None
+    assert old.region is None
+    await asyncio.wait_for(old.close(), 2.0)
+    await asyncio.wait_for(old.wait_until_closed(), 2.0)
+
+    await run_op(call, new)
+    assert spy.call_count == 1
+    assert new.is_active
+    assert (new.session_id, new.region) == ("session-2", "us")
+
+
+@pytest.mark.asyncio
+async def test_send_after_data_channel_wait_rechecks_the_session(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old = await anam.connect_async()
+    old_streaming = anam._streaming_client
+    assert old_streaming is not None
+    sent: list[str] = []
+    replacement: list[Session] = []
+    monkeypatch.setattr(old_streaming, "send_user_message", lambda content: sent.append("old"))
+
+    async def roll_over_while_waiting(timeout: float = 10.0) -> bool:
+        await old.close()
+        replacement.append(await anam.connect_async())
+        new_streaming = anam._streaming_client
+        assert new_streaming is not None
+        monkeypatch.setattr(new_streaming, "send_user_message", lambda content: sent.append("new"))
+        return True
+
+    monkeypatch.setattr(old_streaming, "wait_for_data_channel", roll_over_while_waiting)
+    old_streaming._data_channel_open = False
+
+    with pytest.raises(SessionError):
+        await old.send_message("hi")
+    assert sent == []
+    assert replacement[0].is_active
+
+
+@pytest.mark.asyncio
+async def test_session_handle_survives_signalling_reconnect(
+    engine: FakeEngine, anam: AnamClient
+) -> None:
+    session = await anam.connect_async()
+    await engine.drop("abort")
+    await round_trip_on(engine, 1)
+
+    assert session.is_active
+    assert session.session_id == SESSION_ID
+    await session.create_talk_stream().send("hello")
+    await engine.wait_for(
+        lambda: [conn for conn, _ in engine.received_actions("talkstream")] == [1]
+    )

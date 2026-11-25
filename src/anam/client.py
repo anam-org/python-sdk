@@ -643,6 +643,10 @@ class Session:
 
     This class is returned by `AnamClient.connect()` and supports
     use as an async context manager.
+
+    A Session belongs to the connect call that created it. After the client starts a
+    newer session, the operations of this object raise SessionError, and session_id and
+    region return None. close() and wait_until_closed() still work.
     """
 
     def __init__(self, client: AnamClient, generation: int | None = None):
@@ -682,11 +686,9 @@ class Session:
         Raises:
             SessionError: If not connected.
         """
-        if not self._client._streaming_client:
-            raise SessionError("Not connected")
-
+        streaming = self._streaming()
         logger.debug("Talk: %s", content[:50] + "..." if len(content) > 50 else content)
-        await self._client._streaming_client.send_talk(content)
+        await streaming.send_talk(content)
 
     async def send_message(self, content: str) -> None:
         """Send a text message as the user.
@@ -760,14 +762,23 @@ class Session:
 
     async def _ensure_data_channel_open(self) -> StreamingClient:
         """Return the streaming client once the data channel is ready."""
-        if not self._client._streaming_client:
-            raise SessionError("Not connected")
-
-        streaming = self._client._streaming_client
+        streaming = self._streaming()
         if not getattr(streaming, "_data_channel_open", False):
             logger.debug("Waiting for data channel to open...")
             if not await streaming.wait_for_data_channel(timeout=10.0):
                 raise SessionError("Data channel did not open in time")
+            self._require_current()
+        return streaming
+
+    def _require_current(self) -> None:
+        if not self._is_current():
+            raise SessionError("Session has ended: the client started a newer session")
+
+    def _streaming(self) -> StreamingClient:
+        self._require_current()
+        streaming = self._client._streaming_client
+        if streaming is None:
+            raise SessionError("Not connected")
         return streaming
 
     def create_talk_stream(self, correlation_id: str | None = None) -> TalkMessageStream:
@@ -800,10 +811,7 @@ class Session:
                 await stream.send(chunk, end_of_speech=(i == len(llm_chunks) - 1))
             ```
         """
-        if not self._client._streaming_client:
-            raise SessionError("Not connected")
-
-        signalling_client = self._client._streaming_client._signalling_client
+        signalling_client = self._streaming()._signalling_client
         if not signalling_client:
             raise SessionError("Signalling client not initialized")
 
@@ -852,9 +860,7 @@ class Session:
         Raises:
             SessionError: If not connected.
         """
-        if not self._client._streaming_client:
-            raise SessionError("Not connected")
-        return self._client._streaming_client.create_agent_audio_input_stream(config)
+        return self._streaming().create_agent_audio_input_stream(config)
 
     def send_user_audio(
         self,
@@ -877,9 +883,7 @@ class Session:
         Raises:
             SessionError: If not connected.
         """
-        if not self._client._streaming_client:
-            raise SessionError("Not connected")
-        self._client._streaming_client.send_user_audio(
+        self._streaming().send_user_audio(
             audio_bytes=audio_bytes,
             sample_rate=sample_rate,
             num_channels=num_channels,
@@ -901,9 +905,7 @@ class Session:
                 image = frame.to_ndarray(format="rgb24")
             ```
         """
-        if not self._client._streaming_client:
-            raise SessionError("Not connected")
-        return self._client._streaming_client.video_frames()
+        return self._streaming().video_frames()
 
     def audio_frames(self) -> AsyncIterator[AudioFrame]:
         """Get audio frames as an async iterator.
@@ -922,9 +924,7 @@ class Session:
                 samples = frame.to_ndarray()
             ```
         """
-        if not self._client._streaming_client:
-            raise SessionError("Not connected")
-        return self._client._streaming_client.audio_frames()
+        return self._streaming().audio_frames()
 
     def mute_input(self) -> None:
         """Mute microphone input (if enabled)."""
@@ -968,17 +968,18 @@ class Session:
 
     @property
     def session_id(self) -> str | None:
-        """Get the session ID."""
-        return self._client.session_id
+        """Get the session ID. None when the client has started a newer session."""
+        return self._client.session_id if self._is_current() else None
 
     @property
     def region(self) -> str | None:
         """Get the session region.
 
         See https://docs.anam.ai for available regions; additional regions may be
-        introduced over time. Treat unrecognized values as informational.
+        introduced over time. Treat unrecognized values as informational. None when the
+        client has started a newer session.
         """
-        return self._client.region
+        return self._client.region if self._is_current() else None
 
     async def __aenter__(self) -> Session:
         """Enter async context."""
