@@ -266,7 +266,7 @@ For best performance, we suggest using 24kHz mono audio. The provided audio is r
 Register callbacks for connection and message events using the `@client.on()` decorator:
 
 ```python
-from anam import AnamEvent, Message, MessageRole, MessageStreamEvent
+from anam import AnamEvent, Message, MessageDeliveryFailure, MessageRole, MessageStreamEvent
 
 @client.on(AnamEvent.CONNECTION_ESTABLISHED)
 async def on_connected():
@@ -275,8 +275,13 @@ async def on_connected():
 
 @client.on(AnamEvent.CONNECTION_CLOSED)
 async def on_closed(code: str, reason: str | None):
-    """Called when the connection is closed."""
+    """Called once, when the session ends."""
     print(f"Connection closed: {code} - {reason or 'No reason'}")
+
+@client.on(AnamEvent.MESSAGE_DELIVERY_FAILED)
+async def on_delivery_failed(failure: MessageDeliveryFailure):
+    """Called when the SDK cannot confirm that a talk stream chunk reached the engine."""
+    print(f"Unconfirmed {failure.message_type} message {failure.correlation_id}")
 
 @client.on(AnamEvent.USER_SPEECH_STARTED)
 async def on_user_speech_started(correlation_id: str | None):
@@ -332,6 +337,112 @@ async def on_message_history_updated(messages: list[Message]):
     for msg in messages:
         print(f"  {msg.role}: {msg.content[:50]}...")
 ```
+
+### Connection loss and reconnects
+
+The SDK uses a WebSocket for signalling and a WebRTC peer connection for media. If the
+signalling WebSocket drops, the SDK opens a new WebSocket to the same address. The peer
+connection stays open, so video and audio continue. The SDK does not emit an event for a
+drop that a reconnect repairs.
+
+`CONNECTION_CLOSED` means that the session has ended. The SDK emits it one time for each
+session, with one of these codes:
+
+- `normal`: your application called `close()`.
+- `server_closed`: the engine ended the session.
+- `signalling_failure`: the SDK could not keep the signalling WebSocket connected. Each
+  drop uses one reconnect attempt, also when the reconnect succeeds. A WebSocket that
+  stays open for 5 seconds resets the count. The SDK closes the peer connection, and
+  frame iterators stop.
+- `webrtc_failure`: the peer connection closed.
+
+`close()` returns after the SDK has torn down the session and the `CONNECTION_CLOSED`
+listeners have finished. Thus a `CONNECTION_CLOSED` listener must not wait for a task that
+calls `close()`. This includes a task whose `async with client.connect()` block exits,
+because the block calls `close()`. Cancel the task first, then wait for it. A `close()`
+in a cancelled task waits only for the teardown:
+
+```python
+@client.on(AnamEvent.CONNECTION_CLOSED)
+async def on_closed(code: str, reason: str | None):
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
+```
+
+After the session has ended, `TalkMessageStream.send()` and `TalkMessageStream.end()`
+raise `RuntimeError`, and the stream state does not change.
+
+During a reconnect, the SDK keeps messages such as agent audio in a buffer and sends them
+when the new WebSocket opens. The engine does not replay messages that were lost on the
+old WebSocket.
+
+The `sessionready` message from the engine tells the SDK if the engine confirms
+heartbeats. When the engine confirms heartbeats, the SDK checks each talk stream chunk.
+When the SDK cannot confirm that a chunk reached the engine, it emits
+`MESSAGE_DELIVERY_FAILED` with a `MessageDeliveryFailure`. A chunk that you send while no
+WebSocket is open fails at once.
+
+Before `sessionready`, and for an engine that does not confirm heartbeats, the SDK does
+not check talk stream chunks. It sends each chunk one time. During a reconnect, it keeps
+the chunk in the buffer. The SDK emits `MESSAGE_DELIVERY_FAILED` for a buffered chunk
+only in these cases:
+
+- The buffer is full. The SDK removes agent audio first. When it removes a talk stream
+  chunk, it emits the event.
+- The session ends before the SDK sends the chunk, and your application did not call
+  `close()`.
+
+When your application calls `close()`, the SDK does not create new failures for chunks
+that are still in the buffer. The SDK still emits the failures that it recorded before
+`close()`, for example from a full buffer or from a session that had already ended
+abnormally. It emits them before `CONNECTION_CLOSED`.
+
+Delivery is unconfirmed, not proven lost: the chunk can still have reached the engine.
+The stream moves to `TalkMessageStreamState.DELIVERY_FAILED` and `send()` raises
+`RuntimeError`. This can also occur after `end()`. To speak the text, create a new talk
+stream and send the text again. If the first chunk reached the engine, the avatar speaks
+the text twice.
+
+When the engine confirms heartbeats, a new chunk fails again at once while the SDK
+reconnects. Wait before you resend, and limit the attempts. Do the wait in a task, so
+that the listener does not delay other signalling messages. Resend only in the session
+that sent the text, and keep only the most recent texts:
+
+```python
+import asyncio
+
+from anam import AnamEvent, MessageDeliveryFailure, Session, SessionError
+
+MAX_TEXTS = 100
+# Correlation ID -> (session, text, attempt), oldest first.
+texts: dict[str, tuple[Session, str, int]] = {}
+
+async def speak(session: Session, text: str, attempt: int = 0) -> None:
+    stream = session.create_talk_stream()
+    texts[stream.correlation_id] = (session, text, attempt)
+    if len(texts) > MAX_TEXTS:
+        del texts[next(iter(texts))]
+    await stream.send(text, end_of_speech=True)
+
+async def resend(session: Session, text: str, attempt: int) -> None:
+    await asyncio.sleep(0.5 * attempt)
+    if not session.is_active:
+        return  # The session ended. A new session must not speak the old text.
+    try:
+        await speak(session, text, attempt)
+    except (RuntimeError, SessionError):
+        pass  # The session ended during the send.
+
+@client.on(AnamEvent.MESSAGE_DELIVERY_FAILED)
+async def on_delivery_failed(failure: MessageDeliveryFailure):
+    entry = texts.pop(failure.correlation_id, None)
+    if entry is not None and entry[2] < 3:
+        session, text, attempt = entry
+        asyncio.create_task(resend(session, text, attempt + 1))
+```
+
+When the session ends, the SDK emits the pending `MESSAGE_DELIVERY_FAILED` events
+before `CONNECTION_CLOSED`.
 
 ### Session
 

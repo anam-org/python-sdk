@@ -18,6 +18,7 @@ class AnamEvent(str, Enum):
     MESSAGE_RECEIVED = "message_received"
     MESSAGE_STREAM_EVENT_RECEIVED = "message_stream_event_received"
     MESSAGE_HISTORY_UPDATED = "message_history_updated"
+    MESSAGE_DELIVERY_FAILED = "message_delivery_failed"
     USER_SPEECH_STARTED = "user_speech_started"
     USER_SPEECH_ENDED = "user_speech_ended"
 
@@ -27,6 +28,20 @@ class AnamEvent(str, Enum):
     # Error events
     ERROR = "error"
     SERVER_WARNING = "server_warning"
+
+
+@dataclass(frozen=True)
+class MessageDeliveryFailure:
+    """A message that the SDK accepted but could not confirm at the engine.
+
+    Emitted with ``AnamEvent.MESSAGE_DELIVERY_FAILED``. Delivery is unconfirmed, not
+    proven lost: the engine can have received the message. The engine does not replay
+    messages from a dropped signalling connection. If the application sends the text
+    again, the avatar can speak it twice.
+    """
+
+    message_type: Literal["talk_stream"]
+    correlation_id: str
 
 
 class ConnectionClosedCode(str, Enum):

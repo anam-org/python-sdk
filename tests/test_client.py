@@ -303,6 +303,7 @@ class TestSessionMessages:
             start_of_speech=True,
             end_of_speech=True,
             utterance_id="68fd86b6-0b3a-4f42-bf92-5866cd84f8ac",
+            admitted=ANY,
         )
 
 

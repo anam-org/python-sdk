@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
@@ -9,7 +10,7 @@ from websockets.protocol import State
 
 from anam._signalling import SignallingClient
 from anam._streaming import StreamingClient
-from anam.types import SessionInfo
+from anam.types import ConnectionClosedCode, SessionInfo
 
 
 @pytest.fixture
@@ -64,20 +65,46 @@ async def test_local_close_sends_end_session_before_signalling_close(
 async def test_server_end_session_does_not_echo(
     session_info: SessionInfo, signalling: MagicMock, reenter_close: bool
 ) -> None:
-    client = StreamingClient(session_info)
-    client._signalling_client = signalling
+    completed: list[bool] = []
 
     async def on_closed(code: str, reason: str | None) -> None:
-        assert client._server_ended
+        signalling.close.assert_awaited_once_with()
         if reenter_close:
-            await client.close()
+            await asyncio.wait_for(client.close(), timeout=1.0)
+        completed.append(True)
 
-    client._on_connection_closed = AsyncMock(side_effect=on_closed)
-    await client._handle_signal_message({"actionType": "endsession", "payload": "done"})
+    on_connection_closed = AsyncMock(side_effect=on_closed)
+    client = StreamingClient(session_info, on_connection_closed=on_connection_closed)
+    client._signalling_client = signalling
+    client._started = True
 
-    client._on_connection_closed.assert_awaited_once()
+    client._terminate(ConnectionClosedCode.SERVER_CLOSED, "done")
+    await client.close()
+
+    on_connection_closed.assert_awaited_once_with("server_closed", "done")
+    assert completed == [True]
     signalling.send_end_session.assert_not_awaited()
     signalling.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_listener_raising_cancelled_error_does_not_stop_notification(
+    session_info: SessionInfo, signalling: MagicMock
+) -> None:
+    signalling.take_failures.return_value = ["cid-1"]
+    on_failed = AsyncMock(side_effect=asyncio.CancelledError)
+    on_closed = AsyncMock()
+    client = StreamingClient(
+        session_info, on_connection_closed=on_closed, on_talk_stream_delivery_failed=on_failed
+    )
+    client._signalling_client = signalling
+    client._started = True
+
+    client._terminate(ConnectionClosedCode.SERVER_CLOSED, "done")
+    await client.close()
+
+    on_failed.assert_awaited_once_with("cid-1")
+    on_closed.assert_awaited_once_with("server_closed", "done")
 
 
 @pytest.mark.asyncio
@@ -133,7 +160,6 @@ async def test_cancelled_end_session_allows_cleanup_retry(
     with pytest.raises(asyncio.CancelledError):
         await client.close()
 
-    assert not client._closing
     assert not client.is_connected
     signalling.send_end_session.side_effect = None
     await client.close()
@@ -170,7 +196,6 @@ async def test_failed_end_session_does_not_block_cleanup(
     peer.close.assert_awaited_once_with()
     assert signalling._send_buffer == []
     assert signalling._ws is None
-    assert not client._closing
 
 
 @pytest.mark.asyncio
@@ -195,3 +220,28 @@ async def test_socket_close_timeout_clears_socket(
     assert client._stop_signal
     if has_transport:
         transport.abort.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_eager_dispatch_waits_for_the_end_of_the_session(session_info: SessionInfo) -> None:
+    if sys.version_info < (3, 12):
+        pytest.skip("eager_task_factory is new in 3.12")
+    loop = asyncio.get_running_loop()
+    loop.set_task_factory(asyncio.eager_task_factory)
+    try:
+        closed_at_call: list[bool] = []
+
+        async def on_failed(correlation_id: str) -> None:
+            closed_at_call.append(client.is_permanently_closed)
+
+        client = SignallingClient(session_info, on_talk_stream_delivery_failed=on_failed)
+        client._monitor.track_chunk("cid-1")
+        client._handle_incoming(
+            json.dumps({"actionType": "endsession", "sessionId": "session-1", "payload": "bye"})
+        )
+        await asyncio.sleep(0)
+
+        assert closed_at_call == []
+        assert client.take_failures(include_unconfirmed=True) == ["cid-1"]
+    finally:
+        loop.set_task_factory(None)
