@@ -603,11 +603,11 @@ class StreamingClient:
             timeout: Maximum time to wait in seconds.
 
         Returns:
-            True if data channel opened, False if timeout.
+            True if data channel opened, False if timeout or the session is ending.
         """
         start = asyncio.get_event_loop().time()
         while not getattr(self, "_data_channel_open", False):
-            if asyncio.get_event_loop().time() - start > timeout:
+            if self.is_ending or asyncio.get_event_loop().time() - start > timeout:
                 return False
             await asyncio.sleep(0.1)
         return True
@@ -707,6 +707,11 @@ class StreamingClient:
             The agent audio input stream or None if not created.
         """
         return self._agent_audio_input_stream
+
+    @property
+    def is_ending(self) -> bool:
+        """Whether the session has started ending. Stays True once set."""
+        return self._end is not None
 
     @property
     def is_connected(self) -> bool:

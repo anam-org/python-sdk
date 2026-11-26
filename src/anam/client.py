@@ -771,6 +771,8 @@ class Session:
         if not getattr(streaming, "_data_channel_open", False):
             logger.debug("Waiting for data channel to open...")
             if not await streaming.wait_for_data_channel(timeout=10.0):
+                if streaming.is_ending:
+                    raise SessionError("Session has ended")
                 raise SessionError("Data channel did not open in time")
             self._require_current()
         return streaming
