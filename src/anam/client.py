@@ -704,7 +704,9 @@ class Session:
             content: The message text.
 
         Raises:
-            SessionError: If not connected or if LLM is not available.
+            SessionEndedError: If the data channel wait detects that session shutdown has started.
+            SessionError: If not connected, the session was replaced, the data channel timed out,
+                or the persona configuration is missing.
         """
         persona_config = None if self._client._session_token else self._get_persona_config()
         if (
@@ -723,7 +725,8 @@ class Session:
         """Interrupt the avatar if it's speaking.
 
         Raises:
-            SessionError: If not connected.
+            SessionEndedError: If the data channel wait detects that session shutdown has started.
+            SessionError: If not connected, the session was replaced, or the data channel timed out.
         """
         streaming = await self._ensure_data_channel_open()
         streaming.send_interrupt()
@@ -743,7 +746,9 @@ class Session:
             in_seconds: Optional delay relative to receipt time in seconds.
 
         Raises:
-            SessionError: If not connected, data channel is unavailable, or send fails.
+            SessionEndedError: If the data channel wait detects that session shutdown has started.
+            SessionError: If not connected, the session was replaced, the data channel is unavailable,
+                or send fails.
             ValueError: If a provided timing value is not finite.
         """
         for field_name, value in (("at_seconds", at_seconds), ("in_seconds", in_seconds)):
