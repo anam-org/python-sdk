@@ -478,6 +478,9 @@ class SignallingClient:
         This covers the chunks that wait for a socket and the chunks of an earlier
         generation that still wait to be sent. The sequence end stays: the backend
         accepts the next sequence only after it.
+
+        A chunk that is removed from the buffer keeps its sequence number, as a chunk
+        that a full buffer evicts does. The number is not used again in that sequence.
         """
         self._agent_audio_generation += 1
         self._send_buffer[:] = [

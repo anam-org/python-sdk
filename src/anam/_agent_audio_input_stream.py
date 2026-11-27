@@ -101,7 +101,9 @@ class AgentAudioInputStream:
         """Get the current sequence number.
 
         Returns:
-            Number of chunks sent in current sequence.
+            Number of chunks the SDK accepted in the current sequence. A chunk that
+            was accepted and then dropped while it waited for the signalling socket
+            is still counted.
         """
         return self._sequence_number
 
