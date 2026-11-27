@@ -724,6 +724,10 @@ class Session:
     async def interrupt(self) -> None:
         """Interrupt the avatar if it's speaking.
 
+        Agent audio chunks that were given to the SDK before this call, and are not
+        written to the signalling socket yet, are dropped. After an interrupt, call
+        ``end_sequence()`` on the agent audio stream before you send the next utterance.
+
         Raises:
             SessionEndedError: If the data channel wait detects that session shutdown has started.
             SessionError: If not connected, the session was replaced, or the data channel timed out.

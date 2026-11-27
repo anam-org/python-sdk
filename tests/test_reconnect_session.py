@@ -1632,6 +1632,117 @@ async def test_session_handle_survives_signalling_reconnect(
     )
 
 
+def open_data_channel(client: AnamClient, monkeypatch: pytest.MonkeyPatch) -> Mock:
+    streaming = client._streaming_client
+    assert streaming is not None
+    channel = Mock()
+    monkeypatch.setattr(streaming, "_data_channel", channel)
+    monkeypatch.setattr(streaming, "_data_channel_open", True)
+    return channel
+
+
+def agent_audio_on(engine: FakeEngine, index: int) -> list[str | int]:
+    """The agent audio messages one socket received: a sequence number for a chunk, "end" for an end."""
+    return [
+        "end"
+        if message["actionType"] == "agentaudioinputend"
+        else message["payload"]["sequenceNumber"]
+        for message in engine.received_on(index)
+        if message["actionType"] in ("agentaudioinput", "agentaudioinputend")
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delivered_before_gap", [True, False])
+async def test_interrupt_in_gap_drops_buffered_agent_audio(
+    engine: FakeEngine,
+    anam: AnamClient,
+    monkeypatch: pytest.MonkeyPatch,
+    delivered_before_gap: bool,
+) -> None:
+    session = await anam.connect_async()
+    channel = open_data_channel(anam, monkeypatch)
+    audio = session.create_agent_audio_input_stream(AgentAudioInputConfig())
+    if delivered_before_gap:
+        await audio.send_audio_chunk(b"\x00\x00")
+        await engine.wait_for(lambda: agent_audio_on(engine, 0) == [0])
+
+    await drop_and_wait_for_gap(engine, anam)
+    await audio.send_audio_chunk(b"\x00\x00")
+    await audio.send_audio_chunk(b"\x00\x00")
+    await session.interrupt()
+    await audio.end_sequence()
+    await audio.send_audio_chunk(b"\x00\x00")
+    end_gap(engine)
+
+    await engine.wait_for(lambda: agent_audio_on(engine, 1) == ["end", 0])
+    assert await stays(lambda: agent_audio_on(engine, 1) == ["end", 0], 0.1)
+    assert '"message_type": "interrupt"' in channel.send.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_interrupt_drops_agent_audio_that_waits_to_be_sent(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = await anam.connect_async()
+    open_data_channel(anam, monkeypatch)
+    audio = session.create_agent_audio_input_stream(AgentAudioInputConfig())
+    sc = signalling(anam)
+
+    await sc._send_lock.acquire()
+    try:
+        # The first chunk waits for the signalling lock, the second for the stream's own lock.
+        waiting = [asyncio.create_task(audio.send_audio_chunk(b"\x00\x00")) for _ in range(2)]
+        await asyncio.sleep(0)
+        await session.interrupt()
+    finally:
+        sc._send_lock.release()
+    await asyncio.wait_for(asyncio.gather(*waiting), 2.0)
+    assert audio.get_sequence_number() == 0
+
+    await audio.end_sequence()
+    await audio.send_audio_chunk(b"\x00\x00")
+
+    await engine.wait_for(lambda: agent_audio_on(engine, 0) == ["end", 0])
+    assert await stays(lambda: agent_audio_on(engine, 0) == ["end", 0], 0.1)
+
+
+@pytest.mark.asyncio
+async def test_interrupt_in_gap_keeps_buffered_sequence_end(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = await anam.connect_async()
+    open_data_channel(anam, monkeypatch)
+    audio = session.create_agent_audio_input_stream(AgentAudioInputConfig())
+
+    await drop_and_wait_for_gap(engine, anam)
+    await audio.send_audio_chunk(b"\x00\x00")
+    await audio.end_sequence()
+    await session.interrupt()
+    end_gap(engine)
+
+    await engine.wait_for(lambda: agent_audio_on(engine, 1) == ["end"])
+    assert await stays(lambda: agent_audio_on(engine, 1) == ["end"], 0.1)
+
+
+@pytest.mark.asyncio
+async def test_interrupt_that_is_not_sent_keeps_buffered_agent_audio(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = await anam.connect_async()
+    streaming = anam._streaming_client
+    assert streaming is not None
+    monkeypatch.setattr(streaming, "send_data_message", lambda message: False)
+    audio = session.create_agent_audio_input_stream(AgentAudioInputConfig())
+
+    await drop_and_wait_for_gap(engine, anam)
+    await audio.send_audio_chunk(b"\x00\x00")
+    streaming.send_interrupt()
+    end_gap(engine)
+
+    await engine.wait_for(lambda: agent_audio_on(engine, 1) == [0])
+
+
 def speech_text(content: str) -> dict[str, Any]:
     return {
         "messageType": "speechText",
