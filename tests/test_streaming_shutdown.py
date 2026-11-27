@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, call
 import pytest
 from websockets.protocol import State
 
+from anam import AnamClient, Session
 from anam._signalling import SignallingClient
 from anam._streaming import StreamingClient
+from anam.errors import SessionEndedError, SessionError
 from anam.types import ConnectionClosedCode, SessionInfo
 
 
@@ -245,3 +247,68 @@ async def test_eager_dispatch_waits_for_the_end_of_the_session(session_info: Ses
         assert client.take_failures(include_unconfirmed=True) == ["cid-1"]
     finally:
         loop.set_task_factory(None)
+
+
+def _session_with_held_teardown(
+    session_info: SessionInfo, signalling: MagicMock
+) -> tuple[Session, StreamingClient, asyncio.Event]:
+    """An active session whose teardown blocks in the signalling close until the event is set."""
+    release_teardown = asyncio.Event()
+    signalling.close = AsyncMock(side_effect=release_teardown.wait)
+    streaming = StreamingClient(session_info)
+    streaming._signalling_client = signalling
+    streaming._started = True
+    client = AnamClient(api_key="test-key", persona_id="test-persona")
+    client._streaming_client = streaming
+    client._is_streaming = True
+    return Session(client), streaming, release_teardown
+
+
+@pytest.mark.asyncio
+async def test_interrupt_fails_at_once_while_the_session_is_ending(
+    session_info: SessionInfo, signalling: MagicMock
+) -> None:
+    session, streaming, release_teardown = _session_with_held_teardown(session_info, signalling)
+    streaming._terminate(ConnectionClosedCode.SIGNALLING_FAILURE, "gone")
+    try:
+        assert session.is_active
+
+        with pytest.raises(SessionEndedError, match="Session has ended"):
+            await asyncio.wait_for(session.interrupt(), 1)
+    finally:
+        release_teardown.set()
+        assert streaming._end_task is not None
+        await asyncio.wait_for(streaming._end_task, 5)
+
+
+@pytest.mark.asyncio
+async def test_interrupt_waiting_for_the_data_channel_fails_when_the_session_ends(
+    session_info: SessionInfo, signalling: MagicMock
+) -> None:
+    session, streaming, release_teardown = _session_with_held_teardown(session_info, signalling)
+    interrupt = asyncio.create_task(session.interrupt())
+    await asyncio.sleep(0.15)
+    assert not interrupt.done()
+
+    streaming._terminate(ConnectionClosedCode.SIGNALLING_FAILURE, "gone")
+    try:
+        with pytest.raises(SessionEndedError, match="Session has ended"):
+            await asyncio.wait_for(interrupt, 1)
+    finally:
+        release_teardown.set()
+        assert streaming._end_task is not None
+        await asyncio.wait_for(streaming._end_task, 5)
+
+
+@pytest.mark.asyncio
+async def test_interrupt_on_a_live_session_without_a_data_channel_is_not_an_ended_session(
+    session_info: SessionInfo, signalling: MagicMock
+) -> None:
+    session, streaming, _ = _session_with_held_teardown(session_info, signalling)
+    streaming.wait_for_data_channel = AsyncMock(return_value=False)  # type: ignore[method-assign]
+
+    with pytest.raises(SessionError, match="Data channel did not open in time") as raised:
+        await asyncio.wait_for(session.interrupt(), 1)
+
+    assert not isinstance(raised.value, SessionEndedError)
+    assert not streaming.is_ending

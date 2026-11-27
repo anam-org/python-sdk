@@ -17,7 +17,7 @@ from ._agent_audio_input_stream import AgentAudioInputStream
 from ._api import CoreApiClient
 from ._streaming import StreamingClient
 from ._talk_message_stream import TalkMessageStream
-from .errors import ConfigurationError, SessionError
+from .errors import ConfigurationError, SessionEndedError, SessionError
 from .types import (
     AgentAudioInputConfig,
     AnamEvent,
@@ -704,7 +704,9 @@ class Session:
             content: The message text.
 
         Raises:
-            SessionError: If not connected or if LLM is not available.
+            SessionEndedError: If the data channel wait detects that session shutdown has started.
+            SessionError: If not connected, the session was replaced, the data channel timed out,
+                or the persona configuration is missing.
         """
         persona_config = None if self._client._session_token else self._get_persona_config()
         if (
@@ -723,7 +725,8 @@ class Session:
         """Interrupt the avatar if it's speaking.
 
         Raises:
-            SessionError: If not connected.
+            SessionEndedError: If the data channel wait detects that session shutdown has started.
+            SessionError: If not connected, the session was replaced, or the data channel timed out.
         """
         streaming = await self._ensure_data_channel_open()
         streaming.send_interrupt()
@@ -743,7 +746,9 @@ class Session:
             in_seconds: Optional delay relative to receipt time in seconds.
 
         Raises:
-            SessionError: If not connected, data channel is unavailable, or send fails.
+            SessionEndedError: If the data channel wait detects that session shutdown has started.
+            SessionError: If not connected, the session was replaced, the data channel is unavailable,
+                or send fails.
             ValueError: If a provided timing value is not finite.
         """
         for field_name, value in (("at_seconds", at_seconds), ("in_seconds", in_seconds)):
@@ -771,6 +776,8 @@ class Session:
         if not getattr(streaming, "_data_channel_open", False):
             logger.debug("Waiting for data channel to open...")
             if not await streaming.wait_for_data_channel(timeout=10.0):
+                if streaming.is_ending:
+                    raise SessionEndedError("Session has ended")
                 raise SessionError("Data channel did not open in time")
             self._require_current()
         return streaming

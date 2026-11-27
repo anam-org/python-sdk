@@ -78,3 +78,7 @@ class SessionError(AnamError):
         details: dict[str, Any] | None = None,
     ):
         super().__init__(message, code, status_code, details)
+
+
+class SessionEndedError(SessionError):
+    """Raised when a call reaches a session that has ended or is ending."""

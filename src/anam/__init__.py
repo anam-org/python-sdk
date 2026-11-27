@@ -52,6 +52,7 @@ from .errors import (
     ConfigurationError,
     ConnectionError,
     ErrorCode,
+    SessionEndedError,
     SessionError,
 )
 from .types import (
@@ -103,6 +104,7 @@ __all__ = [
     "ConfigurationError",
     "ConnectionError",
     "ErrorCode",
+    "SessionEndedError",
     "SessionError",
     # Version
     "__version__",
