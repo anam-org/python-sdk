@@ -2,13 +2,14 @@
 
 import asyncio
 import json
+import logging
 import sys
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 from websockets.protocol import State
 
-from anam import AnamClient, Session
+from anam import AnamClient, AnamEvent, Session
 from anam._signalling import SignallingClient
 from anam._streaming import StreamingClient
 from anam.errors import SessionEndedError, SessionError
@@ -312,3 +313,26 @@ async def test_interrupt_on_a_live_session_without_a_data_channel_is_not_an_ende
 
     assert not isinstance(raised.value, SessionEndedError)
     assert not streaming.is_ending
+
+
+@pytest.mark.asyncio
+async def test_signalling_warning_emits_server_warning(
+    session_info: SessionInfo, caplog: pytest.LogCaptureFixture
+) -> None:
+    client = AnamClient(api_key="test-key", persona_id="test-persona")
+    received: list[str] = []
+
+    @client.on(AnamEvent.SERVER_WARNING)
+    async def on_warning(payload: str) -> None:
+        received.append(payload)
+
+    streaming = StreamingClient(
+        session_info,
+        on_server_warning=client._handle_server_warning,
+    )
+    warning = "The published video was interrupted. Reconnecting."
+    with caplog.at_level(logging.WARNING, logger="anam._streaming"):
+        await streaming._handle_signal_message({"actionType": "warning", "payload": warning})
+
+    assert received == [warning]
+    assert any(record.message == f"Server warning: {warning}" for record in caplog.records)

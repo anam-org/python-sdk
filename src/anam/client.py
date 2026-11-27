@@ -335,6 +335,7 @@ class AnamClient:
             on_connection_established=for_this_session(self._handle_connection_established),
             on_connection_closed=connection_closed,
             on_session_ready=for_this_session(self._handle_session_ready),
+            on_server_warning=for_this_session(self._handle_server_warning),
             on_talk_stream_interrupted=for_this_session(self._handle_talk_stream_interrupted),
             custom_ice_servers=self._options.ice_servers,
             on_talk_stream_delivery_failed=delivery_failed,
@@ -513,6 +514,10 @@ class AnamClient:
             return
         self._session_ready_emitted = True
         await self._emit(AnamEvent.SESSION_READY)
+
+    async def _handle_server_warning(self, payload: str) -> None:
+        """Handle a signalling warning from the server."""
+        await self._emit(AnamEvent.SERVER_WARNING, payload)
 
     async def _handle_talk_stream_interrupted(self, correlation_id: str) -> None:
         """Handle talk stream interrupted signal from server."""

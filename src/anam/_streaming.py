@@ -62,6 +62,7 @@ class StreamingClient:
         on_connection_established: Callable[[], Awaitable[None]] | None = None,
         on_connection_closed: Callable[[str, str | None], Awaitable[None]] | None = None,
         on_session_ready: Callable[[], Awaitable[None]] | None = None,
+        on_server_warning: Callable[[str], Awaitable[None]] | None = None,
         on_talk_stream_interrupted: Callable[[str], Awaitable[None]] | None = None,
         custom_ice_servers: list[dict[str, Any]] | None = None,
         on_talk_stream_delivery_failed: Callable[[str], Awaitable[None]] | None = None,
@@ -74,6 +75,7 @@ class StreamingClient:
             on_message: Callback for data channel messages.
             on_connection_established: Callback when connected.
             on_session_ready: Callback when sessionready signal is received (ready to receive TTS).
+            on_server_warning: Callback(payload) when the server sends a warning.
             on_talk_stream_interrupted: Callback(correlation_id) when talk stream is interrupted.
             custom_ice_servers: Custom ICE servers (optional).
             on_talk_stream_delivery_failed: Callback(correlation_id) for a talk stream whose
@@ -89,6 +91,7 @@ class StreamingClient:
         self._on_connection_established = on_connection_established
         self._on_connection_closed = on_connection_closed
         self._on_session_ready = on_session_ready
+        self._on_server_warning = on_server_warning
         self._on_talk_stream_interrupted = on_talk_stream_interrupted
         self._on_talk_stream_delivery_failed = on_talk_stream_delivery_failed
         self._on_torn_down = on_torn_down
@@ -242,6 +245,8 @@ class StreamingClient:
 
         elif action_type == SignalAction.WARNING.value:
             logger.warning("Server warning: %s", payload)
+            if self._on_server_warning and isinstance(payload, str):
+                await self._on_server_warning(payload)
 
         elif action_type == SignalAction.SESSION_READY.value:
             logger.info("Session ready")
