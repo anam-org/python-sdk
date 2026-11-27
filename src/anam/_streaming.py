@@ -631,7 +631,10 @@ class StreamingClient:
         self.send_data_message(json.dumps(message))
 
     def send_interrupt(self) -> None:
-        """Send interrupt command to stop persona speaking."""
+        """Send interrupt command to stop persona speaking.
+
+        Agent audio chunks that still wait for the signalling socket to reconnect are dropped.
+        """
         import datetime
 
         message = {
@@ -639,7 +642,8 @@ class StreamingClient:
             "session_id": self._session_id,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
-        self.send_data_message(json.dumps(message))
+        if self.send_data_message(json.dumps(message)) and self._signalling_client is not None:
+            self._signalling_client.drop_buffered_agent_audio()
 
     async def send_talk(self, content: str) -> None:
         """Send a single text message directly to TTS via REST API.

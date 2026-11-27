@@ -466,6 +466,17 @@ class SignallingClient:
             if _talk_correlation_id(message) != correlation_id
         ]
 
+    def drop_buffered_agent_audio(self) -> None:
+        """Forget the agent audio chunks that wait for a socket.
+
+        The sequence end stays: the backend accepts the next sequence only after it.
+        """
+        self._send_buffer[:] = [
+            message
+            for message in self._send_buffer
+            if message.get("actionType") != SignalAction.AGENT_AUDIO_INPUT.value
+        ]
+
     def _live_streams(self, correlation_id: str) -> list[TalkStreamTarget]:
         streams = (ref() for ref in self._talk_streams.get(correlation_id, []))
         return [stream for stream in streams if stream is not None]
