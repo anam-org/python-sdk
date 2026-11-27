@@ -6,6 +6,29 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 <!-- version list -->
 
+## v0.13.1-alpha.1 (2026-11-27)
+
+### Bug Fixes
+
+- **session**: Fail data-channel calls at once on an ending session
+  ([#82](https://github.com/anam-org/python-sdk/pull/82),
+  [`a57b730`](https://github.com/anam-org/python-sdk/commit/a57b7307cf598fd53f5975ad1167e388b9b226d8))
+
+- **session**: Fail data-channel calls at once when the session is ending (ENG-4550)
+  ([#82](https://github.com/anam-org/python-sdk/pull/82),
+  [`a57b730`](https://github.com/anam-org/python-sdk/commit/a57b7307cf598fd53f5975ad1167e388b9b226d8))
+
+- **session**: Raise SessionEndedError for calls on an ending session (ENG-4550)
+  ([#82](https://github.com/anam-org/python-sdk/pull/82),
+  [`a57b730`](https://github.com/anam-org/python-sdk/commit/a57b7307cf598fd53f5975ad1167e388b9b226d8))
+
+### Documentation
+
+- **session**: List SessionEndedError in the Raises sections of the data-channel calls
+  ([#82](https://github.com/anam-org/python-sdk/pull/82),
+  [`a57b730`](https://github.com/anam-org/python-sdk/commit/a57b7307cf598fd53f5975ad1167e388b9b226d8))
+
+
 ## v0.13.0 (2026-11-26)
 
 
