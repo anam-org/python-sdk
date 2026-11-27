@@ -1681,6 +1681,33 @@ async def test_interrupt_in_gap_drops_buffered_agent_audio(
 
 
 @pytest.mark.asyncio
+async def test_interrupt_drops_agent_audio_that_waits_to_be_sent(
+    engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = await anam.connect_async()
+    open_data_channel(anam, monkeypatch)
+    audio = session.create_agent_audio_input_stream(AgentAudioInputConfig())
+    sc = signalling(anam)
+
+    await sc._send_lock.acquire()
+    try:
+        # The first chunk waits for the signalling lock, the second for the stream's own lock.
+        waiting = [asyncio.create_task(audio.send_audio_chunk(b"\x00\x00")) for _ in range(2)]
+        await asyncio.sleep(0)
+        await session.interrupt()
+    finally:
+        sc._send_lock.release()
+    await asyncio.wait_for(asyncio.gather(*waiting), 2.0)
+    assert audio.get_sequence_number() == 0
+
+    await audio.end_sequence()
+    await audio.send_audio_chunk(b"\x00\x00")
+
+    await engine.wait_for(lambda: agent_audio_on(engine, 0) == ["end", 0])
+    assert await stays(lambda: agent_audio_on(engine, 0) == ["end", 0], 0.1)
+
+
+@pytest.mark.asyncio
 async def test_interrupt_in_gap_keeps_buffered_sequence_end(
     engine: FakeEngine, anam: AnamClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

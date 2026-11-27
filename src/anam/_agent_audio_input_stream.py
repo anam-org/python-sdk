@@ -69,7 +69,11 @@ class AgentAudioInputStream:
         else:
             raise ValueError(f"audio_data must be bytes, bytearray, or str, got {type(audio_data)}")
 
+        generation = self._signalling_client.agent_audio_generation
         async with self._send_lock:
+            if generation != self._signalling_client.agent_audio_generation:
+                logger.debug("Dropping an agent audio chunk: an interrupt made it stale")
+                return
             payload = AgentAudioInputPayload(
                 audio_data=base64_data,
                 encoding=self._config.encoding,

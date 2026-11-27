@@ -132,6 +132,7 @@ class SignallingClient:
         self._connection_attempts = 0
         self._send_buffer: list[dict[str, Any]] = []
         self._buffer_overflowed = False
+        self._agent_audio_generation = 0
         self._send_lock = asyncio.Lock()
         self._dispatch_queue: asyncio.Queue[_Dispatch] = asyncio.Queue()
         self._dispatching: _Dispatch | None = None
@@ -466,11 +467,19 @@ class SignallingClient:
             if _talk_correlation_id(message) != correlation_id
         ]
 
-    def drop_buffered_agent_audio(self) -> None:
-        """Forget the agent audio chunks that wait for a socket.
+    @property
+    def agent_audio_generation(self) -> int:
+        """A number that changes each time drop_unsent_agent_audio() runs."""
+        return self._agent_audio_generation
 
-        The sequence end stays: the backend accepts the next sequence only after it.
+    def drop_unsent_agent_audio(self) -> None:
+        """Forget the agent audio chunks that are not written to a socket yet.
+
+        This covers the chunks that wait for a socket and the chunks of an earlier
+        generation that still wait to be sent. The sequence end stays: the backend
+        accepts the next sequence only after it.
         """
+        self._agent_audio_generation += 1
         self._send_buffer[:] = [
             message
             for message in self._send_buffer
@@ -644,7 +653,10 @@ class SignallingClient:
         return None
 
     async def send_message(
-        self, message: dict[str, Any], admitted: Callable[[], None] | None = None
+        self,
+        message: dict[str, Any],
+        admitted: Callable[[], None] | None = None,
+        stale: Callable[[], bool] | None = None,
     ) -> None:
         """Send a message, or buffer it until a socket is open.
 
@@ -652,6 +664,7 @@ class SignallingClient:
             message: The message to send.
             admitted: Called when the message is accepted, before the write starts. A
                 cancellation after this point does not stop the message.
+            stale: Called under the send lock. The message is dropped when it returns True.
         """
         # Convert enum to string if needed
         if "actionType" in message and isinstance(message["actionType"], SignalAction):
@@ -663,6 +676,9 @@ class SignallingClient:
         async with self._send_lock:
             if self.is_permanently_closed:
                 logger.debug("Dropping %s message: signalling is closed", message.get("actionType"))
+                return
+            if stale is not None and stale():
+                logger.debug("Dropping %s message: it is stale", message.get("actionType"))
                 return
             if admitted is not None:
                 admitted()
@@ -755,10 +771,13 @@ class SignallingClient:
     ) -> None:
         """Send agent audio input message to the server.
 
+        The chunk is dropped when drop_unsent_agent_audio() runs before it is written or buffered.
+
         Args:
             payload: The audio input payload.
             admitted: See send_message().
         """
+        generation = self._agent_audio_generation
         # Convert to camelCase to match backend expectations
         message = {
             "actionType": SignalAction.AGENT_AUDIO_INPUT.value,
@@ -779,7 +798,9 @@ class SignallingClient:
             logger.warning(
                 f"Sample rate {payload.sample_rate}Hz is high. Latency is negatively affected for minimal audio quality gain. Consider resampling to 24kHz"
             )
-        await self.send_message(message, admitted)
+        await self.send_message(
+            message, admitted, stale=lambda: generation != self._agent_audio_generation
+        )
 
     async def send_agent_audio_input_end(self, admitted: Callable[[], None] | None = None) -> None:
         """Send agent audio input end signal to the server.
